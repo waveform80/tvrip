@@ -1,4 +1,4 @@
-# vim: set fileencoding=UTF-8
+# vim: set et sw=4 sts=4:
 
 import os
 import locale
@@ -20,11 +20,11 @@ AUDIO_MIX_ORDER = [u'5.1 ch', u'5.0 ch', u'Dolby Surround', u'2.0 ch', u'1.0 ch'
 AUDIO_ENC_ORDER = [u'DTS', u'AC3']
 
 ISO639 = list(
-	line.split('|')
-	for line in open(os.path.join(DATADIR, u'iso639.txt')).read().decode('UTF-8').splitlines()
+    line.split('|')
+    for line in open(os.path.join(DATADIR, u'iso639.txt')).read().decode('UTF-8').splitlines()
 )
 ISO639 = dict(
-	(bib_code, (lang_code, name))
-	for (bib_code, term_code, lang_code, name, french_name) in ISO639
+    (bib_code, (lang_code, name))
+    for (bib_code, term_code, lang_code, name, french_name) in ISO639
 )
 
