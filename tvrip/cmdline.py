@@ -287,7 +287,7 @@ class RipCmd(Cmd):
         The 'subtitles' command can be used to query the current subtitles
         extraction mode used by the 'rip' command. If an argument is given it
         will become the new subtitles extract mode.
-        
+
         The valid formats are 'none' indicating that subtitles should not be
         extracted at all, 'vobsub' which causes subtitles to be extracted as
         timed image overlays, and 'subrip' which causes subtitles to be

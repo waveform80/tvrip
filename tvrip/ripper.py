@@ -165,10 +165,11 @@ class Title(object):
             u'episode': self.episode.number,
             u'name':    self.episode.name,
         }
-        # Convert the subtitle track(s)
-        for track in self.subtitle_tracks:
-            if track.preferred and config.in_subtitle_langs(track.language):
-                track.convert(config, filename)
+        # Convert the subtitle track(s) if required
+        if config.subtitle_format == u'subrip':
+            for track in self.subtitle_tracks:
+                if track.preferred and config.in_subtitle_langs(track.language):
+                    track.convert(config, filename)
         # Convert the video
         self.convert(config, filename)
 
@@ -178,6 +179,11 @@ class Title(object):
             (track.number, config.audio_mix, track.name)
             for track in self.audio_tracks
             if track.preferred and config.in_audio_langs(track.language)
+        ]
+        subtitle_defs = [
+            (track.number, track.name)
+            for track in self.subtitle_tracks
+            if track.preferred and config.in_subtitle_langs(track.language)
         ]
         cmdline = [
             HANDBRAKE,
@@ -195,6 +201,9 @@ class Title(object):
             u'-6', u','.join(mix          for (_, mix, _)  in audio_defs),
             u'-A', u','.join(name         for (_, _, name) in audio_defs),
         ]
+        if config.subtitle_format == u'vobsub':
+            cmdline.append(u'-s')
+            cmdline.append(u','.join(unicode(num) for (num, _) in subtitle_defs))
         if config.decomb == u'on':
             cmdline.append(u'-d')
             cmdline.append(u'fast')
@@ -295,107 +304,86 @@ class SubtitleTrack(object):
 
     def convert(self, config, filename):
         logging.info(u'Converting "%s" subtitle track' % self.name)
-        if config.subtitle_format == u'subrip':
-            self.tempdir = tempfile.mkdtemp(dir=config.temp)
-            cat_cmdline = [
-                TCCAT,
-                u'-i', config.source,
-                # ,-1 means extract all chapters from specified title
-                u'-T', u'%d,-1' % self.title.number,
-            ]
-            extract_cmdline = [
-                TCEXTRACT,
-                # extract private stream (subtitles)
-                u'-x', u'ps1',
-                # type of input is a VOB
-                u'-t', u'vob',
-                # subtitle tracks are numbered starting at 0x20
-                u'-a', unicode(hex(0x20 + self.number - 1)),
-            ]
-            convert_cmdline = [
-                SUBP2PGM,
-                # use the specified color as black
-                u'-c', ','.join(unicode(0 if i == config.subtitle_black else 255) for i in xrange(1, 5)),
-                # trim borders from subtitle frames
-                u'-C', u'1',
-                # output to the temporary directory with a "sub" prefix
-                u'-o', os.path.join(self.tempdir, u'sub'),
-                # print progress messages
-                u'-P',
-            ]
-            cat_proc = Popen(cat_cmdline, stdout=PIPE, stderr=sys.stderr)
-            extract_proc = Popen(extract_cmdline, stdin=cat_proc.stdout, stdout=PIPE, stderr=sys.stderr)
-            convert_proc = Popen(convert_cmdline, stdin=extract_proc.stdout, stdout=sys.stdout, stderr=sys.stderr)
-            convert_proc.communicate()
-            extract_proc.wait()
-            cat_proc.wait()
-            if cat_proc.returncode != 0:
-                raise ProcessError(u'%s exited with non-zero return code: %s' % (TCCAT, cat_proc.returncode))
-            if extract_proc.returncode != 0:
-                raise ProcessError(u'%s exited with non-zero return code: %s' % (TCEXTRACT, extract_proc.returncode))
-            if convert_proc.returncode != 0:
-                raise ProcessError(u'%s exited with non-zero return code: %s' % (SUBP2PGM, convert_proc.returncode))
-            # Parse the .srtx file left in the temporary directory by extract(). In
-            # this file each subtitle entry's text indicates the file containing
-            # the subtitle image
-            template_file = os.path.join(self.tempdir, u'sub.srtx')
-            subrip_file = os.path.join(config.target, os.path.splitext(filename)[0] + u'.srt')
-            subtitles = Subtitles(parsefile=open(template_file, u'rU'))
-            # Run all the images through gocr to convert to text, replacing the
-            # filename in the subtitle with the OCR'd text
-            logging.info(u'Converting subtitle images to text')
-            for subtitle in subtitles:
-                # Remove the .txt suffix
-                imagefile = subtitle.text[:-4]
-                if not os.path.exists(imagefile):
-                    raise IOError(u'Image file "%s" referenced by "%s" does not exist' % (imagefile, srtxfile))
-                cmdline = [
-                    GOCR,
-                    u'-i', imagefile,
-                    # path to database of learned characters (program specific)
-                    u'-p', self.title.episode.season.program.dbpath + '/',
-                    # output format
-                    u'-f', u'UTF8',
-                    # minimum number of pixels between words
-                    u'-s', u'9',
-                    # use and extend database, and perform zoning analysis
-                    u'-m', u'390',
-                ]
-                p = Popen(cmdline, stdin=sys.stdin, stdout=PIPE, stderr=sys.stderr)
-                subtitle.text = p.communicate()[0].strip().decode('UTF-8')
-                if p.returncode != 0:
-                    raise ProcessError(u'%s exited with non-zero return code %d' % (GOCR, p.returncode))
-            # Apply language-specific correction rules if available, then
-            # normalize, encode and write the output
-            logging.info(u'Applying corrections to subtitle text')
-            self.corrections.load_rules(self.language)
-            subtitles = self.corrections.process(subtitles)
-            subtitles.normalize()
-            with open(subrip_file, u'w') as f:
-                f.write(unicode(subtitles).encode(u'UTF-8'))
-            # Remove the entire temporary path
-            shutil.rmtree(self.tempdir)
-            del self.tempdir
-        elif config.subtitle_format == u'vobsub':
+        self.tempdir = tempfile.mkdtemp(dir=config.temp)
+        cat_cmdline = [
+            TCCAT,
+            u'-i', config.source,
+            # ,-1 means extract all chapters from specified title
+            u'-T', u'%d,-1' % self.title.number,
+        ]
+        extract_cmdline = [
+            TCEXTRACT,
+            # extract private stream (subtitles)
+            u'-x', u'ps1',
+            # type of input is a VOB
+            u'-t', u'vob',
+            # subtitle tracks are numbered starting at 0x20
+            u'-a', unicode(hex(0x20 + self.number - 1)),
+        ]
+        convert_cmdline = [
+            SUBP2PGM,
+            # use the specified color as black
+            u'-c', ','.join(unicode(0 if i == config.subtitle_black else 255) for i in xrange(1, 5)),
+            # trim borders from subtitle frames
+            u'-C', u'1',
+            # output to the temporary directory with a "sub" prefix
+            u'-o', os.path.join(self.tempdir, u'sub'),
+            # print progress messages
+            u'-P',
+        ]
+        cat_proc = Popen(cat_cmdline, stdout=PIPE, stderr=sys.stderr)
+        extract_proc = Popen(extract_cmdline, stdin=cat_proc.stdout, stdout=PIPE, stderr=sys.stderr)
+        convert_proc = Popen(convert_cmdline, stdin=extract_proc.stdout, stdout=sys.stdout, stderr=sys.stderr)
+        convert_proc.communicate()
+        extract_proc.wait()
+        cat_proc.wait()
+        if cat_proc.returncode != 0:
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (TCCAT, cat_proc.returncode))
+        if extract_proc.returncode != 0:
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (TCEXTRACT, extract_proc.returncode))
+        if convert_proc.returncode != 0:
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (SUBP2PGM, convert_proc.returncode))
+        # Parse the .srtx file left in the temporary directory by extract(). In
+        # this file each subtitle entry's text indicates the file containing
+        # the subtitle image
+        template_file = os.path.join(self.tempdir, u'sub.srtx')
+        subrip_file = os.path.join(config.target, os.path.splitext(filename)[0] + u'.srt')
+        subtitles = Subtitles(parsefile=open(template_file, u'rU'))
+        # Run all the images through gocr to convert to text, replacing the
+        # filename in the subtitle with the OCR'd text
+        logging.info(u'Converting subtitle images to text')
+        for subtitle in subtitles:
+            # Remove the .txt suffix
+            imagefile = subtitle.text[:-4]
+            if not os.path.exists(imagefile):
+                raise IOError(u'Image file "%s" referenced by "%s" does not exist' % (imagefile, srtxfile))
             cmdline = [
-                MENCODER,
-                # select the subtitle stream
-                u'-sid', unicode(self.number - 1),
-                # don't output sound
-                u'-nosound',
-                # dump video stream to /dev/null with wasting any CPU time
-                # encoding it
-                u'-ovc', u'raw', u'-o', u'/dev/null',
-                # root of the vobsub output files
-                u'-vobsubout', os.path.join(config.target, os.path.splitext(filename)[0]),
-                # specify the input title
-                u'dvd://%d' % self.title.number,
+                GOCR,
+                u'-i', imagefile,
+                # path to database of learned characters (program specific)
+                u'-p', self.title.episode.season.program.dbpath + '/',
+                # output format
+                u'-f', u'UTF8',
+                # minimum number of pixels between words
+                u'-s', u'9',
+                # use and extend database, and perform zoning analysis
+                u'-m', u'390',
             ]
-            p = Popen(cmdline, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
-            if p.wait() != 0:
-                raise ProcessError(u'%s exited with non-zero return code %d' % (MENCODER, p.returncode))
-        else:
-            raise ValueError(u'Invalid subtitle format %s' % format)
+            p = Popen(cmdline, stdin=sys.stdin, stdout=PIPE, stderr=sys.stderr)
+            subtitle.text = p.communicate()[0].strip().decode('UTF-8')
+            if p.returncode != 0:
+                raise ProcessError(u'%s exited with non-zero return code %d' % (GOCR, p.returncode))
+        # Apply language-specific correction rules if available, then
+        # normalize, encode and write the output
+        logging.info(u'Applying corrections to subtitle text')
+        self.corrections.load_rules(self.language)
+        subtitles = self.corrections.process(subtitles)
+        subtitles.normalize()
+        with open(subrip_file, u'w') as f:
+            f.write(unicode(subtitles).encode(u'UTF-8'))
+        # Remove the entire temporary path
+        shutil.rmtree(self.tempdir)
+        del self.tempdir
 
     def __repr__(self):
         return u"<SubtitleTrack(%d, '%s')>" % (self.number, self.name)
