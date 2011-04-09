@@ -5,6 +5,7 @@ import re
 import readline
 import sqlalchemy as sa
 from itertools import izip, groupby
+from operator import attrgetter
 from cmd import Cmd
 from textwrap import TextWrapper
 from datetime import timedelta
@@ -810,12 +811,19 @@ class RipCmd(Cmd):
                         title.duration.seconds % 60
                     ))
             if not mapped_one and self.disc.titles:
+                self.pprint(u'Attempting to map chapters of longest title to episodes')
                 # If we didn't manage to find a single title to map to an
                 # episode it's possible we're dealing with one of those weird
                 # discs where lots of episodes are in one title with chapters
                 # delimiting the episodes. Firstly, find the longest title...
                 for title in reversed(sorted(self.disc.titles, key=attrgetter('duration'))):
                     break
+                self.pprint(u'Longest title is %d (duration: %02d:%02d:%02d)' % (
+                    title.number,
+                    title.duration.seconds / 3600,
+                    title.duration.seconds / 60 % 60,
+                    title.duration.seconds % 60
+                ))
                 # Now loop over the chapters of the longest title, attempting
                 # to build up consecutive runs of chapters with a duration
                 # between the required min and max
@@ -836,12 +844,14 @@ class RipCmd(Cmd):
                             # If we've run out of unripped episodes, but we
                             # haven't run out of chapters consider the whole
                             # operation a bust and forget the whole mapping
+                            self.pprint(u'Found more chapters than unripped episodes; aborting')
                             episode_map = []
                             break
                     elif current_duration > self.config.duration_max:
                         # Likewise, if at any point we wind up with a run of
                         # chapters that exceeds the maximum duration, quit in
                         # disgrace!
+                        self.pprint(u'Exceeded maximum duration while aggregating chapters; aborting')
                         episode_map = []
                         break
                 # If we've got stuff in episode_map it's guaranteed to be
@@ -904,14 +914,37 @@ class RipCmd(Cmd):
                 title = [t for t in self.disc.titles if t.number==title][0]
             except IndexError:
                 raise CmdError(u'There is no title %d on the scanned disc' % title)
+            if chapter_start:
+                try:
+                    chapter_start = [c for c in title.chapters if c.number==chapter_start][0]
+                except IndexError:
+                    raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_start, title.number))
+            if chapter_end:
+                try:
+                    chapter_end = [c for c in title.chapters if c.number==chapter_end][0]
+                except IndexError:
+                    raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_end, title.number))
             try:
                 episode = self.session.query(Episode).\
                     filter(Episode.season==self.config.season).\
                     filter(Episode.number==episode).one()
             except sa.orm.exc.NoResultFound:
                 raise CmdError(u'There is no episode %d in the current season' % episode)
-            self.pprint(u'Mapping title %d to episode %d, "%s"' % (title.number, episode.number, episode.name))
-            title.episode = episode
+            if chapter_start:
+                self.pprint(u'Mapping chapters %d-%d of title %d to episode %d, "%s"' % (
+                    chapter_start.number,
+                    chapter_end.number,
+                    title.number,
+                    episode.number,
+                    episode.name
+                ))
+            else:
+                self.pprint(u'Mapping title %d to episode %d, "%s"' % (
+                    title.number,
+                    episode.number,
+                    episode.name
+                ))
+                title.episode = episode
         else:
             for title in self.disc.titles:
                 if title.episode and title.episode.disc_serial:
