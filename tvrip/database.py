@@ -53,12 +53,14 @@ class Season(object):
 class Episode(object):
     u"""Represents an episode of a season of a program"""
 
-    def __init__(self, season, number, name, disc_serial=None, disc_title=None):
+    def __init__(self, season, number, name, disc_serial=None, disc_title=None, start_chapter=None, end_chapter=None):
         self.season = season
         self.number = number
         self.name = name
         self.disc_serial = disc_serial
         self.disc_title = disc_title
+        self.start_chapter = start_chapter
+        self.end_chapter = end_chapter
 
     def __repr__(self):
         return u"<Episode('%s - %dx%02d - %s')>" % (
@@ -159,9 +161,12 @@ def init_session(url=None, debug=False):
         sa.Column('name', sa.Text, nullable=False),
         sa.Column('disc_serial', sa.Text, nullable=True),
         sa.Column('disc_title', sa.Integer, nullable=True),
+        sa.Column('start_chapter', sa.Integer, nullable=True),
+        sa.Column('end_chapter', sa.Integer, nullable=True),
         sa.ForeignKeyConstraint(['program', 'season'], ['seasons.program', 'seasons.season'],
             onupdate='cascade', ondelete='cascade', name='season_fk'),
-        sa.CheckConstraint('episode >= 1', name='episode_ck')
+        sa.CheckConstraint('episode >= 1', name='episode_ck'),
+        sa.CheckConstraint('(end_chapter is null and start_chapter is null) or (end_chapter >= start_chapter)')
     )
     config_table = sa.Table('config', metadata,
         sa.Column('id', sa.Integer, primary_key=True),
@@ -181,7 +186,7 @@ def init_session(url=None, debug=False):
             onupdate='cascade', ondelete='set null', name='program_fk'),
         sa.ForeignKeyConstraint(['program', 'season'], ['seasons.program', 'seasons.season'],
             onupdate='cascade', ondelete='set null', name='season_fk'),
-        sa.CheckConstraint("decomb in ('off', 'on')", name='decomb_ck'),
+        sa.CheckConstraint("decomb in ('off', 'on', 'auto')", name='decomb_ck'),
         sa.CheckConstraint('subtitle_black between 1 and 4', name='subtitle_black_ck')
     )
     config_audio_table = sa.Table('config_audio', metadata,

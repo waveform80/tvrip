@@ -248,6 +248,19 @@ class Chapter(object):
         self.title = title
         self.number = 0
         self.duration = timedelta(0)
+        self._episode = None
+
+    def _get_episode(self):
+        if self._episode is None:
+            return self.title.episode
+        else:
+            return self._episode
+
+    def _set_episode(self, value):
+        if value is not None and self.number > 1 and self.title.chapters[self.number - 2]._episode.number > value.number:
+            raise ValueError(u'Chapter %d has a later episode than %d' % (self.number - 1, value))
+        self._episode = value
+    episode = property(_get_episode, _set_episode)
 
     @property
     def start(self):
