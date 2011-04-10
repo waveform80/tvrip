@@ -1004,11 +1004,11 @@ class RipCmd(Cmd):
             raise CmdError(u'No disc has been scanned yet')
         elif not self.disc.titles:
             raise CmdError(u'No titles found on the scanned disc')
-        elif not any(title.episode for title in self.disc.titles):
+        elif not self.map:
             raise CmdError(u'No titles have been mapped to episodes')
         elif arg.strip():
             raise CmdSyntaxError(u'You must not specify any arguments')
-        for episode, mapping in self.map.iteritems():
+        for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
             if not episode.ripped:
                 if isinstance(mapping, Title):
                     chapter_start = chapter_end = None
@@ -1021,12 +1021,14 @@ class RipCmd(Cmd):
                     t for t in title.audio_tracks
                     if self.config.in_audio_langs(t.language)
                 ]
-                if self.config.audio_tracks == u'first':
+                if self.config.audio_tracks == u'best':
                     audio_tracks = [t for t in audio_tracks if t.best]
                 subtitle_tracks = [
                     t for t in title.subtitle_tracks
                     if self.config.in_subtitle_langs(t.language)
                 ]
+                if self.config.subtitle_tracks == u'best':
+                    subtitle_tracks = [t for t in subtitle_tracks if t.best]
                 self.pprint(u'Ripping episode %d, "%s"' % (
                     episode.number, episode.name))
                 self.disc.rip(self.config, episode, title, audio_tracks, subtitle_tracks, chapter_start, chapter_end)
@@ -1035,6 +1037,9 @@ class RipCmd(Cmd):
                 if chapter_start:
                     episode.start_chapter = chapter_start.number
                     episode.end_chapter = chapter_end.number
+                else:
+                    episode.start_chapter = None
+                    episode.end_chapter = None
                 self.session.commit()
 
     def do_unrip(self, arg):
