@@ -551,6 +551,7 @@ class RipCmd(Cmd):
                     raise
                 else:
                     self.session.commit()
+            self.map = {}
         elif self.config.season:
             self.pprint(u'Episodes for season %d of program %s (* indicates ripped):' % (self.config.season.number, self.config.program.name))
             for e in self.session.query(Episode).filter(Episode.season==self.config.season):
@@ -611,6 +612,7 @@ class RipCmd(Cmd):
                     raise
                 else:
                     self.session.commit()
+            self.map = {}
 
     def complete_season(self, text, line, start, finish):
         return [
@@ -618,7 +620,7 @@ class RipCmd(Cmd):
             self.session.query(Season).\
             filter(Season.program==self.config.program).\
             filter(u"SUBSTR(CAST(season AS TEXT), 1, :length) = :season").\
-            params(length=len(text), season=text).all()
+            params(length=len(text), season=text)
         ]
 
     def do_seasons(self, arg):
@@ -689,13 +691,15 @@ class RipCmd(Cmd):
                 self.config.season = self.session.query(Season).\
                     filter(Season.program==self.config.program).\
                     order_by(Season.number).first()
+            self.map = {}
 
     program_re = re.compile(ur'^program\s+')
     def complete_program(self, text, line, start, finish):
-        line = self.program_re.sub('', line)
+        match = self.program_re.match(line)
+        name = line[match.end():]
         return [
-            program.name for program in
-            self.session.query(Program).filter(Program.name.startswith(line)).all()
+            program.name[start - match.end():] for program in
+            self.session.query(Program).filter(Program.name.startswith(name))
         ]
 
     def do_programs(self, arg):
@@ -889,7 +893,7 @@ class RipCmd(Cmd):
                         ))
                     else:
                         self.do_map(u'%d %d' % (episode.number, title.number))
-                    unmapped.remove(title)
+                        unmapped.remove(title)
             # Attempt to map the remaining unmapped titles to unripped episodes
             # from the selected season
             unripped = [e for e in self.config.season.episodes if not e.disc_serial]
@@ -1048,10 +1052,13 @@ class RipCmd(Cmd):
         Syntax: unrip <episode>
 
         The 'unrip' command is used to set the status of an episode to
-        unripped. Episodes are automatically set to ripped during the operation
-        of the 'rip' command. Episodes marked as ripped will never be
-        automatically mapped to titles by the 'scan' command (although they can
-        be mapped manually with the 'map' command). For example:
+        unripped. If you specify '*' as the episode, all episodes in the
+        currently selected season will be set to unripped.
+
+        Episodes are automatically set to ripped during the operation of the
+        'rip' command.  Episodes marked as ripped will never be automatically
+        mapped to titles by the 'map' command (although they can be mapped
+        manually too). For example:
 
         tvr> unrip 3
         tvr> unrip 7
@@ -1061,19 +1068,28 @@ class RipCmd(Cmd):
         elif not self.config.season:
             raise CmdError(u'No season has been set')
         else:
-            try:
-                arg = int(arg)
-            except ValueError:
-                raise CmdSyntaxError(u'You must specify an integer episode number')
-            try:
-                episode = self.session.query(Episode).\
-                    filter(Episode.season==self.config.season).\
-                    filter(Episode.number==arg).one()
-            except sa.orm.exc.NoResultFound:
-                raise CmdError(u'Episode %d of %s season %d does not exist' % (
-                    arg, self.config.program.name, self.config.season.number))
-            episode.disc_serial = None
-            episode.disc_title = None
+            if arg.strip() == u'*':
+                for episode in self.config.season.episodes:
+                    episode.disc_serial = None
+                    episode.disc_title = None
+                    episode.start_chapter = None
+                    episode.end_chapter = None
+            else:
+                try:
+                    arg = int(arg)
+                except ValueError:
+                    raise CmdSyntaxError(u'You must specify an integer episode number')
+                try:
+                    episode = self.session.query(Episode).\
+                        filter(Episode.season==self.config.season).\
+                        filter(Episode.number==arg).one()
+                except sa.orm.exc.NoResultFound:
+                    raise CmdError(u'Episode %d of %s season %d does not exist' % (
+                        arg, self.config.program.name, self.config.season.number))
+                episode.disc_serial = None
+                episode.disc_title = None
+                episode.start_chapter = None
+                episode.end_chapter = None
             self.session.commit()
 
     def do_source(self, arg):
