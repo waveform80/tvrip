@@ -5,13 +5,13 @@ import re
 import readline
 import sqlalchemy as sa
 from itertools import izip, groupby
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 from cmd import Cmd
 from textwrap import TextWrapper
 from datetime import timedelta
 from tvrip.const import ENCODING
 from tvrip.termsize import terminal_size
-from tvrip.ripper import Disc
+from tvrip.ripper import Disc, Title, Chapter
 from tvrip.database import init_session, Configuration, Program, Season, Episode, AudioLanguage, SubtitleLanguage
 
 class CmdError(Exception):
@@ -180,156 +180,168 @@ class RipCmd(Cmd):
         self.session.commit()
         return True
 
-    def do_languages(self, arg):
-        u"""Gets/sets the list of audio/subtitle languages to rip.
+    def do_config(self, arg):
+        u"""Shows the current set of configuration options.
 
-        Syntax: languages [<audio|subtitle|both> lang1 lang2 ...]
+        Syntax: config
 
-        The 'languages' command with no arguments prints the current list of
-        languages for which audio and subtitle tracks will be extracted and
-        converted. With one or more arguments it sets the list of languages for
-        which audio or subtitle tracks will be extracted, replacing the
-        originally configured set. Languages are specified as lowercase
-        3-character ISO639 codes. The first argument specifies whether audio,
-        subtitle or both languages sets are being configured. For example:
-
-        tvr> languages audio eng jpn
-        tvr> languages subtitle eng
+        The 'config' command simply outputs the current set of configuration
+        options as set by the various other commands.
         """
-        if arg:
-            arg = arg.lower().split(u' ')
-            try:
-                mode = {
-                    u'audio':    u'audio',
-                    u'sound':    u'audio',
-                    u'subtitle': u'subtitle',
-                    u'sub':      u'subtitle',
-                    u'both':     u'both',
-                    u'all':      u'both',
-                }[arg[0]]
-            except KeyError:
-                raise CmdSyntaxError(u'Invalid language mode %s' % arg[0])
-            if mode in (u'audio', u'both'):
-                new_langs = set(arg[1:])
-                for lang in self.config.audio_langs:
-                    if lang.lang in new_langs:
-                        new_langs.remove(lang.lang)
-                    else:
-                        self.session.delete(lang)
-                for lang in new_langs:
-                    self.session.add(AudioLanguage(lang))
-            if mode in (u'subtitle', u'both'):
-                new_langs = set(arg[1:])
-                for lang in self.config.subtitle_langs:
-                    if lang.lang in new_langs:
-                        new_langs.remove(lang.lang)
-                    else:
-                        self.session.delete(lang)
-                for lang in new_langs:
-                    self.session.add(SubtitleLanguage(lang))
-            self.session.commit()
-        else:
-            self.pprint(u'Current audio languages:')
-            for lang in self.config.audio_langs:
-                self.pprint(lang.lang)
-            self.pprint(u'Current subtitle languages:')
-            for lang in self.config.subtitle_langs:
-                self.pprint(lang.lang)
+        self.pprint(u'source          = %s' % self.config.source)
+        self.pprint(u'target          = %s' % self.config.target)
+        self.pprint(u'temp            = %s' % self.config.temp)
+        self.pprint(u'duration        = %d-%d (mins)' % (self.config.duration_min.seconds / 60, self.config.duration_max.seconds / 60))
+        self.pprint(u'program         = %s' % (self.config.program.name if self.config.program else '<none set>'))
+        self.pprint(u'season          = %s' % (self.config.season.number if self.config.season else '<none set>'))
+        self.pprint(u'template        = %s' % self.config.template)
+        self.pprint(u'decomb          = %s' % self.config.decomb)
+        self.pprint(u'audio_mix       = %s' % self.config.audio_mix)
+        self.pprint(u'audio_tracks    = %s' % self.config.audio_tracks)
+        self.pprint(u'audio_langs     = %s' % u' '.join(l.lang for l in self.config.audio_langs))
+        self.pprint(u'subtitle_format = %s' % self.config.subtitle_format)
+        self.pprint(u'subtitle_tracks = %s' % self.config.subtitle_tracks)
+        self.pprint(u'subtitle_black  = %s' % self.config.subtitle_black)
+        self.pprint(u'subtitle_langs  = %s' % u' '.join(l.lang for l in self.config.subtitle_langs))
 
-    def do_audio(self, arg):
-        u"""Gets/sets the audio mixdown
+    def do_audio_langs(self, arg):
+        u"""Sets the list of audio languages to rip.
 
-        Syntax: audio [mix]
+        Syntax: audio_langs lang1 lang2...
 
-        The 'audio' command can be used to query the current audio mixdown used
-        by the 'rip' command. If an argument is given it will become the new
-        audio mixdown.
+        The 'audio_langs' command sets the list of languages for which audio
+        tracks will be extracted and converted. Languages are specified as
+        lowercase 3-character ISO639 codes. For example:
 
-        The valid mixes are 'mono', 'stereo', 'dpl1', and 'dpl2' with the
-        latter two indicating Dolby Pro Logic I and II respectively. AC3 or DTS
-        pass-thru cannot be configured at this time. For example:
-
-        tvr> audio stereo
-        tvr> audio dpl2
+        tvr> audio_langs eng jpn
+        tvr> audio_langs eng
         """
-        if arg:
-            try:
-                arg = {
-                    u'mono':     u'mono',
-                    u'm':        u'mono',
-                    u'1':        u'mono',
-                    u'stereo':   u'stereo',
-                    u's':        u'stereo',
-                    u'2':        u'stereo',
-                    u'dpl1':     u'dpl1',
-                    u'dpl2':     u'dpl2',
-                    u'surround': u'dpl2',
-                    u'prologic': u'dpl2',
-                }[arg.strip().lower()]
-            except KeyError:
-                raise CmdSyntaxError(u'Invalid audio mix %s' % arg)
-            self.config.audio_mix = arg
-            self.session.commit()
-        else:
-            self.pprint(u'Audio mix: %s (%s)' % (
-                self.config.audio_mix,
-                {
-                    u'mono':   u'1 channel',
-                    u'stereo': u'2 channel',
-                    u'dpl1':   u'Dolby Pro Logic I',
-                    u'dpl2':   u'Dolby Pro Logic II',
-                }[self.config.audio_mix]
-            ))
+        arg = arg.lower().split(u' ')
+        new_langs = set(arg)
+        for lang in self.config.audio_langs:
+            if lang.lang in new_langs:
+                new_langs.remove(lang.lang)
+            else:
+                self.session.delete(lang)
+        for lang in new_langs:
+            self.session.add(AudioLanguage(lang))
+        self.session.commit()
 
-    def do_subtitles(self, arg):
-        u"""Gets/sets the subtitle extraction mode
+    def do_audio_mix(self, arg):
+        u"""Sets the audio mixdown
 
-        Syntax: subtitles [format]
+        Syntax: audio_mix <mix-value>
 
-        The 'subtitles' command can be used to query the current subtitles
-        extraction mode used by the 'rip' command. If an argument is given it
-        will become the new subtitles extract mode.
+        The 'audio_mix' command sets the audio mixdown used by the 'rip'
+        command.  The valid mixes are 'mono', 'stereo', 'dpl1', and 'dpl2' with
+        the latter two indicating Dolby Pro Logic I and II respectively. AC3 or
+        DTS pass-thru cannot be configured at this time. For example:
 
-        The valid formats are 'none' indicating that subtitles should not be
-        extracted at all, 'vobsub' which causes subtitles to be extracted as
-        timed image overlays, and 'subrip' which causes subtitles to be
-        extracted and converted to a text-based subtitle format via OCR. For
+        tvr> audio_mix stereo
+        tvr> audio_mix dpl2
+        """
+        try:
+            arg = {
+                u'mono':     u'mono',
+                u'm':        u'mono',
+                u'1':        u'mono',
+                u'stereo':   u'stereo',
+                u's':        u'stereo',
+                u'2':        u'stereo',
+                u'dpl1':     u'dpl1',
+                u'dpl2':     u'dpl2',
+                u'surround': u'dpl2',
+                u'prologic': u'dpl2',
+            }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError(u'Invalid audio mix %s' % arg)
+        self.config.audio_mix = arg
+        self.session.commit()
+
+    def do_audio_tracks(self, arg):
+        u"""Sets which audio tracks to extract
+
+        Syntax: audio_tracks <first|all>
+
+        The 'audio_tracks' command specifies whether, of the audio tracks which
+        match the specified languages (see the 'audio_langs' command), only the
+        first matching track should be extracted, or all matching tracks.  For
         example:
 
-        tvr> subtitles subrip
-        tvr> subtitles vobsub
-        tvr> subtitles none
+        tvr> audio_tracks first
+        tvr> audio_tracks all
         """
-        if arg:
-            try:
-                arg = {
-                    u'off':    u'none',
-                    u'none':   u'none',
-                    u'vob':    u'vobsub',
-                    u'vobsub': u'vobsub',
-                    u'srt':    u'subrip',
-                    u'subrip': u'subrip',
-                }[arg.strip().lower()]
-            except KeyError:
-                raise CmdSyntaxError(u'Invalid subtitle extraction mode %s' % arg)
-            self.config.subtitle_format = arg
-            self.session.commit()
-        else:
-            self.pprint(u'Subtitle extraction mode: %s (%s)' % (
-                self.config.subtitle_format,
-                {
-                    u'none':   u'no subtitles',
-                    u'vobsub': u'image-based',
-                    u'subrip': u'text-based',
-                }[self.config.subtitle_format]
-            ))
+        try:
+            arg = {
+                u'first': u'first',
+                u'1':     u'first',
+                u'all':   u'all',
+                u'*':     u'all',
+            }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError(u'Invalid audio track selection %s' % arg)
+        self.config.audio_tracks = arg
+        self.session.commit()
 
-    def do_subblack(self, arg):
-        u"""Gets/sets the subtitle black color
+    def do_subtitle_langs(self, arg):
+        u"""Sets the list of subtitle languages to rip.
 
-        Syntax: subblack [number]
+        Syntax: subtitle_langs lang1 lang2...
 
-        The 'subblack' command specifies which of the four colors in the
+        The 'subtitle_langs' command sets the list of languages for which
+        subtitle tracks will be extracted and converted. Languages are
+        specified as lowercase 3-character ISO639 codes. For example:
+
+        tvr> subtitle_langs eng jpn
+        tvr> subtitle_langs eng
+        """
+        arg = arg.lower().split(u' ')
+        new_langs = set(arg)
+        for lang in self.config.subtitle_langs:
+            if lang.lang in new_langs:
+                new_langs.remove(lang.lang)
+            else:
+                self.session.delete(lang)
+        for lang in new_langs:
+            self.session.add(SubtitleLanguage(lang))
+        self.session.commit()
+
+    def do_subtitle_format(self, arg):
+        u"""Sets the subtitle extraction mode
+
+        Syntax: subtitle_format <format>
+
+        The 'subtitle_format' command sets the subtitles extraction mode used
+        by the 'rip' command. The valid formats are 'none' indicating that
+        subtitles should not be extracted at all, 'vobsub' which causes
+        subtitles to be extracted as timed image overlays, and 'subrip' which
+        causes subtitles to be extracted and converted to a text-based subtitle
+        format via OCR.  For example:
+
+        tvr> subtitle_format subrip
+        tvr> subtitle_format vobsub
+        tvr> subtitle_format none
+        """
+        try:
+            arg = {
+                u'off':    u'none',
+                u'none':   u'none',
+                u'vob':    u'vobsub',
+                u'vobsub': u'vobsub',
+                u'srt':    u'subrip',
+                u'subrip': u'subrip',
+            }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError(u'Invalid subtitle extraction mode %s' % arg)
+        self.config.subtitle_format = arg
+        self.session.commit()
+
+    def do_subtitle_black(self, arg):
+        u"""Sets the subtitle black color
+
+        Syntax: subtitle_black <number>
+
+        The 'subtitle_black' command specifies which of the four colors in the
         subtitle track is rendered as black. This is used when the subtitle
         extraction mode is 'subrip' and is only needed when the default (3)
         doesn't give good OCR results. In 'vobsub' mode the coloring specified
@@ -345,17 +357,39 @@ class RipCmd(Cmd):
         subtitles rendered in solid black on a white background with no
         outline.
         """
-        if arg:
-            try:
-                arg = int(arg.strip())
-                if not 1 <= arg <= 4:
-                    raise ValueError()
-            except ValueError:
-                raise CmdSyntaxError('Invalid color %s - must be a number from 1 to 4' % arg)
-            self.config.subtitle_black = arg
-            self.session.commit()
-        else:
-            self.pprint(u'Subtitle black color index is %d' % self.config.subtitle_black)
+        try:
+            arg = int(arg.strip())
+            if not 1 <= arg <= 4:
+                raise ValueError()
+        except ValueError:
+            raise CmdSyntaxError('Invalid color %s - must be a number from 1 to 4' % arg)
+        self.config.subtitle_black = arg
+        self.session.commit()
+
+    def do_subtitle_tracks(self, arg):
+        u"""Sets which subtitle tracks to extract
+
+        Syntax: subtitle_tracks <first|all>
+
+        The 'subtitle_tracks' command specifies whether, of the subtitle tracks
+        which match the specified languages (see the 'subtitle_langs' command),
+        only the first matching track should be extracted, or all matching
+        tracks. For example:
+
+        tvr> subtitle_tracks first
+        tvr> subtitle_tracks all
+        """
+        try:
+            arg = {
+                u'first': u'first',
+                u'1':     u'first',
+                u'all':   u'all',
+                u'*':     u'all',
+            }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError(u'Invalid subtitle track selection %s' % arg)
+        self.config.subtitle_tracks = arg
+        self.session.commit()
 
     def do_subresetdb(self, arg):
         u"""Resets the OCR database for the current program.
@@ -380,71 +414,56 @@ class RipCmd(Cmd):
             raise CmdError(u'No program has been set')
 
     def do_decomb(self, arg):
-        u"""Gets/sets the decomb option for video conversion.
+        u"""Sets the decomb option for video conversion.
 
-        Syntax: decomb [option]
+        Syntax: decomb <option>
 
-        The 'decomb' command without any arguments returns the current
-        decomb setting for the video converter. If an argument is given
-        it becomes the new decomb setting. Valid settings are currently
-        'off', 'on', and 'auto'. For example:
+        The 'decomb' command sets the decomb setting for the video converter.
+        Valid settings are currently 'off', 'on', and 'auto'. For example:
 
         tvr> decomb off
         tvr> decomb on
         """
-        if arg:
-            try:
-                arg = {
-                    u'off':   u'off',
-                    u'false': u'off',
-                    u'0':     u'off',
-                    u'on':    u'on',
-                    u'true':  u'on',
-                    u'1':     u'on',
-                    u'auto':  u'auto',
-                }[arg.strip().lower()]
-            except KeyError:
-                raise CmdSyntaxError(u'Invalid decomb option %s' % arg)
-            self.config.decomb = arg
-            self.session.commit()
-        else:
-            self.pprint(u'Decomb setting: %s' % self.config.decomb)
+        try:
+            arg = {
+                u'off':   u'off',
+                u'false': u'off',
+                u'0':     u'off',
+                u'on':    u'on',
+                u'true':  u'on',
+                u'1':     u'on',
+                u'auto':  u'auto',
+            }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError(u'Invalid decomb option %s' % arg)
+        self.config.decomb = arg
+        self.session.commit()
 
     def do_duration(self, arg):
-        u"""Gets/sets range of episode duration.
+        u"""Sets range of episode duration.
 
-        Syntax: duration [<min> <max>]
+        Syntax: duration <min>-<max>
 
-        The 'duration' command without any arguments returns the current
-        minimum and maximum length (in minutes) that an episode is expected to
-        be. With two arguments it is used to specify a new minimum and maximum.
-        This is used when scanning a source device for titles which are likely
-        to be episodes. For example:
+        The 'duration' command sets the minimum and maximum length (in minutes)
+        that an episode is expected to be.  This is used when scanning a source
+        device for titles which are likely to be episodes. For example:
 
-        tvr> duration 40 50
-        tvr> duration 25 35
+        tvr> duration 40-50
+        tvr> duration 25-35
         """
-        if arg:
-            try:
-                self.config.duration_min, self.config.duration_max = (
-                    timedelta(minutes=int(i))
-                    for i in arg.split(u' ')
-                )
-                self.session.commit()
-            except (TypeError, ValueError):
-                self.pprint(u'Invalid durations given: %s' % arg)
-        else:
-            self.pprint(u'Track between %d and %d minutes long will be '
-                u'treated as episodes' % (
-                    self.config.duration_min.seconds / 60,
-                    self.config.duration_max.seconds / 60
-                )
+        try:
+            self.config.duration_min, self.config.duration_max = (
+                timedelta(minutes=int(i))
+                for i in arg.split(u'-', 1)
             )
+            self.session.commit()
+        except (TypeError, ValueError):
+            self.pprint(u'Invalid durations given: %s' % arg)
 
     def do_episode(self, arg):
-        u"""Gets/sets the name of a single episode.
+        u"""Sets the name of a single episode.
 
-        Syntax: episode <number> [name]
+        Syntax: episode <number> <name>
 
         The 'episode' command can be used to display the name of the
         specified episode or, if two arguments are given, will redefine the
@@ -458,38 +477,26 @@ class RipCmd(Cmd):
                 raise CmdError(u'Episode number was not valid (%s specified)' % number)
             if number < 1:
                 raise CmdError(u'An episode number must be 1 or higher (%d specified)' % number)
-            if name:
-                if not self.config.season:
-                    raise CmdError(u'No season has been set')
-                try:
-                    e = self.session.query(Episode).\
-                        filter(Episode.season==self.config.season).\
-                        filter(Episode.number==number).one()
-                except sa.orm.exc.NoResultFound:
-                    e = Episode(self.config.season, number, name)
-                    self.pprint(u'Added episode %d of season %d of '
-                        u'program %s' % (e.number, e.season.number, e.season.program.name))
-                else:
-                    e.name = name
-                    self.pprint(u'Renamed episode %d of season %d of '
-                        u'program %s' % (e.number, e.season.number, e.season.program.name))
-                self.session.commit()
+            if not self.config.season:
+                raise CmdError(u'No season has been set')
+            try:
+                e = self.session.query(Episode).\
+                    filter(Episode.season==self.config.season).\
+                    filter(Episode.number==number).one()
+            except sa.orm.exc.NoResultFound:
+                e = Episode(self.config.season, number, name)
+                self.pprint(u'Added episode %d of season %d of '
+                    u'program %s' % (e.number, e.season.number, e.season.program.name))
             else:
-                try:
-                    e = self.session.query(Episode).\
-                            filter(Episode.season==self.config.season).\
-                            filter(Episode.number==number).one()
-                except sa.orm.exc.NoResultFound:
-                    raise CmdError(u'Episode %d of season %d of program %s '
-                        u'does not exist' % (number, self.config.season.number, self.config.program.name))
-                else:
-                    self.pprint(u'Episode %d of season %d of program %s '
-                        u'is named %s' % (e.number, e.season.number, e.season.program.name, e.name))
+                e.name = name
+                self.pprint(u'Renamed episode %d of season %d of '
+                    u'program %s' % (e.number, e.season.number, e.season.program.name))
+            self.session.commit()
         else:
             raise CmdError(u'You must specify an episode number')
 
     def do_episodes(self, arg):
-        u"""Gets/sets the episodes for the current season.
+        u"""Gets or sets the episodes for the current season.
 
         Syntax: episodes [number]
 
@@ -534,74 +541,63 @@ class RipCmd(Cmd):
         elif self.config.season:
             self.pprint(u'Episodes for season %d of program %s (* indicates ripped status):' % (self.config.season.number, self.config.program.name))
             for e in self.session.query(Episode).filter(Episode.season==self.config.season):
-                self.pprint(u'%2d%1s: %s' % (e.number, u'*' if e.disc_serial else u'', e.name))
+                self.pprint(u'%2d%1s: %s' % (e.number, u'*' if e.ripped else u'', e.name))
         else:
             raise CmdError(u'No season has been set')
 
     def do_season(self, arg):
-        u"""Gets/sets which season of the program the disc contains.
+        u"""Sets which season of the program the disc contains.
 
-        Syntax: season [number]
+        Syntax: season <number>
 
-        The 'season' command can be used to determine what season of the
-        program the disc is expected to contain episodes for. If an argument is
-        given it specifies the season the disc contains episodes for. This
-        number is used when constructing the filename of ripped episodes.
+        The 'season' command specifies the season the disc contains episodes
+        for. This number is used when constructing the filename of ripped
+        episodes.
 
         This command is also used to expand the episode database. If the number
         given does not exist, it will be entered into the database under the
         current program and you will be prompted for episode names.
         """
-        if arg:
-            if not self.config.program:
-                raise CmdError(u'You must specify a program first')
+        if not self.config.program:
+            raise CmdError(u'You must specify a program first')
+        try:
+            arg = int(arg)
+        except ValueError:
+            raise CmdSyntaxError(u'A season must be a valid number (%s specified)' % arg)
+        if arg < 1:
+            raise CmdSyntaxError(u'A season number must be 1 or higher (%d specified)' % arg)
+        if not self.config.season or self.config.season.number != arg:
             try:
-                arg = int(arg)
-            except ValueError:
-                raise CmdSyntaxError(u'A season must be a valid number (%s specified)' % arg)
-            if arg < 1:
-                raise CmdSyntaxError(u'A season number must be 1 or higher (%d specified)' % arg)
-            if not self.config.season or self.config.season.number != arg:
+                self.config.season = self.session.query(Season).\
+                    filter(Season.program==self.config.program).\
+                    filter(Season.number==arg).one()
+            except sa.orm.exc.NoResultFound:
+                self.session.begin(subtransactions=True)
                 try:
-                    self.config.season = self.session.query(Season).\
-                        filter(Season.program==self.config.program).\
-                        filter(Season.number==arg).one()
-                except sa.orm.exc.NoResultFound:
-                    self.session.begin(subtransactions=True)
+                    self.config.season = Season(self.config.program, arg)
+                    self.session.add(self.config.season)
                     try:
-                        self.config.season = Season(self.config.program, arg)
-                        self.session.add(self.config.season)
-                        try:
-                            count = int(self.input(u'Season %d of program %s '
-                                u'is new. Please enter the number of episodes '
-                                u'in this season (enter 0 if you do not wish '
-                                u'to define episodes at this time) [0-n] ' % (
-                                self.config.season.number, self.config.program.name)))
-                        except ValueError:
-                            while True:
-                                try:
-                                    count = int(self.input(u'Invalid input. '
-                                        u'Please enter a number [0-n] '))
-                                except ValueError:
-                                    pass
-                                else:
-                                    break
-                        if count != 0:
-                            self.onecmd(u'episodes %d' % count)
-                    except:
-                        self.session.rollback()
-                        raise
-                    else:
-                        self.session.commit()
+                        count = int(self.input(u'Season %d of program %s '
+                            u'is new. Please enter the number of episodes '
+                            u'in this season (enter 0 if you do not wish '
+                            u'to define episodes at this time) [0-n] ' % (
+                            self.config.season.number, self.config.program.name)))
+                    except ValueError:
+                        while True:
+                            try:
+                                count = int(self.input(u'Invalid input. '
+                                    u'Please enter a number [0-n] '))
+                            except ValueError:
+                                pass
+                            else:
+                                break
+                    if count != 0:
+                        self.onecmd(u'episodes %d' % count)
+                except:
+                    self.session.rollback()
+                    raise
                 else:
-                    self.onecmd(u'season')
-        elif self.config.season:
-            self.pprint(u'Season %d of program %s' % (
-                self.config.season.number,
-                self.config.season.program.name,
-            ))
-        else:
-            self.pprint(u'No season has been set')
+                    self.session.commit()
 
     def complete_season(self, text, line, start, finish):
         return [
@@ -635,62 +631,51 @@ class RipCmd(Cmd):
             raise CmdError(u'No program has been set')
 
     def do_program(self, arg):
-        u"""Gets/sets the name of the program.
+        u"""Sets the name of the program.
 
-        Syntax: program [name]
+        Syntax: program <name>
 
-        The 'program' command can be used to determine what program the disc is
-        expected to contain episodes for. If an argument is given it specifies
-        the program the disc contains episodes for. This is used when
-        constructing the filename of ripped episodes.
+        The 'program' command specifies the program the disc contains episodes
+        for. This is used when constructing the filename of ripped episodes.
 
         This command is also used to expand the episode database. If the name
         given does not exist, it will be entered into the database and you will
         be prompted for season and episode information.
         """
-        if arg:
-            if self.config.program is None or self.config.program.name != arg:
+        if self.config.program is None or self.config.program.name != arg:
+            try:
+                self.config.program = self.session.query(Program).\
+                    filter(Program.name==arg).one()
+            except sa.orm.exc.NoResultFound:
+                self.session.begin(subtransactions=True)
                 try:
-                    self.config.program = self.session.query(Program).\
-                        filter(Program.name==arg).one()
-                except sa.orm.exc.NoResultFound:
-                    self.session.begin(subtransactions=True)
+                    self.config.program = Program(arg)
+                    self.session.add(self.config.program)
                     try:
-                        self.config.program = Program(arg)
-                        self.session.add(self.config.program)
-                        try:
-                            count = int(self.input(u'Program %s is new. How '
-                                u'many seasons exist (enter 0 if you do not '
-                                u'wish to define seasons and episodes at this '
-                                u'time)? [0-n] ' % self.config.program.name))
-                        except ValueError:
-                            while True:
-                                try:
-                                    count = int(self.input(u'Invalid input. '
-                                        u'Please enter a number [0-n] '))
-                                except ValueError:
-                                    pass
-                                else:
-                                    break
-                        for number in range(1, count + 1):
-                            self.onecmd(u'season %d' % number)
-                    except:
-                        self.session.rollback()
-                        raise
-                    else:
-                        self.session.commit()
+                        count = int(self.input(u'Program %s is new. How '
+                            u'many seasons exist (enter 0 if you do not '
+                            u'wish to define seasons and episodes at this '
+                            u'time)? [0-n] ' % self.config.program.name))
+                    except ValueError:
+                        while True:
+                            try:
+                                count = int(self.input(u'Invalid input. '
+                                    u'Please enter a number [0-n] '))
+                            except ValueError:
+                                pass
+                            else:
+                                break
+                    for number in range(1, count + 1):
+                        self.onecmd(u'season %d' % number)
+                except:
+                    self.session.rollback()
+                    raise
                 else:
-                    self.config.season = self.session.query(Season).\
-                        filter(Season.program==self.config.program).\
-                        order_by(Season.number).first()
-                    if self.config.season is None:
-                        self.onecmd(u'program')
-                    else:
-                        self.onecmd(u'season')
-        elif self.config.program:
-            self.pprint(u'Program %s' % self.config.program.name)
-        else:
-            self.pprint(u'No program has been set')
+                    self.session.commit()
+            else:
+                self.config.season = self.session.query(Season).\
+                    filter(Season.program==self.config.program).\
+                    order_by(Season.number).first()
 
     program_re = re.compile(ur'^program\s+')
     def complete_program(self, text, line, start, finish):
@@ -739,49 +724,50 @@ class RipCmd(Cmd):
                 unripped = [e for e in self.config.season.episodes if not e.disc_serial]
             else:
                 unripped = []
+            self.map = {}
             self.disc = Disc()
             self.disc.scan(self.config.source)
             self.pprint(u'Disc serial: %s' % self.disc.serial)
             mapped_one = False
             for title in self.disc.titles:
-                if self.config.duration_min <= title.duration <= self.config.duration_max:
-                    self.pprint(u'Title %d is a potential episode (duration: %02d:%02d:%02d)' % (
-                        title.number,
-                        title.duration.seconds / 3600,
-                        title.duration.seconds / 60 % 60,
-                        title.duration.seconds % 60
+                self.pprint(u'Title %d (duration: %s)' % (
+                    title.number,
+                    title.duration,
+                ))
+                self.pprint(u'  %d chapters' % len(title.chapters))
+                for chapter in title.chapters:
+                    self.pprint(u'    %d: %s->%s (duration: %s)' % (
+                        chapter.number,
+                        chapter.start,
+                        chapter.finish,
+                        chapter.duration,
                     ))
-                    self.pprint(u'  %d chapters' % len(title.chapters))
-                    for chapter in title.chapters:
-                        self.pprint(u'    %d: %s->%s' % (
-                            chapter.number,
-                            chapter.start,
-                            chapter.finish
-                        ))
-                    self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
-                    for track in title.audio_tracks:
-                        suffix = u''
-                        if track.preferred and self.config.in_audio_langs(track.language):
-                            suffix = u'[selected]'
-                        self.pprint(u'    %d: %s, %s %s %s %s' % (
-                            track.number,
-                            track.language,
-                            track.name,
-                            track.encoding,
-                            track.channel_mix,
-                            suffix
-                        ))
-                    self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
-                    for track in title.subtitle_tracks:
-                        suffix = u''
-                        if track.preferred and self.config.in_subtitle_langs(track.language):
-                            suffix = u'[selected]'
-                        self.pprint(u'    %d: %s, %s %s' % (
-                            track.number,
-                            track.language,
-                            track.name,
-                            suffix
-                        ))
+                self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
+                for track in title.audio_tracks:
+                    suffix = u''
+                    if track.preferred and self.config.in_audio_langs(track.language):
+                        suffix = u'[preferred]'
+                    self.pprint(u'    %d: %s, %s %s %s %s' % (
+                        track.number,
+                        track.language,
+                        track.name,
+                        track.encoding,
+                        track.channel_mix,
+                        suffix
+                    ))
+                self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
+                for track in title.subtitle_tracks:
+                    suffix = u''
+                    if track.preferred and self.config.in_subtitle_langs(track.language):
+                        suffix = u'[preferred]'
+                    self.pprint(u'    %d: %s, %s %s' % (
+                        track.number,
+                        track.language,
+                        track.name,
+                        suffix
+                    ))
+            for title in self.disc.titles:
+                if self.config.duration_min <= title.duration <= self.config.duration_max:
                     # Attempt to map the title to an episode. If it's been
                     # previously ripped, perform a mapping based on the
                     # recorded serial number and title. Otherwise pick the
@@ -794,21 +780,24 @@ class RipCmd(Cmd):
                     for episode in episodes:
                         no_matches = False
                         if episode.start_chapter is not None:
-                            self.do_map(u'%d.%d-%d %d' % (title.number, episode.start_chapter, episode.end_chapter, episode.number))
+                            self.do_map(u'%d %d.%d-%d' % (
+                                episode.number,
+                                title.number,
+                                episode.start_chapter,
+                                episode.end_chapter,
+                            ))
                             mapped_one = True
                         else:
-                            self.do_map(u'%d %d' % (title.number, episode.number))
+                            self.do_map(u'%d %d' % (episode.number, title.number))
                             mapped_one = True
                             break
                     if no_matches and unripped:
-                        self.do_map(u'%d %d' % (title.number, unripped.pop(0).number))
+                        self.do_map(u'%d %d' % (unripped.pop(0).number, title.number))
                         mapped_one = True
                 else:
-                    self.pprint(u'Title %d is not an episode (duration: %02d:%02d:%02d)' % (
+                    self.pprint(u'Title %d is not an episode (duration: %s)' % (
                         title.number,
-                        title.duration.seconds / 3600,
-                        title.duration.seconds / 60 % 60,
-                        title.duration.seconds % 60
+                        title.duration,
                     ))
             if not mapped_one and self.disc.titles:
                 self.pprint(u'Attempting to map chapters of longest title to episodes')
@@ -818,11 +807,10 @@ class RipCmd(Cmd):
                 # delimiting the episodes. Firstly, find the longest title...
                 for title in reversed(sorted(self.disc.titles, key=attrgetter('duration'))):
                     break
-                self.pprint(u'Longest title is %d (duration: %02d:%02d:%02d)' % (
+                self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
                     title.number,
-                    title.duration.seconds / 3600,
-                    title.duration.seconds / 60 % 60,
-                    title.duration.seconds % 60
+                    title.duration,
+                    len(title.chapters),
                 ))
                 # Now loop over the chapters of the longest title, attempting
                 # to build up consecutive runs of chapters with a duration
@@ -858,19 +846,19 @@ class RipCmd(Cmd):
                 # exactly as long as title.chapters so zip 'em together and
                 # group the result to map start and end chapters easily
                 if episode_map:
-                    for episode, chapters in groupby(izip(episode_map, title.chapters), key=lambda e, c: e):
-                        chapters = list(chapters)
-                        self.do_map(u'%d.%d-%d %d' % (
+                    for episode, chapters in groupby(izip(episode_map, title.chapters), key=itemgetter(0)):
+                        chapters = [c for (e, c) in chapters]
+                        self.do_map(u'%d %d.%d-%d' % (
+                            episode.number,
                             chapters[0].title.number,
                             chapters[0].number,
                             chapters[-1].number, 
-                            episode.number
                         ))
 
     def do_map(self, arg):
         u"""Maps titles or chapter ranges to episodes.
 
-        Syntax: map [<title>[.<start>-<end>] <episode>]
+        Syntax: map [<episode> <title>[.<start>-<end>]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
@@ -878,7 +866,7 @@ class RipCmd(Cmd):
 
         tvr> map 3 1
         tvr> map 7 4
-        tvr> map 2.1-12 5
+        tvr> map 5 2.1-12
 
         The scan command can be used to perform auto-mapping (see its help page
         for more information). Use the map command with no arguments to see the
@@ -894,7 +882,7 @@ class RipCmd(Cmd):
             raise CmdError(u'No season has been set')
         elif arg:
             try:
-                title, episode = arg.split(u' ')
+                episode, title = arg.split(u' ')
             except ValueError:
                 raise CmdSyntaxError(u'You must specify two arguments')
             if u'.' in title:
@@ -931,33 +919,42 @@ class RipCmd(Cmd):
             except sa.orm.exc.NoResultFound:
                 raise CmdError(u'There is no episode %d in the current season' % episode)
             if chapter_start:
-                self.pprint(u'Mapping chapters %d-%d of title %d to episode %d, "%s"' % (
+                self.pprint(u'Mapping chapters %d-%d (duration %s) of title %d to episode %d, "%s"' % (
                     chapter_start.number,
                     chapter_end.number,
+                    sum(
+                        [c.duration for c in title.chapters if chapter_start.number <= c.number <= chapter_end.number],
+                        timedelta()
+                    ),
                     title.number,
                     episode.number,
                     episode.name
                 ))
+                self.map[episode] = (chapter_start, chapter_end)
             else:
-                self.pprint(u'Mapping title %d to episode %d, "%s"' % (
+                self.pprint(u'Mapping title %d (duration %s) to episode %d, "%s"' % (
                     title.number,
+                    title.duration,
                     episode.number,
                     episode.name
                 ))
-                title.episode = episode
+                self.map[episode] = title
         else:
-            for title in self.disc.titles:
-                if title.episode and title.episode.disc_serial:
-                    self.pprint(u'Title %d is ripped episode %d, "%s"' % (title.number, title.episode.number, title.episode.name))
-                elif title.episode:
-                    self.pprint(u'Title %d is episode %d, "%s"' % (title.number, title.episode.number, title.episode.name))
+            for episode, mapping in self.map.iteritems():
+                if isinstance(mapping, Title):
+                    mapping = '%d' % mapping.number
                 else:
-                    self.pprint(u'Title %d is not mapped to an episode' % title.number)
+                    chapter_start, chapter_end = mapping
+                    mapping = '%d.%d-%d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
+                if episode.ripped:
+                    self.pprint(u'Title %s is ripped episode %d, "%s"' % (mapping, episode.number, episode.name))
+                else:
+                    self.pprint(u'Title %s is episode %d, "%s"' % (mapping, episode.number, episode.name))
 
     def do_unmap(self, arg):
-        u"""Removes a title or chapter range to episode mapping
+        u"""Removes an episode mapping.
 
-        Syntax: unmap <title>
+        Syntax: unmap <episode>
 
         The 'unmap' command is used to remove a title to episode mapping. For
         example, if the auto-mapping when scanning a disc makes an error, you
@@ -976,14 +973,11 @@ class RipCmd(Cmd):
             except ValueError:
                 raise CmdSyntaxError(u'You must specify an integer title number')
             try:
-                title = [t for t in self.disc.titles if t.number==arg][0]
+                episode = [e for e in self.config.season.episodes if e.number==arg][0]
             except IndexError:
-                raise CmdError(u'Title %d does not exist on the scanned disc' % arg)
-            if not title.episode:
-                raise CmdError(u'Title %d has no mapped episode' % title.number)
-            else:
-                self.pprint(u'Removing mapping for title %d' % title.number)
-                title.episode = None
+                raise CmdError(u'Episode %d does not exist within the selected season' % arg)
+            self.pprint(u'Removing mapping for episode %d, %s' % (episode.number, episode.name))
+            del self.map[episode]
 
     def do_rip(self, arg):
         u"""Starts the ripping and transcoding process.
@@ -1004,14 +998,23 @@ class RipCmd(Cmd):
             raise CmdError(u'No titles have been mapped to episodes')
         elif arg.strip():
             raise CmdSyntaxError(u'You must not specify any arguments')
-        failed = []
-        for title in self.disc.titles:
-            if title.episode and not title.episode.disc_serial:
+        for episode, mapping in self.map.iteritems():
+            if not episode.ripped:
+                if isinstance(mapping, Title):
+                    chapter_start = chapter_end = None
+                    title = mapping
+                else:
+                    chapter_start, chapter_end = mapping
+                    assert chapter_start.title is chapter_end.title
+                    title = chapter_start.title
                 self.pprint(u'Ripping episode %d, "%s"' % (
-                    title.episode.number, title.episode.name))
-                title.rip(self.config)
-                title.episode.disc_serial = self.disc.serial
-                title.episode.disc_title = title.number
+                    episode.number, episode.name))
+                self.disc.rip(self.config, episode, title, [], [], chapter_start, chapter_end)
+                episode.disc_serial = self.disc.serial
+                episode.disc_title = title.number
+                if chapter_start:
+                    episode.start_chapter = chapter_start.number
+                    episode.end_chapter = chapter_end.number
                 self.session.commit()
 
     def do_unrip(self, arg):
@@ -1049,28 +1052,21 @@ class RipCmd(Cmd):
             self.session.commit()
 
     def do_source(self, arg):
-        u"""Gets/sets the source device.
+        u"""Sets the source device.
 
-        Syntax: source [device]
+        Syntax: source <device>
 
-        The 'source' command can be used to query the current source device
-        to read when using the 'scan' and 'rip' commands. If an argument
-        is given it will become the new source device. The home directory
+        The 'source' command sets a new source device. The home directory
         shorthand (~) may be used in the specified path. For example:
 
         tvr> source /dev/dvd
         tvr> source /dev/sr0
         """
-        if arg:
-            arg = os.path.expanduser(arg)
-            if not os.path.exists(arg):
-                self.pprint(u'Path %s does not exist' % arg)
-                return
-            self.config.source = arg
-        elif not self.config.source:
-            self.pprint(u'No source has been specified')
-        else:
-            self.pprint(u'Source device: %s' % self.config.source)
+        arg = os.path.expanduser(arg)
+        if not os.path.exists(arg):
+            self.pprint(u'Path %s does not exist' % arg)
+            return
+        self.config.source = arg
 
     def complete_path(self, text, line, start, finish):
         dir, base = os.path.split(line)
@@ -1085,91 +1081,74 @@ class RipCmd(Cmd):
         return self.complete_path(text, self.source_re.sub('', line), start, finish)
 
     def do_target(self, arg):
-        u"""Gets/sets the target path.
+        u"""Sets the target path.
 
-        Syntax: target [path]
+        Syntax: target <path>
 
-        The 'target' command can be used to query the current path into which
-        ripped and converted episodes will be written. If an argument is given
-        it will become the new target path. The home-directory shorthand (~)
-        may be used in the specified path. For example:
+        The 'target' command sets a new target path. The home-directory
+        shorthand (~) may be used in the specified path. For example:
 
         tvr> target ~/Videos
         """
-        if arg:
-            arg = os.path.expanduser(arg)
-            if not os.path.exists(arg):
-                self.pprint(u'Path %s does not exist' % arg)
-                return
-            if not os.path.isdir(arg):
-                self.pprint(u'Path %s is not a directory' % arg)
-                return
-            self.config.target = arg
-        elif not self.config.target:
-            self.pprint(u'No target has been specified')
-        else:
-            self.pprint(u'Target path: %s' % self.config.target)
+        arg = os.path.expanduser(arg)
+        if not os.path.exists(arg):
+            self.pprint(u'Path %s does not exist' % arg)
+            return
+        if not os.path.isdir(arg):
+            self.pprint(u'Path %s is not a directory' % arg)
+            return
+        self.config.target = arg
 
     target_re = re.compile(ur'^target\s+')
     def complete_target(self, text, line, start, finish):
         return self.complete_path(text, self.target_re.sub('', line), start, finish)
 
     def do_temp(self, arg):
-        u"""Gets/sets the temporary files path.
+        u"""Sets the temporary files path.
 
-        Syntax: temp [path]
+        Syntax: temp <path>
 
-        The 'temp' command can be used to query the current path which will
-        be used for temporary storage (actually a temporary directory under
-        this path is used). The home-directory shorthand (~) may be used, but
-        be aware that no spaces are permitted in the path name. For example:
+        The 'temp' command sets the path which will be used for temporary
+        storage (actually a temporary directory under this path is used). The
+        home-directory shorthand (~) may be used, but be aware that no spaces
+        are permitted in the path name. For example:
 
         tvr> temp ~/tmp
         tvr> temp /var/tmp
         """
-        if arg:
-            arg = os.path.expanduser(arg)
-            if not os.path.exists(arg):
-                self.pprint(u'Path %s does not exist' % arg)
-                return
-            if not os.path.isdir(arg):
-                self.pprint(u'Path %s is not a directory' % arg)
-                return
-            self.config.temp = arg
-        elif not self.config.temp:
-            self.pprint(u'No temporary path has been specified')
-        else:
-            self.pprint(u'Temporary path: %s' % self.config.temp)
+        arg = os.path.expanduser(arg)
+        if not os.path.exists(arg):
+            self.pprint(u'Path %s does not exist' % arg)
+            return
+        if not os.path.isdir(arg):
+            self.pprint(u'Path %s is not a directory' % arg)
+            return
+        self.config.temp = arg
 
     temp_re = re.compile(ur'^temp\s+')
     def complete_temp(self, text, line, start, finish):
         return self.complete_path(text, self.temp_re.sub('', line), start, finish)
 
     def do_template(self, arg):
-        u"""Gets/sets the template used for filenames.
+        u"""Sets the template used for filenames.
 
-        Syntax: template [format-string]
+        Syntax: template <string>
 
-        The 'template' command can be used to query the string formatting
-        template which generates the filenames of ripped and converted
-        episodes. If an argument is given it will be used as the new filename
-        template. The template is specified as a Python format string including
-        named subsitution markers (program, season, episode, and name). The
-        format-string is specified without quotation marks.
+        The 'template' command sets the new filename template. The template is
+        specified as a Python format string including named subsitution markers
+        (program, season, episode, and name). The format-string is specified
+        without quotation marks.
         """
-        if arg:
-            try:
-                testname = arg % {
-                    'program': 'Program Name',
-                    'season':  1,
-                    'episode': 10,
-                    'name':    'Foo Bar',
-                }
-            except KeyError, e:
-                raise CmdError('The new template contains an invalid substitution key: %s' % e)
-            self.config.template = arg
-        else:
-            self.pprint(u'Filename template: %s' % self.config.template)
+        try:
+            testname = arg % {
+                'program': 'Program Name',
+                'season':  1,
+                'episode': 10,
+                'name':    'Foo Bar',
+            }
+        except KeyError, e:
+            raise CmdError('The new template contains an invalid substitution key: %s' % e)
+        self.config.template = arg
 
     do_EOF = do_exit
 

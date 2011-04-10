@@ -134,6 +134,84 @@ class Disc(object):
                 if group:
                     group[0].preferred = True
 
+    def rip(self, config, episode, title, audio_tracks, subtitle_tracks, start_chapter=None, end_chapter=None):
+        if not isinstance(config, Configuration):
+            raise ValueError(u'config must a Configuration instance')
+        filename = config.template % {
+            u'program': config.program.name,
+            u'season':  config.season.number,
+            u'episode': episode.number,
+            u'name':    episode.name,
+        }
+        # Convert the subtitle track(s) if required
+        if config.subtitle_format == u'subrip':
+            for track in subtitle_tracks:
+                assert track.title is title
+                track.convert(config, filename)
+        # Convert the video track
+        audio_defs = [
+            (track.number, config.audio_mix, track.name)
+            for track in audio_tracks
+        ]
+        subtitle_defs = [
+            (track.number, track.name)
+            for track in subtitle_tracks
+        ]
+        cmdline = [
+            HANDBRAKE,
+            u'-i', config.source,
+            u'-t', unicode(title.number),
+            u'-o', os.path.join(config.target, filename),
+            u'-f', u'mp4',          # output an MP4 container
+            u'-O',                  # optimize for streaming
+            u'-m',                  # include chapter markers
+            u'--strict-anamorphic', # store pixel aspect ratio
+            u'-e', u'x264',         # use x264 for encoding
+            u'-q', u'23',           # quality 23
+            u'-x', u'b-adapt=2:rc-lookahead=50', # advanced encoding options (mostly defaults from High Profile)
+            u'-a', u','.join(unicode(num) for (num, _, _)  in audio_defs),
+            u'-6', u','.join(mix          for (_, mix, _)  in audio_defs),
+            u'-A', u','.join(name         for (_, _, name) in audio_defs),
+        ]
+        if start_chapter:
+            cmdline.append(u'-c')
+            if end_chapter:
+                cmdline.append(u'%d-%d' % (start_chapter.number, end_chapter.number))
+            else:
+                cmdline.append(unicode(start_chapter.number))
+        if config.subtitle_format == u'vobsub':
+            cmdline.append(u'-s')
+            cmdline.append(u','.join(unicode(num) for (num, _) in subtitle_defs))
+        if config.decomb == u'on':
+            cmdline.append(u'-d')
+            cmdline.append(u'fast')
+        elif config.decomb == u'auto':
+            cmdline.append(u'-5')
+        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+        p.communicate()
+        if p.returncode != 0:
+            raise ValueError(u'Handbrake exited with non-zero return code %d' % p.returncode)
+        # Tag the resulting file
+        cmdline = [
+            ATOMIC_PARSLEY,
+            os.path.join(config.target, filename),
+            u'--overWrite',
+            u'--stik', u'TV Show',
+            # set tags for TV shows
+            u'--TVShowName',   episode.season.program.name,
+            u'--TVSeasonNum',  unicode(episode.season.number),
+            u'--TVEpisodeNum', unicode(episode.number),
+            u'--TVEpisode',    episode.name,
+            # also set tags for music files as these have wider support
+            u'--artist',       episode.season.program.name,
+            u'--album',        u'Season %d' % episode.season.number,
+            u'--tracknum',     unicode(episode.number),
+            u'--title',        episode.name
+        ]
+        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+        p.communicate()
+        if p.returncode != 0:
+            raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
 
 class Title(object):
     u"""Represents a title on a DVD"""
@@ -152,88 +230,6 @@ class Title(object):
         self.audio_tracks = []
         self.subtitle_tracks = []
         self.interlaced = False
-        self.episode = None
-
-    def rip(self, config):
-        if not self.episode:
-            raise ValueError(u'No episode mapping for title %d' % self.number)
-        if not isinstance(config, Configuration):
-            raise ValueError(u'config must a Configuration instance')
-        filename = config.template % {
-            u'program': config.program.name,
-            u'season':  config.season.number,
-            u'episode': self.episode.number,
-            u'name':    self.episode.name,
-        }
-        # Convert the subtitle track(s) if required
-        if config.subtitle_format == u'subrip':
-            for track in self.subtitle_tracks:
-                if track.preferred and config.in_subtitle_langs(track.language):
-                    track.convert(config, filename)
-        # Convert the video
-        self.convert(config, filename)
-
-    def convert(self, config, filename):
-        # Construct and execute the handbrake command line
-        audio_defs = [
-            (track.number, config.audio_mix, track.name)
-            for track in self.audio_tracks
-            if track.preferred and config.in_audio_langs(track.language)
-        ]
-        subtitle_defs = [
-            (track.number, track.name)
-            for track in self.subtitle_tracks
-            if track.preferred and config.in_subtitle_langs(track.language)
-        ]
-        cmdline = [
-            HANDBRAKE,
-            u'-i', config.source,
-            u'-t', unicode(self.number),
-            u'-o', os.path.join(config.target, filename),
-            u'-f', u'mp4',          # output an MP4 container
-            u'-O',                  # optimize for streaming
-            u'-m',                  # include chapter markers
-            u'--strict-anamorphic', # store pixel aspect ratio
-            u'-e', u'x264',         # use x264 for encoding
-            u'-q', u'23',           # quality 23
-            u'-x', u'b-adapt=2:rc-lookahead=50', # advanced encoding options (mostly defaults from High Profile)
-            u'-a', u','.join(unicode(num) for (num, _, _)  in audio_defs),
-            u'-6', u','.join(mix          for (_, mix, _)  in audio_defs),
-            u'-A', u','.join(name         for (_, _, name) in audio_defs),
-        ]
-        if config.subtitle_format == u'vobsub':
-            cmdline.append(u'-s')
-            cmdline.append(u','.join(unicode(num) for (num, _) in subtitle_defs))
-        if config.decomb == u'on':
-            cmdline.append(u'-d')
-            cmdline.append(u'fast')
-        elif config.decomb == u'auto':
-            cmdline.append(u'-5')
-        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-        p.communicate()
-        if p.returncode != 0:
-            raise ValueError(u'Handbrake exited with non-zero return code %d' % p.returncode)
-        # Construct and execute the atomic parsley command line
-        cmdline = [
-            ATOMIC_PARSLEY,
-            os.path.join(config.target, filename),
-            u'--overWrite',
-            u'--stik', u'TV Show',
-            # set tags for TV shows
-            u'--TVShowName',   self.episode.season.program.name,
-            u'--TVSeasonNum',  unicode(self.episode.season.number),
-            u'--TVEpisodeNum', unicode(self.episode.number),
-            u'--TVEpisode',    self.episode.name,
-            # also set tags for music files as these have wider support
-            u'--artist',       self.episode.season.program.name,
-            u'--album',        u'Season %d' % self.episode.season.number,
-            u'--tracknum',     unicode(self.episode.number),
-            u'--title',        self.episode.name
-        ]
-        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-        p.communicate()
-        if p.returncode != 0:
-            raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
 
     def __repr__(self):
         return u"<Title(%d)>" % self.number
@@ -248,19 +244,6 @@ class Chapter(object):
         self.title = title
         self.number = 0
         self.duration = timedelta(0)
-        self._episode = None
-
-    def _get_episode(self):
-        if self._episode is None:
-            return self.title.episode
-        else:
-            return self._episode
-
-    def _set_episode(self, value):
-        if value is not None and self.number > 1 and self.title.chapters[self.number - 2]._episode.number > value.number:
-            raise ValueError(u'Chapter %d has a later episode than %d' % (self.number - 1, value))
-        self._episode = value
-    episode = property(_get_episode, _set_episode)
 
     @property
     def start(self):

@@ -62,6 +62,10 @@ class Episode(object):
         self.start_chapter = start_chapter
         self.end_chapter = end_chapter
 
+    @property
+    def ripped(self):
+        return bool(self.disc_serial)
+
     def __repr__(self):
         return u"<Episode('%s - %dx%02d - %s')>" % (
             self.season.program.name,
@@ -110,7 +114,9 @@ class Configuration(object):
         self.season = None
         self.subtitle_format = u'none'
         self.subtitle_black = 3
+        self.subtitle_tracks = u'first'
         self.audio_mix = u'dpl2'
+        self.audio_tracks = u'first'
         self.decomb = u'off'
 
     def _get_duration_min(self):
@@ -182,11 +188,15 @@ def init_session(url=None, debug=False):
         sa.Column('subtitle_black', sa.Integer),
         sa.Column('audio_mix', sa.Text),
         sa.Column('decomb', sa.Text),
+        sa.Column('audio_tracks', sa.Text),
+        sa.Column('subtitle_tracks', sa.Text),
         sa.ForeignKeyConstraint(['program'], ['programs.program'],
             onupdate='cascade', ondelete='set null', name='program_fk'),
         sa.ForeignKeyConstraint(['program', 'season'], ['seasons.program', 'seasons.season'],
             onupdate='cascade', ondelete='set null', name='season_fk'),
         sa.CheckConstraint("decomb in ('off', 'on', 'auto')", name='decomb_ck'),
+        sa.CheckConstraint("audio_tracks in ('first', 'all')", name='audio_tracks_ck'),
+        sa.CheckConstraint("subtitle_tracks in ('first', 'all')", name='subtitle_tracks_ck'),
         sa.CheckConstraint('subtitle_black between 1 and 4', name='subtitle_black_ck')
     )
     config_audio_table = sa.Table('config_audio', metadata,
