@@ -114,9 +114,9 @@ class Configuration(object):
         self.season = None
         self.subtitle_format = u'none'
         self.subtitle_black = 3
-        self.subtitle_tracks = u'first'
+        self.subtitle_tracks = u'best'
         self.audio_mix = u'dpl2'
-        self.audio_tracks = u'first'
+        self.audio_tracks = u'best'
         self.decomb = u'off'
 
     def _get_duration_min(self):
@@ -195,8 +195,8 @@ def init_session(url=None, debug=False):
         sa.ForeignKeyConstraint(['program', 'season'], ['seasons.program', 'seasons.season'],
             onupdate='cascade', ondelete='set null', name='season_fk'),
         sa.CheckConstraint("decomb in ('off', 'on', 'auto')", name='decomb_ck'),
-        sa.CheckConstraint("audio_tracks in ('first', 'all')", name='audio_tracks_ck'),
-        sa.CheckConstraint("subtitle_tracks in ('first', 'all')", name='subtitle_tracks_ck'),
+        sa.CheckConstraint("audio_tracks in ('best', 'all')", name='audio_tracks_ck'),
+        sa.CheckConstraint("subtitle_tracks in ('best', 'all')", name='subtitle_tracks_ck'),
         sa.CheckConstraint('subtitle_black between 1 and 4', name='subtitle_black_ck')
     )
     config_audio_table = sa.Table('config_audio', metadata,

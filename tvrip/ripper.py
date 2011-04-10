@@ -120,7 +120,7 @@ class Disc(object):
                 track.language = self.match.group(u'language')
                 track.type = self.match.group(u'type')
         self.titles = sorted(self.titles, key=attrgetter(u'number'))
-        # Determine the preferred audio and subtitle tracks
+        # Determine the best audio and subtitle tracks
         for title in self.titles:
             for key, group in groupby(sorted(title.audio_tracks, key=attrgetter('name')), key=attrgetter('name')):
                 group = sorted(group, key=lambda track: (
@@ -128,11 +128,11 @@ class Disc(object):
                     AUDIO_ENC_ORDER.index(track.encoding)
                 ))
                 if group:
-                    group[0].preferred = True
+                    group[0].best = True
             for key, group in groupby(sorted(title.subtitle_tracks, key=attrgetter('name')), key=attrgetter('name')):
                 group = list(group)
                 if group:
-                    group[0].preferred = True
+                    group[0].best = True
 
     def rip(self, config, episode, title, audio_tracks, subtitle_tracks, start_chapter=None, end_chapter=None):
         if not isinstance(config, Configuration):
@@ -277,7 +277,7 @@ class AudioTrack(object):
         self.channel_mix = u''
         self.sample_rate = 0
         self.bit_rate = 0
-        self.preferred = False
+        self.best = False
 
     def __repr__(self):
         return u"<AudioTrack(%d, '%s')>" % (self.number, self.name)
@@ -294,7 +294,7 @@ class SubtitleTrack(object):
         self.name = u''
         self.language = u''
         self.type = u''
-        self.preferred = False
+        self.best = False
         self.log = u''
         self.corrections = SubtitleCorrections()
 
