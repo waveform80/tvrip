@@ -43,7 +43,7 @@ class RipCmd(Cmd):
             self.session.add(self.config)
             self.session.add(AudioLanguage(u'eng'))
             self.session.add(SubtitleLanguage(u'eng'))
-            self.session.add(ConfigPath(u'handbrake',     u'/usr/bin/HandbrakeCLI'))
+            self.session.add(ConfigPath(u'handbrake',     u'/usr/bin/HandBrakeCLI'))
             self.session.add(ConfigPath(u'atomicparsley', u'/usr/bin/AtomicParsley'))
             self.session.add(ConfigPath(u'tccat',         u'/usr/bin/tccat'))
             self.session.add(ConfigPath(u'tcextract',     u'/usr/bin/tcextract'))
@@ -237,19 +237,39 @@ class RipCmd(Cmd):
         if self.map:
             for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
                 if isinstance(mapping, Title):
-                    mapping = u'%.2d' % mapping.number
+                    index = u'%.2d' % mapping.number
                     duration = u'%s' % mapping.duration
                 else:
                     chapter_start, chapter_end = mapping
-                    mapping = u'%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
+                    index = u'%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
+                    duration = u'%s' % (chapter_end.finish - chapter_start.start)
                 self.pprint(u'%2stitle %s (%s) = episode %2d, "%s"' % (
                     u'*' if episode.ripped else u' ',
-                    mapping,
+                    index,
+                    duration,
                     episode.number,
                     episode.name
                 ))
         else:
             self.pprint(u'Episode map is currently empty')
+
+    def do_path(self, arg):
+        u"""Sets a path to an external utility.
+
+        Syntax: path <name> <value>
+
+        The 'path' command is used to alter the path of one of the external
+        utilities used by TVRip. Specify the name of the path (which you can find
+        from the 'config' command) and the new path to the utility. For example:
+
+        tvrip> path handbrake /usr/bin/HandBrakeCLI
+        tvrip> path atomicparsley /usr/bin/AtomicParsley
+        """
+        name, value = arg.split(u' ', 1)
+        try:
+            self.config.set_path(name, value)
+        except sa.orm.exc.NoResultFound:
+            raise CmdError(u"Path name '%s' is invalid, please see 'config' for valid options" % name)
 
     def do_audio_langs(self, arg):
         u"""Sets the list of audio languages to rip.
@@ -774,7 +794,7 @@ class RipCmd(Cmd):
             self.pprint(u'Scanning disc in %s' % self.config.source)
             self.map = {}
             self.disc = Disc()
-            self.disc.scan(self.config.source)
+            self.disc.scan(self.config)
             self.pprint(u'Disc serial: %s' % self.disc.serial)
             for title in self.disc.titles:
                 self.pprint(u'Title %d (duration: %s)' % (
