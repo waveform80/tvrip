@@ -4,15 +4,18 @@ import os
 import re
 import readline
 import sqlalchemy as sa
+import locale
 from itertools import izip, groupby
 from operator import attrgetter, itemgetter
 from cmd import Cmd
 from textwrap import TextWrapper
 from datetime import timedelta
-from tvrip.const import ENCODING
 from tvrip.termsize import terminal_size
 from tvrip.ripper import Disc, Title, Chapter
-from tvrip.database import init_session, Configuration, Program, Season, Episode, AudioLanguage, SubtitleLanguage
+from tvrip.database import init_session, Configuration, Program, Season, Episode, AudioLanguage, SubtitleLanguage, ConfigPath
+
+ENCODING = locale.getdefaultlocale()[1]
+
 
 class CmdError(Exception):
     u"""Base class for non-fatal Cmd errors"""
@@ -22,8 +25,9 @@ class CmdSyntaxError(CmdError):
 
 
 class RipCmd(Cmd):
+    u"""Implementation of the TVRip command line"""
     use_rawinput = True
-    prompt = u'tvr> '
+    prompt = u'tvrip> '
 
     def __init__(self, debug=False):
         Cmd.__init__(self)
@@ -39,6 +43,13 @@ class RipCmd(Cmd):
             self.session.add(self.config)
             self.session.add(AudioLanguage(u'eng'))
             self.session.add(SubtitleLanguage(u'eng'))
+            self.session.add(ConfigPath(u'handbrake',     u'/usr/bin/HandbrakeCLI'))
+            self.session.add(ConfigPath(u'atomicparsley', u'/usr/bin/AtomicParsley'))
+            self.session.add(ConfigPath(u'tccat',         u'/usr/bin/tccat'))
+            self.session.add(ConfigPath(u'tcextract',     u'/usr/bin/tcextract'))
+            self.session.add(ConfigPath(u'subtitle2pgm',  u'/usr/bin/subtitle2pgm'))
+            self.session.add(ConfigPath(u'gocr',          u'/usr/bin/gocr'))
+            self.session.add(ConfigPath(u'mencoder',      u'/usr/bin/mencoder'))
             self.session.commit()
 
     def _get_disc(self):
@@ -74,6 +85,8 @@ class RipCmd(Cmd):
     whitespace_re = re.compile(ur'\s+$')
     def wrap(self, s, newline=True, wrap=True, initial_indent=u'',
             subsequent_indent=u''):
+        """Utility routine for wrapping a paragraph of text to the width of the
+        terminal with optional indentation"""
         suffix = u''
         if newline:
             suffix = u'\n'
@@ -100,6 +113,7 @@ class RipCmd(Cmd):
 
     def pprint(self, s, newline=True, wrap=True,
             initial_indent=u'', subsequent_indent=u''):
+        """Utility routine for pretty-printing text to stdout"""
         s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
         if isinstance(s, unicode):
             s = s.encode(ENCODING)
@@ -111,7 +125,7 @@ class RipCmd(Cmd):
         for line in lines:
             if result:
                 if line:
-                    if line.startswith(u'tvr>'):
+                    if line.startswith(self.prompt):
                         if result[-1]:
                             result.append(line)
                         else:
@@ -138,12 +152,12 @@ class RipCmd(Cmd):
             extra_line = False
             paras = self.parse_docstring(getattr(self, u'do_%s' % arg).__doc__)
             for para in paras[1:]:
-                if para.startswith(u'tvr>'):
+                if para.startswith(self.prompt):
                     self.pprint('  ' + para, wrap=False)
                 else:
                     self.pprint(para)
                     self.pprint('')
-            if paras[-1].startswith(u'tvr>'):
+            if paras[-1].startswith(self.prompt):
                 self.pprint('')
         else:
             commands = [
@@ -188,35 +202,54 @@ class RipCmd(Cmd):
         The 'config' command simply outputs the current set of configuration
         options as set by the various other commands.
         """
-        self.pprint(u'source          = %s' % self.config.source)
-        self.pprint(u'target          = %s' % self.config.target)
-        self.pprint(u'temp            = %s' % self.config.temp)
-        self.pprint(u'duration        = %d-%d (mins)' % (self.config.duration_min.seconds / 60, self.config.duration_max.seconds / 60))
-        self.pprint(u'program         = %s' % (self.config.program.name if self.config.program else '<none set>'))
-        self.pprint(u'season          = %s' % (self.config.season.number if self.config.season else '<none set>'))
-        self.pprint(u'template        = %s' % self.config.template)
-        self.pprint(u'decomb          = %s' % self.config.decomb)
-        self.pprint(u'audio_mix       = %s' % self.config.audio_mix)
-        self.pprint(u'audio_tracks    = %s' % self.config.audio_tracks)
-        self.pprint(u'audio_langs     = %s' % u' '.join(l.lang for l in self.config.audio_langs))
-        self.pprint(u'subtitle_format = %s' % self.config.subtitle_format)
-        self.pprint(u'subtitle_tracks = %s' % self.config.subtitle_tracks)
-        self.pprint(u'subtitle_black  = %s' % self.config.subtitle_black)
-        self.pprint(u'subtitle_langs  = %s' % u' '.join(l.lang for l in self.config.subtitle_langs))
+        self.pprint(u'External Utility Paths:')
         self.pprint(u'')
-        self.pprint(u'Episode mapping (* indicates ripped):')
-        for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
-            if isinstance(mapping, Title):
-                mapping = '%.2d' % mapping.number
-            else:
-                chapter_start, chapter_end = mapping
-                mapping = '%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
-            self.pprint(u'%2stitle %s -> episode %2d, "%s"' % (
-                u'*' if episode.ripped else u' ',
-                mapping,
-                episode.number,
-                episode.name
-            ))
+        for path in self.config.paths:
+            self.pprint(u'%-16s = %s' % (path.name, path.path))
+        self.pprint(u'')
+        self.pprint(u'Ripping Configuration:')
+        self.pprint(u'')
+        self.pprint(u'source           = %s' % self.config.source)
+        self.pprint(u'target           = %s' % self.config.target)
+        self.pprint(u'temp             = %s' % self.config.temp)
+        self.pprint(u'duration         = %d-%d (mins)' % (self.config.duration_min.seconds / 60, self.config.duration_max.seconds / 60))
+        self.pprint(u'program          = %s' % (self.config.program.name if self.config.program else '<none set>'))
+        self.pprint(u'season           = %s' % (self.config.season.number if self.config.season else '<none set>'))
+        self.pprint(u'template         = %s' % self.config.template)
+        self.pprint(u'decomb           = %s' % self.config.decomb)
+        self.pprint(u'audio_mix        = %s' % self.config.audio_mix)
+        self.pprint(u'audio_tracks     = %s' % self.config.audio_tracks)
+        self.pprint(u'audio_langs      = %s' % u' '.join(l.lang for l in self.config.audio_langs))
+        self.pprint(u'subtitle_format  = %s' % self.config.subtitle_format)
+        self.pprint(u'subtitle_tracks  = %s' % self.config.subtitle_tracks)
+        self.pprint(u'subtitle_black   = %s' % self.config.subtitle_black)
+        self.pprint(u'subtitle_langs   = %s' % u' '.join(l.lang for l in self.config.subtitle_langs))
+        self.pprint(u'')
+        self.pprint(u'Current Source:')
+        self.pprint(u'')
+        if self.disc:
+            self.pprint(u'serial = %s' % self.disc.serial)
+        else:
+            self.pprint(u'None')
+        self.pprint(u'')
+        self.pprint(u'Episode Mapping (* indicates ripped):')
+        self.pprint(u'')
+        if self.map:
+            for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
+                if isinstance(mapping, Title):
+                    mapping = u'%.2d' % mapping.number
+                    duration = u'%s' % mapping.duration
+                else:
+                    chapter_start, chapter_end = mapping
+                    mapping = u'%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
+                self.pprint(u'%2stitle %s (%s) = episode %2d, "%s"' % (
+                    u'*' if episode.ripped else u' ',
+                    mapping,
+                    episode.number,
+                    episode.name
+                ))
+        else:
+            self.pprint(u'Episode map is currently empty')
 
     def do_audio_langs(self, arg):
         u"""Sets the list of audio languages to rip.
@@ -227,8 +260,8 @@ class RipCmd(Cmd):
         tracks will be extracted and converted. Languages are specified as
         lowercase 3-character ISO639 codes. For example:
 
-        tvr> audio_langs eng jpn
-        tvr> audio_langs eng
+        tvrip> audio_langs eng jpn
+        tvrip> audio_langs eng
         """
         arg = arg.lower().split(u' ')
         new_langs = set(arg)
@@ -251,8 +284,8 @@ class RipCmd(Cmd):
         the latter two indicating Dolby Pro Logic I and II respectively. AC3 or
         DTS pass-thru cannot be configured at this time. For example:
 
-        tvr> audio_mix stereo
-        tvr> audio_mix dpl2
+        tvrip> audio_mix stereo
+        tvrip> audio_mix dpl2
         """
         try:
             arg = {
@@ -281,8 +314,8 @@ class RipCmd(Cmd):
         match the specified languages (see the 'audio_langs' command), only the
         best track should be extracted, or all matching tracks. For example:
 
-        tvr> audio_tracks best
-        tvr> audio_tracks all
+        tvrip> audio_tracks best
+        tvrip> audio_tracks all
         """
         try:
             arg = {
@@ -305,8 +338,8 @@ class RipCmd(Cmd):
         subtitle tracks will be extracted and converted. Languages are
         specified as lowercase 3-character ISO639 codes. For example:
 
-        tvr> subtitle_langs eng jpn
-        tvr> subtitle_langs eng
+        tvrip> subtitle_langs eng jpn
+        tvrip> subtitle_langs eng
         """
         arg = arg.lower().split(u' ')
         new_langs = set(arg)
@@ -331,9 +364,9 @@ class RipCmd(Cmd):
         causes subtitles to be extracted and converted to a text-based subtitle
         format via OCR.  For example:
 
-        tvr> subtitle_format subrip
-        tvr> subtitle_format vobsub
-        tvr> subtitle_format none
+        tvrip> subtitle_format subrip
+        tvrip> subtitle_format vobsub
+        tvrip> subtitle_format none
         """
         try:
             arg = {
@@ -362,8 +395,8 @@ class RipCmd(Cmd):
         suitable for OCR (as it typically includes grayscales for softer
         edges). The valid values for the number are 1 to 4. For example:
 
-        tvr> subblack 3
-        tvr> subblack 1
+        tvrip> subtitle_black 3
+        tvrip> subtitle_black 1
 
         After changing this value, test whether the results look right with the
         'subtest' command. The desired effect is to have the words of the
@@ -389,8 +422,8 @@ class RipCmd(Cmd):
         only the best matching track should be extracted, or all matching
         tracks. For example:
 
-        tvr> subtitle_tracks best
-        tvr> subtitle_tracks all
+        tvrip> subtitle_tracks best
+        tvrip> subtitle_tracks all
         """
         try:
             arg = {
@@ -434,8 +467,8 @@ class RipCmd(Cmd):
         The 'decomb' command sets the decomb setting for the video converter.
         Valid settings are currently 'off', 'on', and 'auto'. For example:
 
-        tvr> decomb off
-        tvr> decomb on
+        tvrip> decomb off
+        tvrip> decomb on
         """
         try:
             arg = {
@@ -461,8 +494,8 @@ class RipCmd(Cmd):
         that an episode is expected to be.  This is used when scanning a source
         device for titles which are likely to be episodes. For example:
 
-        tvr> duration 40-50
-        tvr> duration 25-35
+        tvrip> duration 40-50
+        tvrip> duration 25-35
         """
         try:
             self.config.duration_min, self.config.duration_max = (
@@ -790,9 +823,9 @@ class RipCmd(Cmd):
         the specified episode. This is used when constructing the filename of
         ripped episodes. For example:
 
-        tvr> map 3 1
-        tvr> map 7 4
-        tvr> map 5 2.1-12
+        tvrip> map 3 1
+        tvrip> map 7 4
+        tvrip> map 5 2.1-12
 
         If no arguments are specified, auto-mapping is attempted. This attempts
         to match titles to unripped episodes of the currently selected
@@ -871,6 +904,7 @@ class RipCmd(Cmd):
                 ))
                 self.map[episode] = title
         else:
+            self.pprint(u'Performing auto-mapping')
             self.map = {}
             # Map all the titles that have been previously ripped from this
             # disc
@@ -901,7 +935,7 @@ class RipCmd(Cmd):
             if not unripped:
                 return
             for title in list(unmapped):
-                if self.config.duration_min <= title.duration <= self.config.duration_max:
+                if unripped and self.config.duration_min <= title.duration <= self.config.duration_max:
                     self.do_map(u'%d %d' % (unripped.pop(0).number, title.number))
                     unmapped.remove(title)
                 else:
@@ -974,8 +1008,8 @@ class RipCmd(Cmd):
         example, if the auto-mapping when scanning a disc makes an error, you
         can use the 'map' and 'unmap' commands to fix it. For example:
 
-        tvr> unmap 3
-        tvr> unmap 7
+        tvrip> unmap 3
+        tvrip> unmap 7
         """
         if not self.disc:
             raise CmdError(u'No disc has been scanned yet')
@@ -1060,8 +1094,8 @@ class RipCmd(Cmd):
         mapped to titles by the 'map' command (although they can be mapped
         manually too). For example:
 
-        tvr> unrip 3
-        tvr> unrip 7
+        tvrip> unrip 3
+        tvrip> unrip 7
         """
         if not self.config.program:
             raise CmdError(u'No program has been set')
@@ -1100,8 +1134,8 @@ class RipCmd(Cmd):
         The 'source' command sets a new source device. The home directory
         shorthand (~) may be used in the specified path. For example:
 
-        tvr> source /dev/dvd
-        tvr> source /dev/sr0
+        tvrip> source /dev/dvd
+        tvrip> source /dev/sr0
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
@@ -1129,7 +1163,7 @@ class RipCmd(Cmd):
         The 'target' command sets a new target path. The home-directory
         shorthand (~) may be used in the specified path. For example:
 
-        tvr> target ~/Videos
+        tvrip> target ~/Videos
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
@@ -1154,8 +1188,8 @@ class RipCmd(Cmd):
         home-directory shorthand (~) may be used, but be aware that no spaces
         are permitted in the path name. For example:
 
-        tvr> temp ~/tmp
-        tvr> temp /var/tmp
+        tvrip> temp ~/tmp
+        tvrip> temp /var/tmp
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):

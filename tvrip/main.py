@@ -10,7 +10,7 @@ import traceback
 from optparse import OptionParser
 from tvrip.cmdline import RipCmd
 
-__version__ = '0.5'
+__version__ = '0.6'
 
 def tvrip_main(args=None):
     if args is None:
@@ -56,7 +56,7 @@ a text-based form like SubRip.""")
         parser.error(u'you may not specify any filenames')
     # Start the interpreter
     r = RipCmd()
-    r.pprint(u'TV Ripper %s' % __version__)
+    r.pprint(u'TVRip %s' % __version__)
     r.pprint(u'Type "help" for more information.')
     r.cmdloop()
 

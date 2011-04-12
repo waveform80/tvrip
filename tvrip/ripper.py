@@ -11,8 +11,10 @@ from operator import attrgetter
 from itertools import groupby
 from subprocess import Popen, PIPE, STDOUT
 from tvrip.database import Configuration
-from tvrip.const import HANDBRAKE, ATOMIC_PARSLEY, TCCAT, TCEXTRACT, SUBP2PGM, GOCR, MENCODER, AUDIO_MIX_ORDER, AUDIO_ENC_ORDER
 from tvrip.subtitles import Subtitle, Subtitles, SubtitleCorrections
+
+AUDIO_MIX_ORDER = [u'5.1 ch', u'5.0 ch', u'Dolby Surround', u'2.0 ch', u'1.0 ch']
+AUDIO_ENCODING_ORDER = [u'DTS', u'AC3']
 
 
 class Error(Exception):
@@ -50,11 +52,11 @@ class Disc(object):
     audio_track_re = re.compile(ur'^    \+ (?P<number>\d+), (?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? \((?P<channel_mix>[^)]*)\) \(iso639-2: (?P<language>[a-z]{2,3})\), (?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$')
     subtitle_tracks_re = re.compile(ur'^  \+ subtitle tracks:$')
     subtitle_track_re = re.compile(ur'^    \+ (?P<number>\d+), (?P<name>.*) \(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>.*)\))?$')
-    def scan(self, device):
+    def scan(self, config):
         self.titles = []
         cmdline = [
-            HANDBRAKE,
-            u'-i', device, # specify the input device
+            config.get_path('handbrake'),
+            u'-i', config.source, # specify the input device
             u'-t', u'0'    # ask for a scan of the entire disc
         ]
         process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
@@ -125,7 +127,7 @@ class Disc(object):
             for key, group in groupby(sorted(title.audio_tracks, key=attrgetter('name')), key=attrgetter('name')):
                 group = sorted(group, key=lambda track: (
                     AUDIO_MIX_ORDER.index(track.channel_mix),
-                    AUDIO_ENC_ORDER.index(track.encoding)
+                    AUDIO_ENCODING_ORDER.index(track.encoding)
                 ))
                 if group:
                     group[0].best = True
@@ -158,7 +160,7 @@ class Disc(object):
             for track in subtitle_tracks
         ]
         cmdline = [
-            HANDBRAKE,
+            config.get_path(u'handbrake'),
             u'-i', config.source,
             u'-t', unicode(title.number),
             u'-o', os.path.join(config.target, filename),
@@ -193,7 +195,7 @@ class Disc(object):
             raise ValueError(u'Handbrake exited with non-zero return code %d' % p.returncode)
         # Tag the resulting file
         cmdline = [
-            ATOMIC_PARSLEY,
+            config.get_path(u'atomicparsley'),
             os.path.join(config.target, filename),
             u'--overWrite',
             u'--stik', u'TV Show',
@@ -302,13 +304,13 @@ class SubtitleTrack(object):
         logging.info(u'Converting "%s" subtitle track' % self.name)
         self.tempdir = tempfile.mkdtemp(dir=config.temp)
         cat_cmdline = [
-            TCCAT,
+            config.get_path(u'tccat'),
             u'-i', config.source,
             # ,-1 means extract all chapters from specified title
             u'-T', u'%d,-1' % self.title.number,
         ]
         extract_cmdline = [
-            TCEXTRACT,
+            config.get_path(u'tcextract'),
             # extract private stream (subtitles)
             u'-x', u'ps1',
             # type of input is a VOB
@@ -317,7 +319,7 @@ class SubtitleTrack(object):
             u'-a', unicode(hex(0x20 + self.number - 1)),
         ]
         convert_cmdline = [
-            SUBP2PGM,
+            config.get_path(u'subtitle2pgm'),
             # use the specified color as black
             u'-c', ','.join(unicode(0 if i == config.subtitle_black else 255) for i in xrange(1, 5)),
             # trim borders from subtitle frames
@@ -334,11 +336,11 @@ class SubtitleTrack(object):
         extract_proc.wait()
         cat_proc.wait()
         if cat_proc.returncode != 0:
-            raise ProcessError(u'%s exited with non-zero return code: %s' % (TCCAT, cat_proc.returncode))
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (config.get_path(u'tccat'), cat_proc.returncode))
         if extract_proc.returncode != 0:
-            raise ProcessError(u'%s exited with non-zero return code: %s' % (TCEXTRACT, extract_proc.returncode))
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (config.get_path(u'tcextract'), extract_proc.returncode))
         if convert_proc.returncode != 0:
-            raise ProcessError(u'%s exited with non-zero return code: %s' % (SUBP2PGM, convert_proc.returncode))
+            raise ProcessError(u'%s exited with non-zero return code: %s' % (config.get_path(u'subtitle2pgm'), convert_proc.returncode))
         # Parse the .srtx file left in the temporary directory by extract(). In
         # this file each subtitle entry's text indicates the file containing
         # the subtitle image
@@ -354,7 +356,7 @@ class SubtitleTrack(object):
             if not os.path.exists(imagefile):
                 raise IOError(u'Image file "%s" referenced by "%s" does not exist' % (imagefile, srtxfile))
             cmdline = [
-                GOCR,
+                config.get_path(u'gocr'),
                 u'-i', imagefile,
                 # path to database of learned characters (program specific)
                 u'-p', self.title.episode.season.program.dbpath + '/',
@@ -368,7 +370,7 @@ class SubtitleTrack(object):
             p = Popen(cmdline, stdin=sys.stdin, stdout=PIPE, stderr=sys.stderr)
             subtitle.text = p.communicate()[0].strip().decode('UTF-8')
             if p.returncode != 0:
-                raise ProcessError(u'%s exited with non-zero return code %d' % (GOCR, p.returncode))
+                raise ProcessError(u'%s exited with non-zero return code %d' % (config.get_path(u'gocr'), p.returncode))
         # Apply language-specific correction rules if available, then
         # normalize, encode and write the output
         logging.info(u'Applying corrections to subtitle text')

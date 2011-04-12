@@ -9,6 +9,9 @@ from datetime import timedelta
 from tvrip.const import DATADIR
 
 
+session = None
+
+
 class Program(object):
     u"""Represents a program (i.e. a TV series)"""
 
@@ -97,6 +100,18 @@ class SubtitleLanguage(object):
         return u"<SubtitleLanguage('%s')>" % self.lang
 
 
+class ConfigPath(object):
+    u"""Represents a path to an external utility in the stored configuration"""
+
+    def __init__(self, name, path):
+        self.id = 1
+        self.name = name
+        self.path = path
+
+    def __repr__(self):
+        return u"<ConfigPath('%s', '%s')>" % (self.name, self.path)
+
+
 class Configuration(object):
     u"""Represents a stored configuration for the application"""
 
@@ -137,11 +152,25 @@ class Configuration(object):
     def in_subtitle_langs(self, lang):
         return any(l.lang == lang for l in self.subtitle_langs)
 
+    def get_path(self, name):
+        return session.query(ConfigPath).\
+            filter(ConfigPath.id==self.id).\
+            filter(ConfigPath.name==name).one().path
+
+    def set_path(self, name, value):
+        session.query(ConfigPath).\
+            filter(ConfigPath.id==self.id).\
+            filter(ConfigPath.name==name).one().path = value
+        session.commit()
+
     def __repr__(self):
         return u"<Configuration(...)>"
 
 
 def init_session(url=None, debug=False):
+    global session
+    assert session is None
+
     if url is None:
         url = u'sqlite:///%s' % os.path.join(DATADIR, u'tvrip.db')
     engine = sa.create_engine(url, echo=debug)
@@ -211,6 +240,13 @@ def init_session(url=None, debug=False):
         sa.ForeignKeyConstraint(['id'], ['config.id'],
             onupdate='cascade', ondelete='cascade', name='config_fk')
     )
+    config_paths_table = sa.Table('config_paths', metadata,
+        sa.Column('id', sa.Integer, primary_key=True),
+        sa.Column('name', sa.Text, primary_key=True),
+        sa.Column('path', sa.Text, nullable=False),
+        sa.ForeignKeyConstraint(['id'], ['config.id'],
+            onupdate='cascade', ondelete='cascade', name='config_fk')
+    )
 
     # Map the tables to classes
     sa.orm.mapper(Episode, episodes_table, properties={
@@ -231,11 +267,13 @@ def init_session(url=None, debug=False):
     })
     sa.orm.mapper(AudioLanguage, config_audio_table)
     sa.orm.mapper(SubtitleLanguage, config_subtitles_table)
+    sa.orm.mapper(ConfigPath, config_paths_table)
     sa.orm.mapper(Configuration, config_table, properties={
         '_program':        config_table.c.program,
         '_season':         config_table.c.season,
         'audio_langs':     sa.orm.relation(AudioLanguage),
         'subtitle_langs':  sa.orm.relation(SubtitleLanguage),
+        'paths':           sa.orm.relation(ConfigPath),
         'duration_min':    sa.orm.synonym('_duration_min', map_column=True),
         'duration_max':    sa.orm.synonym('_duration_max', map_column=True),
     })
