@@ -931,14 +931,12 @@ class RipCmd(Cmd):
                     # limit, get the next episode to try and match to some
                     # chapters
                     current_duration = timedelta()
+                    current_episode = None
+                    if chapter.duration.seconds == 0:
+                        self.pprint(u'Ignoring empty chapter %d' % chapter.number)
                     if unripped:
                         current_episode = unripped.pop(0)
-                    elif chapter is not title.chapters[-1]:
-                        # If we've run out of unripped episodes, but we
-                        # haven't run out of chapters consider the whole
-                        # operation a bust and forget the whole mapping
-                        self.pprint(u'Found more chapters than unripped episodes; aborting')
-                        episode_map = []
+                    else:
                         break
                 elif current_duration > self.config.duration_max:
                     # Likewise, if at any point we wind up with a run of
@@ -947,18 +945,23 @@ class RipCmd(Cmd):
                     self.pprint(u'Exceeded maximum duration while aggregating chapters; aborting')
                     episode_map = []
                     break
+            if chapter is not title.chapters[-1]:
+                self.pprint(u'Warning: stopped at chapter %d, before last chapter %d' % (
+                    chapter.number, title.chapters[-1].number
+                ))
             # If we've got stuff in episode_map it's guaranteed to be
             # exactly as long as title.chapters so zip 'em together and
             # group the result to map start and end chapters easily
             if episode_map:
                 for episode, chapters in groupby(izip(episode_map, title.chapters), key=itemgetter(0)):
-                    chapters = [c for (e, c) in chapters]
-                    self.do_map(u'%d %d.%d-%d' % (
-                        episode.number,
-                        chapters[0].title.number,
-                        chapters[0].number,
-                        chapters[-1].number, 
-                    ))
+                    if episode:
+                        chapters = [c for (e, c) in chapters]
+                        self.do_map(u'%d %d.%d-%d' % (
+                            episode.number,
+                            chapters[0].title.number,
+                            chapters[0].number,
+                            chapters[-1].number, 
+                        ))
 
     def do_map(self, arg):
         u"""Maps episodes to titles or chapter ranges.
