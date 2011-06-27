@@ -787,57 +787,177 @@ class RipCmd(Cmd):
         episode mapping.
         """
         if not self.config.source:
-            self.pprint(u'No source has been specified')
+            raise CmdError(u'No source has been specified')
         elif not (self.config.duration_min and self.config.duration_max):
-            self.pprint(u'No duration range has been specified')
-        else:
-            self.pprint(u'Scanning disc in %s' % self.config.source)
-            self.map = {}
-            self.disc = Disc()
-            self.disc.scan(self.config)
-            self.pprint(u'Disc serial: %s' % self.disc.serial)
-            for title in self.disc.titles:
-                self.pprint(u'Title %d (duration: %s)' % (
+            raise CmdError(u'No duration range has been specified')
+        self.pprint(u'Scanning disc in %s' % self.config.source)
+        self.map = {}
+        self.disc = Disc()
+        self.disc.scan(self.config)
+        self.pprint(u'Disc serial: %s' % self.disc.serial)
+        for title in self.disc.titles:
+            self.pprint(u'Title %d (duration: %s)' % (
+                title.number,
+                title.duration,
+            ))
+            self.pprint(u'  %d chapters' % len(title.chapters))
+            for chapter in title.chapters:
+                self.pprint(u'    %d: %s->%s (duration: %s)' % (
+                    chapter.number,
+                    chapter.start,
+                    chapter.finish,
+                    chapter.duration,
+                ))
+            self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
+            for track in title.audio_tracks:
+                suffix = u''
+                if track.best and self.config.in_audio_langs(track.language):
+                    suffix = u'[best]'
+                self.pprint(u'    %d: %s, %s %s %s %s' % (
+                    track.number,
+                    track.language,
+                    track.name,
+                    track.encoding,
+                    track.channel_mix,
+                    suffix
+                ))
+            self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
+            for track in title.subtitle_tracks:
+                suffix = u''
+                if track.best and self.config.in_subtitle_langs(track.language):
+                    suffix = u'[best]'
+                self.pprint(u'    %d: %s, %s %s' % (
+                    track.number,
+                    track.language,
+                    track.name,
+                    suffix
+                ))
+
+    def do_automap(self, arg):
+        u"""Maps episodes to titles or chapter ranges automatically.
+
+        Syntax: automap [<titles>]...
+
+        The 'automap' command is used to have the application attempt to figure
+        out which titles (or chapters of titles) contain the next set of
+        unripped episodes. If no title numbers are specified, all titles are
+        considered candidates. Otherwise, only those titles specified are
+        considered. If direct title mapping fails, chapter-based mapping is
+        attempted instead.
+
+        The current episode mapping can be viewed in the output of the 'config'
+        command.
+        """
+        self.pprint(u'Performing auto-mapping')
+        self.map = {}
+        # Map all the titles that have been previously ripped from this
+        # disc
+        unmapped = list(self.disc.titles)
+        # XXX Note that there is a risk that this maps episodes from a season
+        # or program other than those currently selected
+        # XXX Also note that some stupid manufacturers have reused disc IDs for
+        # discs within a season. We need something better than just the serial!
+        for episode in self.session.query(Episode).filter(Episode.disc_serial==self.disc.serial):
+            try:
+                title = [t for t in self.disc.titles if t.number==episode.disc_title][0]
+            except IndexError:
+                raise CmdError('Previously ripped title %d not found on the scanned disc (serial %s)' % (
+                    episode.disc_title, episode.disc_serial))
+            else:
+                if episode.start_chapter is not None:
+                    self.do_map(u'%d %d.%d-%d' % (
+                        episode.number,
+                        title.number,
+                        episode.start_chapter,
+                        episode.end_chapter,
+                    ))
+                else:
+                    self.do_map(u'%d %d' % (episode.number, title.number))
+                    unmapped.remove(title)
+        # Remove all titles not specified in the command line arguments
+        if arg:
+            try:
+                arg = [int(i) for i in arg.split(u' ')]
+            except ValueError:
+                raise CmdSyntaxError(u'You must specify space separated title numbers')
+            unmapped = [t for t in unmapped if t.number in arg]
+        # Attempt to map the remaining unmapped titles to unripped episodes
+        # from the selected season
+        unripped = [e for e in self.config.season.episodes if not e.disc_serial]
+        # Bail out now if there's no unripped episodes left to be mapped
+        if not unripped:
+            return
+        try_chapters = True
+        for title in list(unmapped):
+            if unripped and self.config.duration_min <= title.duration <= self.config.duration_max:
+                self.do_map(u'%d %d' % (unripped.pop(0).number, title.number))
+                unmapped.remove(title)
+                try_chapters = False
+            else:
+                self.pprint(u'Title %d is not an episode (duration: %s)' % (
                     title.number,
                     title.duration,
                 ))
-                self.pprint(u'  %d chapters' % len(title.chapters))
-                for chapter in title.chapters:
-                    self.pprint(u'    %d: %s->%s (duration: %s)' % (
-                        chapter.number,
-                        chapter.start,
-                        chapter.finish,
-                        chapter.duration,
-                    ))
-                self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
-                for track in title.audio_tracks:
-                    suffix = u''
-                    if track.best and self.config.in_audio_langs(track.language):
-                        suffix = u'[best]'
-                    self.pprint(u'    %d: %s, %s %s %s %s' % (
-                        track.number,
-                        track.language,
-                        track.name,
-                        track.encoding,
-                        track.channel_mix,
-                        suffix
-                    ))
-                self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
-                for track in title.subtitle_tracks:
-                    suffix = u''
-                    if track.best and self.config.in_subtitle_langs(track.language):
-                        suffix = u'[best]'
-                    self.pprint(u'    %d: %s, %s %s' % (
-                        track.number,
-                        track.language,
-                        track.name,
-                        suffix
+        if try_chapters:
+            self.pprint(u'Attempting to map chapters of longest title to episodes')
+            # If we didn't manage to find a single title to map to an
+            # episode it's possible we're dealing with one of those weird
+            # discs where lots of episodes are in one title with chapters
+            # delimiting the episodes. Firstly, find the longest title...
+            for title in reversed(sorted(unmapped, key=attrgetter('duration'))):
+                break
+            self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
+                title.number,
+                title.duration,
+                len(title.chapters),
+            ))
+            # Now loop over the chapters of the longest title, attempting
+            # to build up consecutive runs of chapters with a duration
+            # between the required min and max
+            episode_map = []
+            current_duration = timedelta()
+            current_episode = unripped.pop(0)
+            for chapter in title.chapters:
+                episode_map.append(current_episode)
+                current_duration += chapter.duration
+                if self.config.duration_min <= current_duration <= self.config.duration_max:
+                    # If got a run of chapters that fits the duration
+                    # limit, get the next episode to try and match to some
+                    # chapters
+                    current_duration = timedelta()
+                    if unripped:
+                        current_episode = unripped.pop(0)
+                    elif chapter is not title.chapters[-1]:
+                        # If we've run out of unripped episodes, but we
+                        # haven't run out of chapters consider the whole
+                        # operation a bust and forget the whole mapping
+                        self.pprint(u'Found more chapters than unripped episodes; aborting')
+                        episode_map = []
+                        break
+                elif current_duration > self.config.duration_max:
+                    # Likewise, if at any point we wind up with a run of
+                    # chapters that exceeds the maximum duration, quit in
+                    # disgrace!
+                    self.pprint(u'Exceeded maximum duration while aggregating chapters; aborting')
+                    episode_map = []
+                    break
+            # If we've got stuff in episode_map it's guaranteed to be
+            # exactly as long as title.chapters so zip 'em together and
+            # group the result to map start and end chapters easily
+            if episode_map:
+                for episode, chapters in groupby(izip(episode_map, title.chapters), key=itemgetter(0)):
+                    chapters = [c for (e, c) in chapters]
+                    self.do_map(u'%d %d.%d-%d' % (
+                        episode.number,
+                        chapters[0].title.number,
+                        chapters[0].number,
+                        chapters[-1].number, 
                     ))
 
     def do_map(self, arg):
         u"""Maps episodes to titles or chapter ranges.
 
-        Syntax: map [<episode> <title>[.<start>-<end>]]
+        Syntax: map <episode> <title>[.<start>-<end>]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
@@ -846,12 +966,6 @@ class RipCmd(Cmd):
         tvrip> map 3 1
         tvrip> map 7 4
         tvrip> map 5 2.1-12
-
-        If no arguments are specified, auto-mapping is attempted. This attempts
-        to match titles to unripped episodes of the currently selected
-        program's season based on the duration limits specified in the
-        configuration. If direct title mapping fails, it attempts chapter-based
-        mapping with the longest title on the disc.
 
         The current episode mapping can be viewed in the output of the 'config'
         command.
@@ -864,160 +978,66 @@ class RipCmd(Cmd):
             raise CmdError(u'No program has been set')
         elif not self.config.season:
             raise CmdError(u'No season has been set')
-        elif arg:
+        elif not arg:
+            raise CmdSyntaxError(u'You must specify an episode and title')
+        try:
+            episode, title = arg.split(u' ')
+        except ValueError:
+            raise CmdSyntaxError(u'You must specify two arguments')
+        if u'.' in title:
             try:
-                episode, title = arg.split(u' ')
+                title, chapters = title.split(u'.')
+                chapter_start, chapter_end = (int(i) for i in chapters.split(u'-'))
             except ValueError:
-                raise CmdSyntaxError(u'You must specify two arguments')
-            if u'.' in title:
-                try:
-                    title, chapters = title.split(u'.')
-                    chapter_start, chapter_end = (int(i) for i in chapters.split(u'-'))
-                except ValueError:
-                    raise CmdSyntaxError(u'Unable to parse specified chapter range')
-            else:
-                chapter_start = chapter_end = None
-            try:
-                title = int(title)
-                episode = int(episode)
-            except ValueError:
-                raise CmdSyntaxError(u'Titles, chapters, and episodes must be integer numbers')
-            try:
-                title = [t for t in self.disc.titles if t.number==title][0]
-            except IndexError:
-                raise CmdError(u'There is no title %d on the scanned disc' % title)
-            if chapter_start:
-                try:
-                    chapter_start = [c for c in title.chapters if c.number==chapter_start][0]
-                except IndexError:
-                    raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_start, title.number))
-            if chapter_end:
-                try:
-                    chapter_end = [c for c in title.chapters if c.number==chapter_end][0]
-                except IndexError:
-                    raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_end, title.number))
-            try:
-                episode = self.session.query(Episode).\
-                    filter(Episode.season==self.config.season).\
-                    filter(Episode.number==episode).one()
-            except sa.orm.exc.NoResultFound:
-                raise CmdError(u'There is no episode %d in the current season' % episode)
-            if chapter_start:
-                self.pprint(u'Mapping chapters %d-%d (duration %s) of title %d to episode %d, "%s"' % (
-                    chapter_start.number,
-                    chapter_end.number,
-                    sum(
-                        [c.duration for c in title.chapters if chapter_start.number <= c.number <= chapter_end.number],
-                        timedelta()
-                    ),
-                    title.number,
-                    episode.number,
-                    episode.name
-                ))
-                self.map[episode] = (chapter_start, chapter_end)
-            else:
-                self.pprint(u'Mapping title %d (duration %s) to episode %d, "%s"' % (
-                    title.number,
-                    title.duration,
-                    episode.number,
-                    episode.name
-                ))
-                self.map[episode] = title
+                raise CmdSyntaxError(u'Unable to parse specified chapter range')
         else:
-            self.pprint(u'Performing auto-mapping')
-            self.map = {}
-            # Map all the titles that have been previously ripped from this
-            # disc
-            unmapped = list(self.disc.titles)
-            # XXX Note that there is a risk that this maps episodes from a
-            # season or program other than those currently selected
-            for episode in self.session.query(Episode).filter(Episode.disc_serial==self.disc.serial):
-                try:
-                    title = [t for t in self.disc.titles if t.number==episode.disc_title][0]
-                except IndexError:
-                    raise CmdError('Previously ripped title %d not found on the scanned disc (serial %s)' % (
-                        episode.disc_title, episode.disc_serial))
-                else:
-                    if episode.start_chapter is not None:
-                        self.do_map(u'%d %d.%d-%d' % (
-                            episode.number,
-                            title.number,
-                            episode.start_chapter,
-                            episode.end_chapter,
-                        ))
-                    else:
-                        self.do_map(u'%d %d' % (episode.number, title.number))
-                        unmapped.remove(title)
-            # Attempt to map the remaining unmapped titles to unripped episodes
-            # from the selected season
-            unripped = [e for e in self.config.season.episodes if not e.disc_serial]
-            # Bail out now if there's no unripped episodes left to be mapped
-            if not unripped:
-                return
-            for title in list(unmapped):
-                if unripped and self.config.duration_min <= title.duration <= self.config.duration_max:
-                    self.do_map(u'%d %d' % (unripped.pop(0).number, title.number))
-                    unmapped.remove(title)
-                else:
-                    self.pprint(u'Title %d is not an episode (duration: %s)' % (
-                        title.number,
-                        title.duration,
-                    ))
-            if len(self.disc.titles) == len(unmapped):
-                self.pprint(u'Attempting to map chapters of longest title to episodes')
-                # If we didn't manage to find a single title to map to an
-                # episode it's possible we're dealing with one of those weird
-                # discs where lots of episodes are in one title with chapters
-                # delimiting the episodes. Firstly, find the longest title...
-                for title in reversed(sorted(self.disc.titles, key=attrgetter('duration'))):
-                    break
-                self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
-                    title.number,
-                    title.duration,
-                    len(title.chapters),
-                ))
-                # Now loop over the chapters of the longest title, attempting
-                # to build up consecutive runs of chapters with a duration
-                # between the required min and max
-                episode_map = []
-                current_duration = timedelta()
-                current_episode = unripped.pop(0)
-                for chapter in title.chapters:
-                    episode_map.append(current_episode)
-                    current_duration += chapter.duration
-                    if self.config.duration_min <= current_duration <= self.config.duration_max:
-                        # If got a run of chapters that fits the duration
-                        # limit, get the next episode to try and match to some
-                        # chapters
-                        current_duration = timedelta()
-                        if unripped:
-                            current_episode = unripped.pop(0)
-                        elif chapter is not title.chapters[-1]:
-                            # If we've run out of unripped episodes, but we
-                            # haven't run out of chapters consider the whole
-                            # operation a bust and forget the whole mapping
-                            self.pprint(u'Found more chapters than unripped episodes; aborting')
-                            episode_map = []
-                            break
-                    elif current_duration > self.config.duration_max:
-                        # Likewise, if at any point we wind up with a run of
-                        # chapters that exceeds the maximum duration, quit in
-                        # disgrace!
-                        self.pprint(u'Exceeded maximum duration while aggregating chapters; aborting')
-                        episode_map = []
-                        break
-                # If we've got stuff in episode_map it's guaranteed to be
-                # exactly as long as title.chapters so zip 'em together and
-                # group the result to map start and end chapters easily
-                if episode_map:
-                    for episode, chapters in groupby(izip(episode_map, title.chapters), key=itemgetter(0)):
-                        chapters = [c for (e, c) in chapters]
-                        self.do_map(u'%d %d.%d-%d' % (
-                            episode.number,
-                            chapters[0].title.number,
-                            chapters[0].number,
-                            chapters[-1].number, 
-                        ))
+            chapter_start = chapter_end = None
+        try:
+            title = int(title)
+            episode = int(episode)
+        except ValueError:
+            raise CmdSyntaxError(u'Titles, chapters, and episodes must be integer numbers')
+        try:
+            title = [t for t in self.disc.titles if t.number==title][0]
+        except IndexError:
+            raise CmdError(u'There is no title %d on the scanned disc' % title)
+        if chapter_start:
+            try:
+                chapter_start = [c for c in title.chapters if c.number==chapter_start][0]
+            except IndexError:
+                raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_start, title.number))
+        if chapter_end:
+            try:
+                chapter_end = [c for c in title.chapters if c.number==chapter_end][0]
+            except IndexError:
+                raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_end, title.number))
+        try:
+            episode = self.session.query(Episode).\
+                filter(Episode.season==self.config.season).\
+                filter(Episode.number==episode).one()
+        except sa.orm.exc.NoResultFound:
+            raise CmdError(u'There is no episode %d in the current season' % episode)
+        if chapter_start:
+            self.pprint(u'Mapping chapters %d-%d (duration %s) of title %d to episode %d, "%s"' % (
+                chapter_start.number,
+                chapter_end.number,
+                sum(
+                    [c.duration for c in title.chapters if chapter_start.number <= c.number <= chapter_end.number],
+                    timedelta()
+                ),
+                title.number,
+                episode.number,
+                episode.name
+            ))
+            self.map[episode] = (chapter_start, chapter_end)
+        else:
+            self.pprint(u'Mapping title %d (duration %s) to episode %d, "%s"' % (
+                title.number,
+                title.duration,
+                episode.number,
+                episode.name
+            ))
+            self.map[episode] = title
 
     def do_unmap(self, arg):
         u"""Removes an episode mapping.
@@ -1035,17 +1055,16 @@ class RipCmd(Cmd):
             raise CmdError(u'No disc has been scanned yet')
         elif not self.disc.titles:
             raise CmdError(u'No titles found on the scanned disc')
-        else:
-            try:
-                arg = int(arg)
-            except ValueError:
-                raise CmdSyntaxError(u'You must specify an integer title number')
-            try:
-                episode = [e for e in self.config.season.episodes if e.number==arg][0]
-            except IndexError:
-                raise CmdError(u'Episode %d does not exist within the selected season' % arg)
-            self.pprint(u'Removing mapping for episode %d, %s' % (episode.number, episode.name))
-            del self.map[episode]
+        try:
+            arg = int(arg)
+        except ValueError:
+            raise CmdSyntaxError(u'You must specify an integer title number')
+        try:
+            episode = [e for e in self.config.season.episodes if e.number==arg][0]
+        except IndexError:
+            raise CmdError(u'Episode %d does not exist within the selected season' % arg)
+        self.pprint(u'Removing mapping for episode %d, %s' % (episode.number, episode.name))
+        del self.map[episode]
 
     def do_rip(self, arg):
         u"""Starts the ripping and transcoding process.
@@ -1121,30 +1140,29 @@ class RipCmd(Cmd):
             raise CmdError(u'No program has been set')
         elif not self.config.season:
             raise CmdError(u'No season has been set')
-        else:
-            if arg.strip() == u'*':
-                for episode in self.config.season.episodes:
-                    episode.disc_serial = None
-                    episode.disc_title = None
-                    episode.start_chapter = None
-                    episode.end_chapter = None
-            else:
-                try:
-                    arg = int(arg)
-                except ValueError:
-                    raise CmdSyntaxError(u'You must specify an integer episode number')
-                try:
-                    episode = self.session.query(Episode).\
-                        filter(Episode.season==self.config.season).\
-                        filter(Episode.number==arg).one()
-                except sa.orm.exc.NoResultFound:
-                    raise CmdError(u'Episode %d of %s season %d does not exist' % (
-                        arg, self.config.program.name, self.config.season.number))
+        if arg.strip() == u'*':
+            for episode in self.config.season.episodes:
                 episode.disc_serial = None
                 episode.disc_title = None
                 episode.start_chapter = None
                 episode.end_chapter = None
-            self.session.commit()
+        else:
+            try:
+                arg = int(arg)
+            except ValueError:
+                raise CmdSyntaxError(u'You must specify an integer episode number')
+            try:
+                episode = self.session.query(Episode).\
+                    filter(Episode.season==self.config.season).\
+                    filter(Episode.number==arg).one()
+            except sa.orm.exc.NoResultFound:
+                raise CmdError(u'Episode %d of %s season %d does not exist' % (
+                    arg, self.config.program.name, self.config.season.number))
+            episode.disc_serial = None
+            episode.disc_title = None
+            episode.start_chapter = None
+            episode.end_chapter = None
+        self.session.commit()
 
     def do_source(self, arg):
         u"""Sets the source device.

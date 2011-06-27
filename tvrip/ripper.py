@@ -186,7 +186,7 @@ class Disc(object):
             cmdline.append(u','.join(unicode(num) for (num, _) in subtitle_defs))
         if config.decomb == u'on':
             cmdline.append(u'-d')
-            cmdline.append(u'fast')
+            cmdline.append(u'slow')
         elif config.decomb == u'auto':
             cmdline.append(u'-5')
         p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
@@ -194,26 +194,31 @@ class Disc(object):
         if p.returncode != 0:
             raise ValueError(u'Handbrake exited with non-zero return code %d' % p.returncode)
         # Tag the resulting file
-        cmdline = [
-            config.get_path(u'atomicparsley'),
-            os.path.join(config.target, filename),
-            u'--overWrite',
-            u'--stik', u'TV Show',
-            # set tags for TV shows
-            u'--TVShowName',   episode.season.program.name,
-            u'--TVSeasonNum',  unicode(episode.season.number),
-            u'--TVEpisodeNum', unicode(episode.number),
-            u'--TVEpisode',    episode.name,
-            # also set tags for music files as these have wider support
-            u'--artist',       episode.season.program.name,
-            u'--album',        u'Season %d' % episode.season.number,
-            u'--tracknum',     unicode(episode.number),
-            u'--title',        episode.name
-        ]
-        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-        p.communicate()
-        if p.returncode != 0:
-            raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
+        tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
+        try:
+            cmdline = [
+                config.get_path(u'atomicparsley'),
+                os.path.join(config.target, filename),
+                u'-o', tmpfile,
+                u'--stik', u'TV Show',
+                # set tags for TV shows
+                u'--TVShowName',   episode.season.program.name,
+                u'--TVSeasonNum',  unicode(episode.season.number),
+                u'--TVEpisodeNum', unicode(episode.number),
+                u'--TVEpisode',    episode.name,
+                # also set tags for music files as these have wider support
+                u'--artist',       episode.season.program.name,
+                u'--album',        u'Season %d' % episode.season.number,
+                u'--tracknum',     unicode(episode.number),
+                u'--title',        episode.name
+            ]
+            p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+            p.communicate()
+            if p.returncode != 0:
+                raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
+            os.rename(tmpfile, os.path.join(config.target, filename))
+        finally:
+            os.close(tmphandle)
 
 class Title(object):
     u"""Represents a title on a DVD"""
