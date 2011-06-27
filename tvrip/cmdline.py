@@ -242,7 +242,13 @@ class RipCmd(Cmd):
                 else:
                     chapter_start, chapter_end = mapping
                     index = u'%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
-                    duration = u'%s' % (chapter_end.finish - chapter_start.start)
+                    duration = u'%s' % sum(
+                        (
+                            c.duration for c in chapter_start.title.chapters
+                            if chapter_start.number <= c.number <= chapter_end.number
+                        ),
+                        timedelta()
+                    )
                 self.pprint(u'%2stitle %s (%s) = episode %2d, "%s"' % (
                     u'*' if episode.ripped else u' ',
                     index,
