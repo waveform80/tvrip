@@ -6,6 +6,7 @@ import re
 import shutil
 import logging
 import tempfile
+import shutil
 from datetime import datetime, date, time, timedelta, MINYEAR
 from operator import attrgetter
 from itertools import groupby
@@ -216,7 +217,7 @@ class Disc(object):
             p.communicate()
             if p.returncode != 0:
                 raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
-            os.rename(tmpfile, os.path.join(config.target, filename))
+            shutil.move(tmpfile, os.path.join(config.target, filename))
         finally:
             os.close(tmphandle)
 
