@@ -53,7 +53,10 @@ def main():
         platforms            = 'ALL',
         zip_safe             = False,
         entry_points         = entry_points,
-        classifiers          = classifiers
+        classifiers          = classifiers,
+        install_requires     = [
+            'sqlalchemy',
+        ],
     )
 
 if __name__ == '__main__':

@@ -856,14 +856,30 @@ class RipCmd(Cmd):
         """
         self.pprint(u'Performing auto-mapping')
         self.map = {}
-        # Map all the titles that have been previously ripped from this
-        # disc
-        unmapped = list(self.disc.titles)
-        # XXX Note that there is a risk that this maps episodes from a season
-        # or program other than those currently selected
+        if arg:
+            unmapped = []
+            try:
+                for a in arg.split(u' '):
+                    if u'-' in a:
+                        start, finish = (int(i) for i in a.split(u'-', 1))
+                        unmapped.extend(t for t in self.disc.titles if start <= t.number <= finish)
+                    else:
+                        try:
+                            unmapped.append([t for t in self.disc.titles if t.number == int(a)][0])
+                        except IndexError:
+                            raise CmdError(u'Title %d does not exist or is not rippable' % int(a))
+            except ValueError:
+                raise CmdSyntaxError(u'You must specify space separated title numbers')
+            unmapped = sorted(unmapped, key=attrgetter('number'))
+            # XXX Should remove duplicates here?
+        else:
+            unmapped = list(self.disc.titles)
+        # Map all the titles that have been previously ripped from this disc
         # XXX Also note that some stupid manufacturers have reused disc IDs for
         # discs within a season. We need something better than just the serial!
-        for episode in self.session.query(Episode).filter(Episode.disc_serial==self.disc.serial):
+        for episode in self.session.query(Episode).\
+                filter(Episode.season==self.config.season).\
+                filter(Episode.disc_serial==self.disc.serial):
             try:
                 title = [t for t in self.disc.titles if t.number==episode.disc_title][0]
             except IndexError:
@@ -879,14 +895,7 @@ class RipCmd(Cmd):
                     ))
                 else:
                     self.do_map(u'%d %d' % (episode.number, title.number))
-                    unmapped.remove(title)
-        # Remove all titles not specified in the command line arguments
-        if arg:
-            try:
-                arg = [int(i) for i in arg.split(u' ')]
-            except ValueError:
-                raise CmdSyntaxError(u'You must specify space separated title numbers')
-            unmapped = [t for t in unmapped if t.number in arg]
+                unmapped.remove(title)
         # Attempt to map the remaining unmapped titles to unripped episodes
         # from the selected season
         unripped = [e for e in self.config.season.episodes if not e.disc_serial]
