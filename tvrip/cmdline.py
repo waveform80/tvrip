@@ -639,39 +639,38 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(u'A season must be a valid number (%s specified)' % arg)
         if arg < 1:
             raise CmdSyntaxError(u'A season number must be 1 or higher (%d specified)' % arg)
-        if not self.config.season or self.config.season.number != arg:
+        try:
+            self.config.season = self.session.query(Season).\
+                filter(Season.program==self.config.program).\
+                filter(Season.number==arg).one()
+        except sa.orm.exc.NoResultFound:
+            self.session.begin(subtransactions=True)
             try:
-                self.config.season = self.session.query(Season).\
-                    filter(Season.program==self.config.program).\
-                    filter(Season.number==arg).one()
-            except sa.orm.exc.NoResultFound:
-                self.session.begin(subtransactions=True)
+                self.config.season = Season(self.config.program, arg)
+                self.session.add(self.config.season)
                 try:
-                    self.config.season = Season(self.config.program, arg)
-                    self.session.add(self.config.season)
-                    try:
-                        count = int(self.input(u'Season %d of program %s '
-                            u'is new. Please enter the number of episodes '
-                            u'in this season (enter 0 if you do not wish '
-                            u'to define episodes at this time) [0-n] ' % (
-                            self.config.season.number, self.config.program.name)))
-                    except ValueError:
-                        while True:
-                            try:
-                                count = int(self.input(u'Invalid input. '
-                                    u'Please enter a number [0-n] '))
-                            except ValueError:
-                                pass
-                            else:
-                                break
-                    if count != 0:
-                        self.onecmd(u'episodes %d' % count)
-                except:
-                    self.session.rollback()
-                    raise
-                else:
-                    self.session.commit()
-            self.map = {}
+                    count = int(self.input(u'Season %d of program %s '
+                        u'is new. Please enter the number of episodes '
+                        u'in this season (enter 0 if you do not wish '
+                        u'to define episodes at this time) [0-n] ' % (
+                        self.config.season.number, self.config.program.name)))
+                except ValueError:
+                    while True:
+                        try:
+                            count = int(self.input(u'Invalid input. '
+                                u'Please enter a number [0-n] '))
+                        except ValueError:
+                            pass
+                        else:
+                            break
+                if count != 0:
+                    self.onecmd(u'episodes %d' % count)
+            except:
+                self.session.rollback()
+                raise
+            else:
+                self.session.commit()
+        self.map = {}
 
     def complete_season(self, text, line, start, finish):
         return [
@@ -716,41 +715,40 @@ class RipCmd(Cmd):
         given does not exist, it will be entered into the database and you will
         be prompted for season and episode information.
         """
-        if self.config.program is None or self.config.program.name != arg:
+        try:
+            self.config.program = self.session.query(Program).\
+                filter(Program.name==arg).one()
+        except sa.orm.exc.NoResultFound:
+            self.session.begin(subtransactions=True)
             try:
-                self.config.program = self.session.query(Program).\
-                    filter(Program.name==arg).one()
-            except sa.orm.exc.NoResultFound:
-                self.session.begin(subtransactions=True)
+                self.config.program = Program(arg)
+                self.session.add(self.config.program)
                 try:
-                    self.config.program = Program(arg)
-                    self.session.add(self.config.program)
-                    try:
-                        count = int(self.input(u'Program %s is new. How '
-                            u'many seasons exist (enter 0 if you do not '
-                            u'wish to define seasons and episodes at this '
-                            u'time)? [0-n] ' % self.config.program.name))
-                    except ValueError:
-                        while True:
-                            try:
-                                count = int(self.input(u'Invalid input. '
-                                    u'Please enter a number [0-n] '))
-                            except ValueError:
-                                pass
-                            else:
-                                break
-                    for number in range(1, count + 1):
-                        self.onecmd(u'season %d' % number)
-                except:
-                    self.session.rollback()
-                    raise
-                else:
-                    self.session.commit()
+                    count = int(self.input(u'Program %s is new. How '
+                        u'many seasons exist (enter 0 if you do not '
+                        u'wish to define seasons and episodes at this '
+                        u'time)? [0-n] ' % self.config.program.name))
+                except ValueError:
+                    while True:
+                        try:
+                            count = int(self.input(u'Invalid input. '
+                                u'Please enter a number [0-n] '))
+                        except ValueError:
+                            pass
+                        else:
+                            break
+                self.config.season = None
+                for number in range(1, count + 1):
+                    self.onecmd(u'season %d' % number)
+            except:
+                self.session.rollback()
+                raise
             else:
-                self.config.season = self.session.query(Season).\
-                    filter(Season.program==self.config.program).\
-                    order_by(Season.number).first()
-            self.map = {}
+                self.session.commit()
+        self.config.season = self.session.query(Season).\
+            filter(Season.program==self.config.program).\
+            order_by(Season.number).first()
+        self.map = {}
 
     program_re = re.compile(ur'^program\s+')
     def complete_program(self, text, line, start, finish):
