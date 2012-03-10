@@ -217,6 +217,7 @@ class Disc(object):
             p.communicate()
             if p.returncode != 0:
                 raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
+            os.chmod(tmpfile, os.stat(os.path.join(config.target, filename)).st_mode)
             shutil.move(tmpfile, os.path.join(config.target, filename))
         finally:
             os.close(tmphandle)
