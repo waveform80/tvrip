@@ -1,5 +1,21 @@
 # vim: set et sw=4 sts=4:
 
+# Copyright 2012 Dave Hughes.
+#
+# This file is part of tvrip.
+#
+# tvrip is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# tvrip is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# tvrip.  If not, see <http://www.gnu.org/licenses/>.
+
 import sys
 import os
 import re
@@ -7,6 +23,7 @@ import shutil
 import logging
 import tempfile
 import shutil
+import hashlib
 from datetime import datetime, date, time, timedelta, MINYEAR
 from operator import attrgetter
 from itertools import groupby
@@ -32,6 +49,7 @@ class Disc(object):
         super(Disc, self).__init__()
         self.titles = []
         self.serial = None
+        self.ident = None
         self.match = None
 
     def test(self, pattern, line):
@@ -136,6 +154,18 @@ class Disc(object):
                 group = list(group)
                 if group:
                     group[0].best = True
+        # Calculate a hash of disc serial, and track properties to form a
+        # unique disc identifier, then replace disc-serial with this (#1)
+        h = hashlib.sha1()
+        h.update(self.serial)
+        h.update(str(len(self.titles)))
+        for title in self.titles:
+            h.update(str(title.duration))
+            h.update(str(len(title.chapters)))
+            for chapter in title.chapters:
+                h.update(str(chapter.start))
+                h.update(str(chapter.duration))
+        self.ident = '$H1$' + h.hexdigest()
 
     def rip(self, config, episode, title, audio_tracks, subtitle_tracks, start_chapter=None, end_chapter=None):
         if not isinstance(config, Configuration):

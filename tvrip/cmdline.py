@@ -1,5 +1,21 @@
 # vim: set et sw=4 sts=4:
 
+# Copyright 2012 Dave Hughes.
+#
+# This file is part of tvrip.
+#
+# tvrip is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# tvrip is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# tvrip.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
 import re
 import readline
@@ -49,7 +65,6 @@ class RipCmd(Cmd):
             self.session.add(ConfigPath(u'tcextract',     u'/usr/bin/tcextract'))
             self.session.add(ConfigPath(u'subtitle2pgm',  u'/usr/bin/subtitle2pgm'))
             self.session.add(ConfigPath(u'gocr',          u'/usr/bin/gocr'))
-            self.session.add(ConfigPath(u'mencoder',      u'/usr/bin/mencoder'))
             self.session.commit()
 
     def _get_disc(self):
@@ -798,6 +813,7 @@ class RipCmd(Cmd):
         self.map = {}
         self.disc = Disc()
         self.disc.scan(self.config)
+        self.pprint(u'Disc identifier: %s' % self.disc.ident)
         self.pprint(u'Disc serial: %s' % self.disc.serial)
         for title in self.disc.titles:
             self.pprint(u'Title %d (duration: %s)' % (
@@ -872,17 +888,31 @@ class RipCmd(Cmd):
             # XXX Should remove duplicates here?
         else:
             unmapped = list(self.disc.titles)
-        # Map all the titles that have been previously ripped from this disc
-        # XXX Also note that some stupid manufacturers have reused disc IDs for
-        # discs within a season. We need something better than just the serial!
+        # Map all the titles that have been previously ripped from this disc.
+        # The rather complex filter below deals with the different methods of
+        # identifying discs. In the first version of tvrip, disc serial number
+        # was used but was found to be insufficient (manufacturers sometimes
+        # repeat serial numbers or simply leave them blank), so a new mechanism
+        # involving a hash of disc details was introduced.
         for episode in self.session.query(Episode).\
                 filter(Episode.season==self.config.season).\
-                filter(Episode.disc_serial==self.disc.serial):
+                filter(
+                    sa.or_(
+                        sa.and_(
+                            Episode.disc_id.startswith('$H1$'),
+                            Episode.disc_id==self.disc.ident
+                        ),
+                        sa.and_(
+                            ~Episode.disc_id.startswith('$H1$'),
+                            Episode.disc_id==self.disc.serial
+                        )
+                    )
+                ):
             try:
                 title = [t for t in self.disc.titles if t.number==episode.disc_title][0]
             except IndexError:
-                raise CmdError('Previously ripped title %d not found on the scanned disc (serial %s)' % (
-                    episode.disc_title, episode.disc_serial))
+                raise CmdError('Previously ripped title %d not found on the scanned disc (id %s)' % (
+                    episode.disc_title, episode.disc_id))
             else:
                 if episode.start_chapter is not None:
                     self.do_map(u'%d %d.%d-%d' % (
@@ -896,7 +926,7 @@ class RipCmd(Cmd):
                 unmapped.remove(title)
         # Attempt to map the remaining unmapped titles to unripped episodes
         # from the selected season
-        unripped = [e for e in self.config.season.episodes if not e.disc_serial]
+        unripped = [e for e in self.config.season.episodes if not e.disc_id]
         # Bail out now if there's no unripped episodes left to be mapped
         if not unripped:
             return
@@ -1125,7 +1155,7 @@ class RipCmd(Cmd):
                 self.pprint(u'Ripping episode %d, "%s"' % (
                     episode.number, episode.name))
                 self.disc.rip(self.config, episode, title, audio_tracks, subtitle_tracks, chapter_start, chapter_end)
-                episode.disc_serial = self.disc.serial
+                episode.disc_id = self.disc.ident
                 episode.disc_title = title.number
                 if chapter_start:
                     episode.start_chapter = chapter_start.number
@@ -1158,7 +1188,7 @@ class RipCmd(Cmd):
             raise CmdError(u'No season has been set')
         if arg.strip() == u'*':
             for episode in self.config.season.episodes:
-                episode.disc_serial = None
+                episode.disc_id = None
                 episode.disc_title = None
                 episode.start_chapter = None
                 episode.end_chapter = None
@@ -1174,7 +1204,7 @@ class RipCmd(Cmd):
             except sa.orm.exc.NoResultFound:
                 raise CmdError(u'Episode %d of %s season %d does not exist' % (
                     arg, self.config.program.name, self.config.season.number))
-            episode.disc_serial = None
+            episode.disc_id = None
             episode.disc_title = None
             episode.start_chapter = None
             episode.end_chapter = None

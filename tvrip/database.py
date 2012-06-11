@@ -1,5 +1,21 @@
 # vim: set et sw=4 sts=4:
 
+# Copyright 2012 Dave Hughes.
+#
+# This file is part of tvrip.
+#
+# tvrip is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# tvrip is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# tvrip.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
 import tempfile
 import shutil
@@ -56,18 +72,18 @@ class Season(object):
 class Episode(object):
     u"""Represents an episode of a season of a program"""
 
-    def __init__(self, season, number, name, disc_serial=None, disc_title=None, start_chapter=None, end_chapter=None):
+    def __init__(self, season, number, name, disc_id=None, disc_title=None, start_chapter=None, end_chapter=None):
         self.season = season
         self.number = number
         self.name = name
-        self.disc_serial = disc_serial
+        self.disc_id = disc_id
         self.disc_title = disc_title
         self.start_chapter = start_chapter
         self.end_chapter = end_chapter
 
     @property
     def ripped(self):
-        return bool(self.disc_serial)
+        return bool(self.disc_id)
 
     def __repr__(self):
         return u"<Episode('%s - %dx%02d - %s')>" % (
@@ -194,7 +210,7 @@ def init_session(url=None, debug=False):
         sa.Column('season', sa.Integer, primary_key=True),
         sa.Column('episode', sa.Integer, primary_key=True),
         sa.Column('name', sa.Text, nullable=False),
-        sa.Column('disc_serial', sa.Text, nullable=True),
+        sa.Column('disc_id', sa.Text, nullable=True),
         sa.Column('disc_title', sa.Integer, nullable=True),
         sa.Column('start_chapter', sa.Integer, nullable=True),
         sa.Column('end_chapter', sa.Integer, nullable=True),

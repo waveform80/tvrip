@@ -3,47 +3,61 @@
 # External utilities
 PYTHON=python
 PYFLAGS=
-#LYNX=lynx
-#LYNXFLAGS=-nonumbers -justify
-LYNX=links
-LYNXFLAGS=
+DEST_DIR=/
+PROJECT=tvrip
 
 # Calculate the base names of the distribution, the location of all source,
 # documentation and executable script files
 NAME:=$(shell $(PYTHON) $(PYFLAGS) setup.py --name)
-BASE:=$(shell $(PYTHON) $(PYFLAGS) setup.py --fullname)
+VER:=$(shell $(PYTHON) $(PYFLAGS) setup.py --version)
 PYVER:=$(shell $(PYTHON) $(PYFLAGS) -c "import sys; print 'py%d.%d' % sys.version_info[:2]")
-SCRIPTS:=$(shell $(PYTHON) $(PYFLAGS) -c "import setup; setup.get_console_scripts()")
-SOURCE:=$(shell \
+PY_SOURCES:=$(shell \
 	$(PYTHON) $(PYFLAGS) setup.py egg_info >/dev/null 2>&1 && \
 	cat $(NAME).egg-info/SOURCES.txt)
+DOC_SOURCES:=$(wildcard docs/*.rst)
 
-# Calculate the name of all distribution archives / installers
-DIST_EGG=dist/$(BASE)-$(PYVER).egg
-DIST_WININST=dist/$(BASE).win32.exe
-DIST_RPM=dist/$(BASE)-1.src.rpm
-DIST_TAR=dist/$(BASE).tar.gz
-DIST_ZIP=dist/$(BASE).zip
+# Calculate the name of all outputs
+DIST_EGG=dist/$(NAME)-$(VER)-$(PYVER).egg
+DIST_EXE=dist/$(NAME)-$(VER).win32.exe
+DIST_RPM=dist/$(NAME)-$(VER)-1.src.rpm
+DIST_TAR=dist/$(NAME)-$(VER).tar.gz
+DIST_DEB=dist/$(NAME)_$(VER)-1~ppa1_all.deb
+MAN_DIR=build/sphinx/man
+MAN_PAGES=$(MAN_DIR)/tvrip.1
 
 # Default target
-build:
-	$(PYTHON) $(PYFLAGS) setup.py build
+all:
+	@echo "make install - Install on local system"
+	@echo "make doc - Generate HTML and PDF documentation"
+	@echo "make source - Create source package"
+	@echo "make buildegg - Generate a PyPI egg package"
+	@echo "make buildrpm - Generate an RedHat package"
+	@echo "make builddeb - Generate a Debian package"
+	@echo "make buildexe - Generate a Windows exe installer"
+	@echo "make clean - Get rid of scratch and byte files"
 
 install:
-	$(PYTHON) $(PYFLAGS) setup.py install
+	$(PYTHON) $(PYFLAGS) setup.py install --root $(DEST_DIR) $(COMPILE)
+
+doc: $(DOC_SOURCES)
+	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b html
+	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b latex
+	$(MAKE) -C build/sphinx/latex all-pdf
+
+source: $(DIST_TAR)
+
+buildexe: $(DIST_EXE)
+
+buildegg: $(DIST_EGG)
+
+buildrpm: $(DIST_RPM)
+
+builddeb: $(DIST_DEB)
+
+dist: $(DIST_EXE) $(DIST_EGG) $(DIST_RPM) $(DIST_DEB) $(DIST_TAR)
 
 develop: tags
 	$(PYTHON) $(PYFLAGS) setup.py develop
-	@echo
-	@echo "Please run the following to remove any redundant hash entries:"
-	@echo hash -d $(SCRIPTS)
-
-undevelop:
-	$(PYTHON) $(PYFLAGS) setup.py develop --uninstall
-	for s in $(SCRIPTS); do rm -f $(HOME)/bin/$$s; done
-	@echo
-	@echo "Please run the following to remove any redundant hash entries:"
-	@echo hash -d $(SCRIPTS)
 
 test:
 	@echo "No tests currently implemented"
@@ -51,31 +65,43 @@ test:
 
 clean:
 	$(PYTHON) $(PYFLAGS) setup.py clean
-	rm -f $(DOCS) tags
-	rm -fr build/ $(NAME).egg-info/
+	$(MAKE) -f $(CURDIR)/debian/rules clean
+	rm -fr build/ dist/ $(NAME).egg-info/ tags distribute-*.egg distribute-*.tar.gz
+	find $(CURDIR) -name "*.pyc" -delete
 
-cleanall: clean
-	rm -fr dist/
+tags: $(PY_SOURCES)
+	ctags -R --exclude="build/*" --exclude="docs/*" --languages="Python"
 
-dist: bdist sdist
+ppa_release: $(PY_SOURCES) $(DOC_SOURCES)
+	$(MAKE) clean
+	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
+	$(PYTHON) $(PYFLAGS) setup.py sdist $(COMPILE) --dist-dir=../
+	rename -f 's/$(PROJECT)-(.*)\.tar\.gz/$(PROJECT)_$$1\.orig\.tar\.gz/' ../*
+	debuild -S -i -I -Idist -Idocs -Ibuild/sphinx/doctrees -rfakeroot
 
-bdist: $(DIST_WININST) $(DIST_EGG)
+$(MAN_PAGES): $(DOC_SOURCES)
+	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
 
-sdist: $(DIST_TAR) $(DIST_ZIP)
+$(DIST_TAR): $(PY_SOURCES)
+	$(PYTHON) $(PYFLAGS) setup.py sdist $(COMPILE)
 
-$(DIST_EGG): $(SOURCE) $(DOCS)
-	$(PYTHON) $(PYFLAGS) setup.py bdist_egg
+$(DIST_EGG): $(PY_SOURCES)
+	$(PYTHON) $(PYFLAGS) setup.py bdist_egg $(COMPILE)
 
-$(DIST_WININST): $(SOURCE) $(DOCS)
-	$(PYTHON) $(PYFLAGS) setup.py bdist_wininst
+$(DIST_EXE): $(PY_SOURCES)
+	$(PYTHON) $(PYFLAGS) setup.py bdist_wininst $(COMPILE)
 
-$(DIST_TAR): $(SOURCE) $(DOCS)
-	$(PYTHON) $(PYFLAGS) setup.py sdist --formats=gztar
+$(DIST_RPM): $(PY_SOURCES) $(MAN_PAGES)
+	$(PYTHON) $(PYFLAGS) setup.py bdist_rpm $(COMPILE)
+	# XXX Add man-pages to RPMs ... how?
+	#$(PYTHON) $(PYFLAGS) setup.py bdist_rpm --post-install=rpm/postinstall --pre-uninstall=rpm/preuninstall $(COMPILE)
 
-$(DIST_ZIP): $(SOURCE) $(DOCS)
-	$(PYTHON) $(PYFLAGS) setup.py sdist --formats=zip
+$(DIST_DEB): $(PY_SOURCES) $(MAN_PAGES)
+	# build the source package in the parent directory then rename it to
+	# project_version.orig.tar.gz
+	$(PYTHON) $(PYFLAGS) setup.py sdist $(COMPILE) --dist-dir=../
+	rename -f 's/$(PROJECT)-(.*)\.tar\.gz/$(PROJECT)_$$1\.orig\.tar\.gz/' ../*
+	debuild -b -i -I -Idist -Idocs -Ibuild/sphinx/doctrees -rfakeroot
+	mkdir -p dist/
+	mv ../$(NAME)_$(VER)-1~ppa1_all.deb dist/
 
-tags: $(SOURCE)
-	ctags -R --exclude="build/*" --languages="Python"
-
-FORCE:
