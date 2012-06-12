@@ -869,26 +869,66 @@ class RipCmd(Cmd):
         command.
         """
         self.pprint(u'Performing auto-mapping')
-        self.map = {}
+        # Generate the list of titles, either specified or implied in the
+        # arguments
         if arg:
-            unmapped = []
+            to_map = []
             try:
                 for a in arg.split(u' '):
                     if u'-' in a:
                         start, finish = (int(i) for i in a.split(u'-', 1))
-                        unmapped.extend(t for t in self.disc.titles if start <= t.number <= finish)
+                        to_map.extend(t for t in self.disc.titles if start <= t.number <= finish)
                     else:
                         try:
-                            unmapped.append([t for t in self.disc.titles if t.number == int(a)][0])
+                            to_map.append([t for t in self.disc.titles if t.number == int(a)][0])
                         except IndexError:
                             raise CmdError(u'Title %d does not exist or is not rippable' % int(a))
             except ValueError:
                 raise CmdSyntaxError(u'You must specify space separated title numbers')
-            unmapped = sorted(unmapped, key=attrgetter('number'))
+            to_map = sorted(to_map, key=attrgetter('number'))
             # XXX Should remove duplicates here?
         else:
-            unmapped = list(self.disc.titles)
-        # Map all the titles that have been previously ripped from this disc.
+            to_map = list(self.disc.titles)
+        # Map all the titles that have been previously ripped from this disc,
+        # then attempt to find title mappings for the remaining unripped
+        # titles. If we don't manage to find a single title to map to an
+        # episode it's possible we're dealing with one of those weird discs
+        # where lots of episodes are in one title with chapters delimiting the
+        # episodes so we attempt chapter-mapping instead
+        new_map = self.automap_ripped(to_map)
+        for mapping in new_map.itervalues():
+            if isinstance(mapping, Title):
+                to_map.remove(title)
+            else:
+                start_chapter, end_chapter = mapping
+                to_map.remove(start_chapter.title)
+        unripped = [e for e in self.config.season.episodes if not e.ripped]
+        if any(unripped):
+            new_map.update(
+                self.automap_titles(to_map, unripped) or
+                self.automap_chapters(to_map, unripped)
+            )
+        # If we succeeded in mapping anything at all, rewrite the current
+        # episode map, otherwise throw an error
+        if new_map:
+            self.map = {}
+            for episode, mapping in sorted(new_map.iteritems(), key=lambda t: t[0].number):
+                if isinstance(mapping, Title):
+                    self.do_map(u'%d %d' % (episode.number, title.number))
+                else:
+                    start_chapter, end_chapter = mapping
+                    self.do_map(u'%d %d.%d-%d' % (
+                        episode.number,
+                        start_chapter.title.number,
+                        start_chapter.number,
+                        end_chapter.number,
+                    ))
+        else:
+            raise CmdError(u'Failed to find a valid mapping for the selected titles')
+
+    def automap_ripped(self, to_map):
+        self.pprint(u'Mapping already ripped episodes (if any)')
+        result = {}
         # The rather complex filter below deals with the different methods of
         # identifying discs. In the first version of tvrip, disc serial number
         # was used but was found to be insufficient (manufacturers sometimes
@@ -914,91 +954,123 @@ class RipCmd(Cmd):
                 raise CmdError('Previously ripped title %d not found on the scanned disc (id %s)' % (
                     episode.disc_title, episode.disc_id))
             else:
-                if episode.start_chapter is not None:
-                    self.do_map(u'%d %d.%d-%d' % (
-                        episode.number,
-                        title.number,
-                        episode.start_chapter,
-                        episode.end_chapter,
-                    ))
+                if episode.start_chapter is None:
+                    result[episode] = title
                 else:
-                    self.do_map(u'%d %d' % (episode.number, title.number))
-                unmapped.remove(title)
-        # Attempt to map the remaining unmapped titles to unripped episodes
-        # from the selected season
-        unripped = [e for e in self.config.season.episodes if not e.disc_id]
-        # Bail out now if there's no unripped episodes left to be mapped
-        if not unripped:
-            return
+                    result[episode] = (
+                        title.chapters[episode.start_chapter],
+                        title.chapters[episode.end_chapter]
+                    )
+        return result
+
+    def automap_titles(self, to_map, unripped):
+        self.pprint(u'Attempting title-based mapping')
+        result = {}
         try_chapters = True
-        for title in list(unmapped):
-            if unripped and self.config.duration_min <= title.duration <= self.config.duration_max:
-                self.do_map(u'%d %d' % (unripped.pop(0).number, title.number))
-                unmapped.remove(title)
-                try_chapters = False
+        for title in to_map:
+            if self.config.duration_min <= title.duration <= self.config.duration_max:
+                result[episode] = title
+                if len(result) == len(unripped):
+                    break
             else:
                 self.pprint(u'Title %d is not an episode (duration: %s)' % (
                     title.number,
                     title.duration,
                 ))
-        if try_chapters:
-            self.pprint(u'Attempting to map chapters of longest title to episodes')
-            # If we didn't manage to find a single title to map to an
-            # episode it's possible we're dealing with one of those weird
-            # discs where lots of episodes are in one title with chapters
-            # delimiting the episodes. Firstly, find the longest title...
-            for title in reversed(sorted(unmapped, key=attrgetter('duration'))):
-                break
-            self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
-                title.number,
-                title.duration,
-                len(title.chapters),
-            ))
-            # Now loop over the chapters of the longest title, attempting
-            # to build up consecutive runs of chapters with a duration
-            # between the required min and max
-            episode_map = []
-            current_duration = timedelta()
-            current_episode = unripped.pop(0)
-            for chapter in title.chapters:
-                episode_map.append(current_episode)
-                current_duration += chapter.duration
-                if self.config.duration_min <= current_duration <= self.config.duration_max:
-                    # If got a run of chapters that fits the duration
-                    # limit, get the next episode to try and match to some
-                    # chapters
-                    current_duration = timedelta()
-                    current_episode = None
-                    if chapter.duration.seconds == 0:
-                        self.pprint(u'Ignoring empty chapter %d' % chapter.number)
-                    if unripped:
-                        current_episode = unripped.pop(0)
+        return result
+
+    def automap_chapters(self, to_map, unripped):
+        self.pprint(u'Attempting chapter-based mapping')
+        title = sorted(to_map, key=attrgetter('duration'))[-1]
+        self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
+            title.number,
+            title.duration,
+            len(title.chapters),
+        ))
+        # We represent mappings within this method as a list of chapter counts,
+        # hence the mapping [2, 3, 4, 2] means the first episode consists of
+        # two chapters, the second episode consists of the next three chapters
+        # and so on
+        to_map = title.chapters
+        # XXX Remove trailing empty chapters
+        result = []
+        def partition(seq, counts):
+            index = 0
+            for count in counts:
+                yield seq[index:index + count]
+                index += count
+        def valid(chapters, unripped, mapping):
+            return (
+                (len(mapping) <= len(unripped)) and
+                (sum(mapping) == len(chapters)) and
+                all(
+                    self.config.duration_min <= sum(
+                        (chapter.duration for chapter in episode_chapters),
+                        timedelta()
+                    ) <= self.config.duration_max
+                    for episode_chapters in partition(chapters, mapping)
+                )
+            )
+        def explore(chapters, unripped, mapping=[], solutions=[]):
+            duration = timedelta()
+            for count, chapter in enumerate(chapters[sum(mapping):]):
+                duration += chapter.duration
+                if duration > self.config.duration_max:
+                    break
+                elif duration >= self.config.duration_min:
+                    if valid(chapters, unripped, mapping + [count + 1]):
+                        solutions.append(mapping + [count + 1])
+                    explore(chapters, unripped, mapping + [count + 1], solutions)
+            if not mapping:
+                return solutions
+        def output(chapters, unripped, solution):
+            start_chapter = 1
+            for episode, count in zip(unripped, solution):
+                self.pprint(u'Episode %d = Chapter %d-%d (%s)' % (
+                    episode.number,
+                    start_chapter,
+                    start_chapter + count - 1,
+                    str(sum((
+                        c.duration
+                        for c in to_map[start_chapter - 1:start_chapter + count - 1]
+                    ), timedelta()))
+                ))
+                start_chapter += count
+        solutions = explore(to_map, unripped)
+        if len(solutions) > 1:
+            self.pprint(u'Found %d potential chapter mappings' % len(solutions))
+            for index, solution in enumerate(solutions):
+                self.pprint(u'')
+                self.pprint(u'Solution %d' % (index + 1))
+                output(to_map, unripped, solution)
+            self.pprint(u'')
+            try:
+                selection = int(self.input('Enter solution number to use [1-%d] ' % len(solutions)))
+                if not 1 <= selection <= len(solutions):
+                    raise ValueError
+            except ValueError:
+                while True:
+                    try:
+                        selection = int(self.input('Invalid input. Please enter a number [1-%d] ' % len(solutions)))
+                        if not 1 <= selection <= len(solutions):
+                            raise ValueError
+                    except ValueError:
+                        pass
                     else:
                         break
-                elif current_duration > self.config.duration_max:
-                    # Likewise, if at any point we wind up with a run of
-                    # chapters that exceeds the maximum duration, quit in
-                    # disgrace!
-                    self.pprint(u'Exceeded maximum duration while aggregating chapters; aborting')
-                    episode_map = []
-                    break
-            if chapter is not title.chapters[-1]:
-                self.pprint(u'Warning: stopped at chapter %d, before last chapter %d' % (
-                    chapter.number, title.chapters[-1].number
-                ))
-            # If we've got stuff in episode_map it's guaranteed to be
-            # exactly as long as title.chapters so zip 'em together and
-            # group the result to map start and end chapters easily
-            if episode_map:
-                for episode, chapters in groupby(izip(episode_map, title.chapters), key=itemgetter(0)):
-                    if episode:
-                        chapters = [c for (e, c) in chapters]
-                        self.do_map(u'%d %d.%d-%d' % (
-                            episode.number,
-                            chapters[0].title.number,
-                            chapters[0].number,
-                            chapters[-1].number, 
-                        ))
+            solution = solutions[selection - 1]
+        elif len(solutions) == 1:
+            self.pprint(u'Solution:')
+            output(to_map, unripped, solutions[0])
+            solution = solutions[0]
+        else:
+            self.pprint(u'No potential chapter mappings found')
+            return {}
+        return dict(
+            (episode, (chapters[0], chapters[-1]))
+            for (episode, chapters) in zip(unripped, partition(to_map, solution))
+        )
+
 
     def do_map(self, arg):
         u"""Maps episodes to titles or chapter ranges.
