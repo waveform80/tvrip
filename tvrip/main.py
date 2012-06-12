@@ -26,7 +26,7 @@ import traceback
 from optparse import OptionParser
 from tvrip.cmdline import RipCmd
 
-__version__ = '0.6'
+__version__ = '0.7'
 
 def tvrip_main(args=None):
     if args is None:

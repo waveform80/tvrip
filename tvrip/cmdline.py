@@ -16,20 +16,37 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""This module implements the command line processor for the tvrip application"""
+
 import os
 import re
 import readline
 import sqlalchemy as sa
 import locale
-from itertools import izip, groupby
-from operator import attrgetter, itemgetter
+from operator import attrgetter
 from cmd import Cmd
 from textwrap import TextWrapper
 from datetime import timedelta
 from tvrip.termsize import terminal_size
-from tvrip.ripper import Disc, Title, Chapter
-from tvrip.database import init_session, Configuration, Program, Season, Episode, AudioLanguage, SubtitleLanguage, ConfigPath
+from tvrip.ripper import Disc, Title
+from tvrip.database import (
+    init_session, Configuration, Program, Season, Episode,
+    AudioLanguage, SubtitleLanguage, ConfigPath
+)
+from tvrip.episodemap import EpisodeMap
 
+COLOR_BOLD    = u'\033[1m'
+COLOR_BLACK   = u'\033[30m'
+COLOR_RED     = u'\033[31m'
+COLOR_GREEN   = u'\033[32m'
+COLOR_YELLOW  = u'\033[33m'
+COLOR_BLUE    = u'\033[34m'
+COLOR_MAGENTA = u'\033[35m'
+COLOR_CYAN    = u'\033[36m'
+COLOR_WHITE   = u'\033[37m'
+COLOR_RESET   = u'\033[0m'
+USE_COLOR = True
+PROMPT = u'tvrip> '
 ENCODING = locale.getdefaultlocale()[1]
 
 
@@ -40,15 +57,105 @@ class CmdSyntaxError(CmdError):
     u"""Exception raised when the user makes a syntax error"""
 
 
+def parse_boolean(s):
+    u"""Parse a boolean value.
+
+    Given a string, interprets it as a boolean value (True, False).
+    """
+    try:
+        return {
+            u'false': False,
+            u'off':   False,
+            u'no':    False,
+            u'n':     False,
+            u'0':     False,
+            u'true':  True,
+            u'on':    True,
+            u'yes':   True,
+            u'y':     True,
+            u'1':     True,
+        }[s.strip().lower()]
+    except KeyError:
+        raise CmdSyntaxError(u"invalid boolean literal '%s'" % s)
+
+def parse_number_range(s):
+    u"""Parse a dash-separated number range.
+
+    Given a string containing two dash-separated numbers, returns the integer
+    value of the start and end of the range.
+    """
+    try:
+        start, finish = (int(i) for i in s.split(u'-', 1))
+    except ValueError, exc:
+        raise CmdSyntaxError(exc)
+    if finish < start:
+        raise CmdSyntaxError(u'%d-%d range goes backwards' % (start, finish))
+    return start, finish
+
+def parse_number_list(s):
+    u"""Parse a comma-separated list of dash-separated number ranges.
+
+    Given a string containing comma-separated numbers or ranges of numbers,
+    returns a sequence of all specified numbers (ranges of numbers are expanded
+    by this method).
+    """
+    result = []
+    for i in s.split(u','):
+        if u'-' in i:
+            start, finish = parse_number_range(i)
+            result.extend(range(start, finish + 1))
+        else:
+            try:
+                result.append(int(i))
+            except ValueError, exc:
+                raise CmdSyntaxError(exc)
+    return result
+
+def parse_docstring(docstring):
+    u"""Utility routine for converting docstrings into help-text"""
+    lines = [line.strip() for line in docstring.splitlines()]
+    result = ['']
+    for line in lines:
+        if result:
+            if line:
+                if line.startswith(PROMPT):
+                    if result[-1]:
+                        result.append(line)
+                    else:
+                        result[-1] = line
+                else:
+                    if result[-1]:
+                        result[-1] += ' ' + line
+                    else:
+                        result[-1] = line
+            else:
+                result.append('')
+    if not result[-1]:
+        result = result[:-1]
+    return result
+
+def complete_path(text, line, start, finish):
+    u"""Utility routine used by path completion methods"""
+    path, _ = os.path.split(line)
+    return [
+        item
+        for item in os.listdir(os.path.expanduser(path))
+        if item.startswith(text)
+    ]
+
+
 class RipCmd(Cmd):
     u"""Implementation of the TVRip command line"""
     use_rawinput = True
-    prompt = u'tvrip> '
+    prompt = [
+        PROMPT,
+        COLOR_BOLD + COLOR_GREEN + PROMPT + COLOR_RESET,
+    ][USE_COLOR]
 
     def __init__(self, debug=False):
         Cmd.__init__(self)
         self.discs = {}
-        self.map = {}
+        self.episode_map = EpisodeMap()
         self.wrapper = TextWrapper()
         self.session = init_session(debug=debug)
         # Read the configuration from the database
@@ -57,26 +164,149 @@ class RipCmd(Cmd):
         except sa.orm.exc.NoResultFound:
             self.config = Configuration()
             self.session.add(self.config)
-            self.session.add(AudioLanguage(u'eng'))
-            self.session.add(SubtitleLanguage(u'eng'))
-            self.session.add(ConfigPath(u'handbrake',     u'/usr/bin/HandBrakeCLI'))
-            self.session.add(ConfigPath(u'atomicparsley', u'/usr/bin/AtomicParsley'))
-            self.session.add(ConfigPath(u'tccat',         u'/usr/bin/tccat'))
-            self.session.add(ConfigPath(u'tcextract',     u'/usr/bin/tcextract'))
-            self.session.add(ConfigPath(u'subtitle2pgm',  u'/usr/bin/subtitle2pgm'))
-            self.session.add(ConfigPath(u'gocr',          u'/usr/bin/gocr'))
+            self.session.add(AudioLanguage(lang=u'eng'))
+            self.session.add(SubtitleLanguage(lang=u'eng'))
+            self.session.add(ConfigPath(name=u'handbrake',
+                path=u'/usr/bin/HandBrakeCLI'))
+            self.session.add(ConfigPath(name=u'atomicparsley',
+                path=u'/usr/bin/AtomicParsley'))
+            self.session.add(ConfigPath(name=u'vlc',
+                path=u'/usr/bin/vlc'))
             self.session.commit()
 
     def _get_disc(self):
+        u"""Returns the Disc object for the current source"""
         return self.discs.get(self.config.source, None)
     def _set_disc(self, value):
+        u"""Set the Disc object for the current source"""
         if self.config.source is None:
             raise CmdError(u'No source has been specified')
         elif self.config.source in self.discs:
             # XXX assert that no background jobs are currently running
             pass
-        self.discs[self.config.source] = value
+        if value is None:
+            del self.discs[self.config.source]
+        else:
+            self.discs[self.config.source] = value
     disc = property(_get_disc, _set_disc)
+
+    def parse_episode(self, episode, must_exist=True):
+        u"""Parse a string containing an episode number.
+
+        Given a string representing an episode number, this method returns the
+        Episode object from the current program's season with the corresponding
+        number, or throws an error if no such episode exists unless the optional
+        must_exist flag is set to False.
+        """
+        if not self.config.program:
+            raise CmdError(u'No program has been set')
+        elif not self.config.season:
+            raise CmdError(u'No season has been set')
+        try:
+            episode = int(episode)
+        except ValueError:
+            raise CmdSyntaxError(u'Expected episode number but found "%s"' %
+                episode)
+        if episode < 1:
+            raise CmdError(u'Episode number %d is less than one' % episode)
+        try:
+            return self.session.query(Episode).\
+                filter(Episode.season==self.config.season).\
+                filter(Episode.number==episode).one()
+        except sa.orm.exc.NoResultFound:
+            if must_exist:
+                raise CmdError(u'There is no episode %d in season %d of %s' %
+                    (episode, self.config.season.number,
+                    self.config.program.name))
+            else:
+                return None
+
+    def parse_episode_range(self, episodes):
+        u"""Parse a string containing an episode range.
+
+        Given a string representing a range of episodes as two dash-separated
+        numbers, this method returns the Episode objects at the start and end
+        of the range or throws an error if no such episodes exist.
+        """
+        if not u'-' in episodes:
+            raise CmdSyntaxError(u'Expected two dash-separated numbers')
+        start, finish = (
+            self.parse_episode(i)
+            for i in episodes.split(u'-', 1)
+        )
+        return start, finish
+
+    def parse_title(self, title):
+        u"""Parse a string containing a title number.
+
+        Given a string representing a title number, this method returns the
+        Title object from the current disc with the corresponding number, or
+        throws an error if no such title exists.
+        """
+        if not self.disc:
+            raise CmdError(u'No disc has been scanned yet')
+        elif not self.disc.titles:
+            raise CmdError(u'No titles found on the scanned disc')
+        try:
+            title = int(title)
+        except ValueError:
+            raise CmdSyntaxError(u'Expected title number but found "%s"' %
+                title)
+        if not 1 <= title <= 99:
+            raise CmdError(u'Title number %d is not between 1 and 99' % title)
+        try:
+            return [t for t in self.disc.titles if t.number == title][0]
+        except IndexError:
+            raise CmdError(u'There is no title %d on the scanned disc' % title)
+
+    def parse_title_range(self, titles):
+        u"""Parse a string containing a title range.
+
+        Given a string representing a range of titles as two dash-separated
+        numbers, this method returns the Title objects at the start and end
+        of the range or throws an error if no such titles exist.
+        """
+        if not u'-' in titles:
+            raise CmdSyntaxError(u'Expected two dash-separated numbers')
+        start, finish = (
+            self.parse_title(i)
+            for i in titles.split(u'-', 1)
+        )
+        return start, finish
+
+    def parse_chapter(self, title, chapter):
+        u"""Parse a string containing a chapter number.
+
+        Given a string representing a chapter number, and the Title object that
+        the chapter is presumed to exist within, this method returns the
+        Chapter object with the corresponding number, or throws an error if no
+        such chapter exists.
+        """
+        try:
+            chapter = int(chapter)
+        except ValueError:
+            raise CmdSyntaxError(u'Expected chapter number but found "%s"' %
+                chapter)
+        try:
+            return [c for c in title.chapters if c.number == chapter][0]
+        except IndexError:
+            raise CmdError(u'There is no chapter %d within title %d' %
+                (chapter, title.number))
+
+    def parse_chapter_range(self, title, chapters):
+        u"""Parse a string containing a chapter range.
+
+        Given a string representing a range of chapters as two dash-separated
+        numbers, this method returns the Chapter objects at the start and end
+        of the range or throws an error if no such chapters exist.
+        """
+        if not u'-' in chapters:
+            raise CmdSyntaxError(u'Expected two dash-separated numbers')
+        start, finish = (
+            self.parse_chapter(title, i)
+            for i in chapters.split(u'-', 1)
+        )
+        return start, finish
 
     def default(self, line):
         raise CmdSyntaxError(u'Syntax error: %s' % line)
@@ -94,14 +324,13 @@ class RipCmd(Cmd):
         # of them
         try:
             return Cmd.onecmd(self, line)
-        except CmdError, e:
-            self.pprint(str(e) + u'\n')
+        except CmdError, exc:
+            self.pprint(str(exc) + u'\n')
 
     whitespace_re = re.compile(ur'\s+$')
     def wrap(self, s, newline=True, wrap=True, initial_indent=u'',
             subsequent_indent=u''):
-        """Utility routine for wrapping a paragraph of text to the width of the
-        terminal with optional indentation"""
+        u"""Utility method for wrapping a paragraph of text to the terminal"""
         suffix = u''
         if newline:
             suffix = u'\n'
@@ -110,14 +339,14 @@ class RipCmd(Cmd):
             if match:
                 suffix = match.group()
         if wrap:
-            w = self.wrapper
-            w.width = terminal_size()[0] - 2
-            w.initial_indent = initial_indent
-            w.subsequent_indent = subsequent_indent
-            s = w.fill(s)
+            self.wrapper.width = terminal_size()[0] - 2
+            self.wrapper.initial_indent = initial_indent
+            self.wrapper.subsequent_indent = subsequent_indent
+            s = self.wrapper.fill(s)
         return s + suffix
 
     def input(self, prompt=u''):
+        u"""Utility method for prompting and reading input from the user"""
         lines = self.wrap(prompt, newline=False).split(u'\n')
         prompt = lines[-1]
         s = u''.join(line + u'\n' for line in lines[:-1])
@@ -128,33 +357,85 @@ class RipCmd(Cmd):
 
     def pprint(self, s, newline=True, wrap=True,
             initial_indent=u'', subsequent_indent=u''):
-        """Utility routine for pretty-printing text to stdout"""
+        u"""Utility method for pretty-printing text to the terminal"""
         s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
         if isinstance(s, unicode):
             s = s.encode(ENCODING)
         self.stdout.write(s)
 
-    def parse_docstring(self, s):
-        lines = [line.strip() for line in s.splitlines()]
-        result = ['']
-        for line in lines:
-            if result:
-                if line:
-                    if line.startswith(self.prompt):
-                        if result[-1]:
-                            result.append(line)
-                        else:
-                            result[-1] = line
-                    else:
-                        if result[-1]:
-                            result[-1] += ' ' + line
-                        else:
-                            result[-1] = line
-                else:
-                    result.append('')
-        if not result[-1]:
-            result = result[:-1]
-        return result
+    def pprint_table(self, data, header_rows=1, footer_rows=0):
+        u"""Utility method for pretty-printing a table of data"""
+        # Calculate the maximum length of each column. Note that zip(*data) is
+        # a quick trick for transposing a list of lists, assuming each row in
+        # data is of equal length
+        lengths = [
+            max(len(unicode(item)) for item in row)
+            for row in zip(*data)
+        ]
+        # Take a copy of data that we can insert header and footer lines into
+        data = list(data)
+        if header_rows > 0:
+            data.insert(header_rows, tuple(u'-' * i for i in lengths))
+        if footer_rows > 0:
+            data.insert(-footer_rows, tuple(u'-' * i for i in lengths))
+        # Print the result. Note that we avoid pprint here as we deliberately
+        # don't want to wrap anything (in the vague hope that the terminal is
+        # wide enough).
+        # XXX Improve algorithm to reduce column widths when terminal is slim
+        for row in data:
+            self.stdout.write(u' '.join(
+                u'%-*s' % (length, s) for (length, s) in zip(lengths, row)
+            ) + u'\n')
+
+    def pprint_programs(self):
+        """Prints the defined programs"""
+        table = [(u'Program', u'Seasons', u'Episodes', u'Ripped')]
+        for (program, seasons, episodes, ripped) in self.session.query(
+                    Program.name,
+                    sa.func.count(Season.number.distinct()),
+                    sa.func.count(Episode.number),
+                    sa.func.count(Episode.disc_id)
+                ).outerjoin(Season).outerjoin(Episode).\
+                group_by(Program.name).order_by(Program.name):
+            table.append((program, seasons, episodes,
+                '%d%%' % (ripped * 100 / episodes)))
+        self.pprint_table(table)
+
+    def pprint_seasons(self, program=None):
+        """Prints the seasons of the specified program"""
+        if program is None:
+            program = self.config.program
+        self.pprint(u'Seasons for program %s' % program.name)
+        self.pprint(u'')
+        table = [(u'Num', u'Episodes', u'Ripped')]
+        for (season, episodes, ripped) in self.session.query(
+                    Season.number,
+                    sa.func.count(Episode.number),
+                    sa.func.count(Episode.disc_id)
+                ).filter(Season.program==program).\
+                outerjoin(Episode).\
+                group_by(Season.number).\
+                order_by(Season.number):
+            table.append((season, episodes,
+                '%d%%' % (ripped * 100 / episodes)))
+        self.pprint_table(table)
+
+    def pprint_episodes(self, season=None):
+        """Prints the episodes of the specified season"""
+        if season is None:
+            season = self.config.season
+        self.pprint(u'Episodes for season %d of program %s' %
+            (season.number, season.program.name))
+        self.pprint(u'')
+        table = [(u'Num', u'Title', u'Ripped')]
+        for episode in self.session.query(Episode).\
+                filter(Episode.season==season):
+            table.append((
+                episode.number,
+                episode.name,
+                [u'', u'x'][episode.ripped]
+            ))
+        self.pprint_table(table)
 
     def do_help(self, arg):
         u"""Displays the available commands or help on a specified command.
@@ -164,19 +445,20 @@ class RipCmd(Cmd):
         commands along with a brief description of each.
         """
         if arg:
-            extra_line = False
-            paras = self.parse_docstring(getattr(self, u'do_%s' % arg).__doc__)
+            if not hasattr(self, u'do_%s' % arg):
+                raise CmdError(u'Unknown command %s' % arg)
+            paras = parse_docstring(getattr(self, u'do_%s' % arg).__doc__)
             for para in paras[1:]:
-                if para.startswith(self.prompt):
+                if para.startswith(PROMPT):
                     self.pprint('  ' + para, wrap=False)
                 else:
                     self.pprint(para)
                     self.pprint('')
-            if paras[-1].startswith(self.prompt):
+            if paras[-1].startswith(PROMPT):
                 self.pprint('')
         else:
             commands = [
-                (method[3:], self.parse_docstring(getattr(self, method).__doc__)[0])
+                (method[3:], parse_docstring(getattr(self, method).__doc__)[0])
                 for method in self.get_names()
                 if method.startswith(u'do_')
                 and method != u'do_EOF'
@@ -188,13 +470,13 @@ class RipCmd(Cmd):
                 terminal_size()[0] / 3
             )
             indent = ' ' * maxlen
-            for (command, help) in commands:
+            for (command, help_text) in commands:
                 if len(command) <= maxlen:
-                    self.pprint(u'%-*s%s' % (maxlen, command, help),
+                    self.pprint(u'%-*s%s' % (maxlen, command, help_text),
                         subsequent_indent=indent)
                 else:
                     self.pprint(command)
-                    self.pprint(help, initial_indent=indent,
+                    self.pprint(help_text, initial_indent=indent,
                         subsequent_indent=indent)
 
     def do_exit(self, arg):
@@ -205,6 +487,8 @@ class RipCmd(Cmd):
         The 'exit' command is used to terminate the application. You can also
         use the standard UNIX Ctrl+D end of file sequence to quit.
         """
+        if arg:
+            raise CmdSyntaxError(u'Unknown argument %s' % arg)
         self.pprint(u'')
         self.session.commit()
         return True
@@ -217,6 +501,8 @@ class RipCmd(Cmd):
         The 'config' command simply outputs the current set of configuration
         options as set by the various other commands.
         """
+        if arg:
+            raise CmdSyntaxError(u'Unknown argument %s' % arg)
         self.pprint(u'External Utility Paths:')
         self.pprint(u'')
         for path in self.config.paths:
@@ -227,52 +513,28 @@ class RipCmd(Cmd):
         self.pprint(u'source           = %s' % self.config.source)
         self.pprint(u'target           = %s' % self.config.target)
         self.pprint(u'temp             = %s' % self.config.temp)
-        self.pprint(u'duration         = %d-%d (mins)' % (self.config.duration_min.seconds / 60, self.config.duration_max.seconds / 60))
-        self.pprint(u'program          = %s' % (self.config.program.name if self.config.program else '<none set>'))
-        self.pprint(u'season           = %s' % (self.config.season.number if self.config.season else '<none set>'))
+        self.pprint(u'duration         = %d-%d (mins)' % (
+            self.config.duration_min.seconds / 60,
+            self.config.duration_max.seconds / 60)
+        )
+        self.pprint(u'program          = %s' % (
+            self.config.program.name if self.config.program else u'<none set>'
+        ))
+        self.pprint(u'season           = %s' % (
+            self.config.season.number if self.config.season else u'<none set>'
+        ))
         self.pprint(u'template         = %s' % self.config.template)
         self.pprint(u'decomb           = %s' % self.config.decomb)
         self.pprint(u'audio_mix        = %s' % self.config.audio_mix)
-        self.pprint(u'audio_tracks     = %s' % self.config.audio_tracks)
-        self.pprint(u'audio_langs      = %s' % u' '.join(l.lang for l in self.config.audio_langs))
+        self.pprint(u'audio_all        = %s' % [u'off', u'on'][self.config.audio_all])
+        self.pprint(u'audio_langs      = %s' % u' '.join(
+            l.lang for l in self.config.audio_langs
+        ))
         self.pprint(u'subtitle_format  = %s' % self.config.subtitle_format)
-        self.pprint(u'subtitle_tracks  = %s' % self.config.subtitle_tracks)
-        self.pprint(u'subtitle_black   = %s' % self.config.subtitle_black)
-        self.pprint(u'subtitle_langs   = %s' % u' '.join(l.lang for l in self.config.subtitle_langs))
-        self.pprint(u'')
-        self.pprint(u'Current Source:')
-        self.pprint(u'')
-        if self.disc:
-            self.pprint(u'serial = %s' % self.disc.serial)
-        else:
-            self.pprint(u'None')
-        self.pprint(u'')
-        self.pprint(u'Episode Mapping (* indicates ripped):')
-        self.pprint(u'')
-        if self.map:
-            for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
-                if isinstance(mapping, Title):
-                    index = u'%.2d' % mapping.number
-                    duration = u'%s' % mapping.duration
-                else:
-                    chapter_start, chapter_end = mapping
-                    index = u'%.2d.%.02d-%.02d' % (chapter_start.title.number, chapter_start.number, chapter_end.number)
-                    duration = u'%s' % sum(
-                        (
-                            c.duration for c in chapter_start.title.chapters
-                            if chapter_start.number <= c.number <= chapter_end.number
-                        ),
-                        timedelta()
-                    )
-                self.pprint(u'%2stitle %s (%s) = episode %2d, "%s"' % (
-                    u'*' if episode.ripped else u' ',
-                    index,
-                    duration,
-                    episode.number,
-                    episode.name
-                ))
-        else:
-            self.pprint(u'Episode map is currently empty')
+        self.pprint(u'subtitle_all     = %s' % [u'off', u'on'][self.config.subtitle_all])
+        self.pprint(u'subtitle_langs   = %s' % u' '.join(
+            l.lang for l in self.config.subtitle_langs
+        ))
 
     def do_path(self, arg):
         u"""Sets a path to an external utility.
@@ -280,17 +542,23 @@ class RipCmd(Cmd):
         Syntax: path <name> <value>
 
         The 'path' command is used to alter the path of one of the external
-        utilities used by TVRip. Specify the name of the path (which you can find
-        from the 'config' command) and the new path to the utility. For example:
+        utilities used by TVRip. Specify the name of the path (which you can
+        find from the 'config' command) and the new path to the utility. For
+        example:
 
         tvrip> path handbrake /usr/bin/HandBrakeCLI
         tvrip> path atomicparsley /usr/bin/AtomicParsley
         """
-        name, value = arg.split(u' ', 1)
+        name, path = arg.split(u' ', 1)
+        if not os.path.exists(path):
+            self.pprint(u"Warning: path '%s' does not exist" % path)
+        if not os.access(path, os.X_OK):
+            self.pprint(u"Warning: path '%s' is not executable" % path)
         try:
-            self.config.set_path(name, value)
+            self.config.set_path(name, path)
         except sa.orm.exc.NoResultFound:
-            raise CmdError(u"Path name '%s' is invalid, please see 'config' for valid options" % name)
+            raise CmdError(u"Path name '%s' is invalid, please see 'config' "
+                "for valid options" % name)
 
     def do_audio_langs(self, arg):
         u"""Sets the list of audio languages to rip.
@@ -312,7 +580,7 @@ class RipCmd(Cmd):
             else:
                 self.session.delete(lang)
         for lang in new_langs:
-            self.session.add(AudioLanguage(lang))
+            self.session.add(AudioLanguage(lang=lang))
         self.session.commit()
 
     def do_audio_mix(self, arg):
@@ -346,28 +614,19 @@ class RipCmd(Cmd):
         self.config.audio_mix = arg
         self.session.commit()
 
-    def do_audio_tracks(self, arg):
-        u"""Sets which audio tracks to extract
+    def do_audio_all(self, arg):
+        u"""Sets whether to extract all language-matched audio tracks
 
-        Syntax: audio_tracks <best|all>
+        Syntax: audio_all <off|on>
 
-        The 'audio_tracks' command specifies whether, of the audio tracks which
+        The 'audio_all' command specifies whether, of the audio tracks which
         match the specified languages (see the 'audio_langs' command), only the
         best track should be extracted, or all matching tracks. For example:
 
-        tvrip> audio_tracks best
-        tvrip> audio_tracks all
+        tvrip> audio_tracks off
+        tvrip> audio_tracks on
         """
-        try:
-            arg = {
-                u'best':  u'best',
-                u'1':     u'best',
-                u'all':   u'all',
-                u'*':     u'all',
-            }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError(u'Invalid audio track selection %s' % arg)
-        self.config.audio_tracks = arg
+        self.config.audio_all = parse_boolean(arg)
         self.session.commit()
 
     def do_subtitle_langs(self, arg):
@@ -390,7 +649,7 @@ class RipCmd(Cmd):
             else:
                 self.session.delete(lang)
         for lang in new_langs:
-            self.session.add(SubtitleLanguage(lang))
+            self.session.add(SubtitleLanguage(lang=lang))
         self.session.commit()
 
     def do_subtitle_format(self, arg):
@@ -400,12 +659,9 @@ class RipCmd(Cmd):
 
         The 'subtitle_format' command sets the subtitles extraction mode used
         by the 'rip' command. The valid formats are 'none' indicating that
-        subtitles should not be extracted at all, 'vobsub' which causes
-        subtitles to be extracted as timed image overlays, and 'subrip' which
-        causes subtitles to be extracted and converted to a text-based subtitle
-        format via OCR.  For example:
+        subtitles should not be extracted at all, and 'vobsub' which causes
+        subtitles to be extracted as timed image overlays. For example:
 
-        tvrip> subtitle_format subrip
         tvrip> subtitle_format vobsub
         tvrip> subtitle_format none
         """
@@ -415,90 +671,27 @@ class RipCmd(Cmd):
                 u'none':   u'none',
                 u'vob':    u'vobsub',
                 u'vobsub': u'vobsub',
-                u'srt':    u'subrip',
-                u'subrip': u'subrip',
             }[arg.strip().lower()]
         except KeyError:
             raise CmdSyntaxError(u'Invalid subtitle extraction mode %s' % arg)
         self.config.subtitle_format = arg
         self.session.commit()
 
-    def do_subtitle_black(self, arg):
-        u"""Sets the subtitle black color
+    def do_subtitle_all(self, arg):
+        u"""Sets whether to extract all language-matched subtitles
 
-        Syntax: subtitle_black <number>
+        Syntax: subtitle_all <off|on>
 
-        The 'subtitle_black' command specifies which of the four colors in the
-        subtitle track is rendered as black. This is used when the subtitle
-        extraction mode is 'subrip' and is only needed when the default (3)
-        doesn't give good OCR results. In 'vobsub' mode the coloring specified
-        by the DVD itself is used for extraction, but this is generally not
-        suitable for OCR (as it typically includes grayscales for softer
-        edges). The valid values for the number are 1 to 4. For example:
-
-        tvrip> subtitle_black 3
-        tvrip> subtitle_black 1
-
-        After changing this value, test whether the results look right with the
-        'subtest' command. The desired effect is to have the words of the
-        subtitles rendered in solid black on a white background with no
-        outline.
-        """
-        try:
-            arg = int(arg.strip())
-            if not 1 <= arg <= 4:
-                raise ValueError()
-        except ValueError:
-            raise CmdSyntaxError('Invalid color %s - must be a number from 1 to 4' % arg)
-        self.config.subtitle_black = arg
-        self.session.commit()
-
-    def do_subtitle_tracks(self, arg):
-        u"""Sets which subtitle tracks to extract
-
-        Syntax: subtitle_tracks <best|all>
-
-        The 'subtitle_tracks' command specifies whether, of the subtitle tracks
+        The 'subtitle_all' command specifies whether, of the subtitle tracks
         which match the specified languages (see the 'subtitle_langs' command),
         only the best matching track should be extracted, or all matching
         tracks. For example:
 
-        tvrip> subtitle_tracks best
-        tvrip> subtitle_tracks all
+        tvrip> subtitle_all off
+        tvrip> subtitle_all on
         """
-        try:
-            arg = {
-                u'best':  u'best',
-                u'1':     u'best',
-                u'all':   u'all',
-                u'*':     u'all',
-            }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError(u'Invalid subtitle track selection %s' % arg)
-        self.config.subtitle_tracks = arg
+        self.config.subtitle_all = parse_boolean(arg)
         self.session.commit()
-
-    def do_subresetdb(self, arg):
-        u"""Resets the OCR database for the current program.
-
-        Syntax: subresetdb
-
-        The 'subresetdb' command is used to wipe the OCR database of the
-        currently selected program. When the subtitle conversion mode is
-        'subrip', the OCR application builds up a database mapping images to
-        characters. Each database is specific to a program as different
-        programs tend to use different subtitle styles on their DVDs. However,
-        in some cases a program may change its subtitle style between seasons,
-        or even within a season in some rare cases. This may lead to
-        recognition problems in which case this command can be used to clear
-        the database and allow it to start being built from scratch with the
-        next ripped episode.
-        """
-        if self.config.program:
-            self.config.program.reset_db()
-            self.pprint(u'Reset OCR database in %s' % self.config.program.dbpath)
-        else:
-            raise CmdError(u'No program has been set')
 
     def do_decomb(self, arg):
         u"""Sets the decomb option for video conversion.
@@ -512,18 +705,12 @@ class RipCmd(Cmd):
         tvrip> decomb on
         """
         try:
-            arg = {
-                u'off':   u'off',
-                u'false': u'off',
-                u'0':     u'off',
-                u'on':    u'on',
-                u'true':  u'on',
-                u'1':     u'on',
-                u'auto':  u'auto',
-            }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError(u'Invalid decomb option %s' % arg)
-        self.config.decomb = arg
+            self.config.decomb = [u'off', u'on'][parse_boolean(arg)]
+        except CmdSyntaxError:
+            if arg.strip().lower() == u'auto':
+                self.config.decomb = u'auto'
+            else:
+                raise
         self.session.commit()
 
     def do_duration(self, arg):
@@ -538,14 +725,11 @@ class RipCmd(Cmd):
         tvrip> duration 40-50
         tvrip> duration 25-35
         """
-        try:
-            self.config.duration_min, self.config.duration_max = (
-                timedelta(minutes=int(i))
-                for i in arg.split(u'-', 1)
-            )
-            self.session.commit()
-        except (TypeError, ValueError):
-            self.pprint(u'Invalid durations given: %s' % arg)
+        self.config.duration_min, self.config.duration_max = (
+            timedelta(minutes=i)
+            for i in parse_number_range(arg)
+        )
+        self.session.commit()
 
     def do_episode(self, arg):
         u"""Sets the name of a single episode.
@@ -558,34 +742,54 @@ class RipCmd(Cmd):
         """
         if arg:
             (number, name) = arg.split(u' ', 1)
-            try:
-                number = int(number)
-            except ValueError:
-                raise CmdError(u'Episode number was not valid (%s specified)' % number)
-            if number < 1:
-                raise CmdError(u'An episode number must be 1 or higher (%d specified)' % number)
-            if not self.config.season:
-                raise CmdError(u'No season has been set')
-            try:
-                e = self.session.query(Episode).\
-                    filter(Episode.season==self.config.season).\
-                    filter(Episode.number==number).one()
-            except sa.orm.exc.NoResultFound:
-                e = Episode(self.config.season, number, name)
-                self.pprint(u'Added episode %d of season %d of '
-                    u'program %s' % (e.number, e.season.number, e.season.program.name))
+            episode = self.parse_episode(number, must_exist=False)
+            if episode is None:
+                episode = Episode(self.config.season, number, name)
+                self.pprint(u'Added episode %d of season %d of program %s' %
+                    (episode.number, episode.season.number,
+                        episode.season.program.name))
             else:
-                e.name = name
-                self.pprint(u'Renamed episode %d of season %d of '
-                    u'program %s' % (e.number, e.season.number, e.season.program.name))
+                episode.name = name
+                self.pprint(u'Renamed episode %d of season %d of program %s' %
+                    (episode.number, episode.season.number,
+                        episode.season.program.name))
             self.session.commit()
         else:
-            raise CmdError(u'You must specify an episode number')
+            raise CmdError(u'You must specify an episode number and name')
+
+    def clear_episodes(self, season=None):
+        """Removes all episodes from the current season"""
+        if season is None:
+            season = self.config.season
+        for episode in self.session.query(Episode).\
+                filter(Episode.season==season):
+            self.session.delete(episode)
+
+    def input_episodes(self, count):
+        start = 1
+        self.pprint(u'Please enter the names of the episodes. Leave a '
+            u'name blank if you wish to terminate entry early:')
+        self.session.begin(subtransactions=True)
+        try:
+            self.clear_episodes()
+            for number in range(start, count + start):
+                name = self.input(u'%2d: ' % number)
+                if not name:
+                    self.pprint(u'Terminating episode name entry')
+                    break
+                episode = Episode(self.config.season, number, name)
+                self.session.add(episode)
+        except:
+            self.session.rollback()
+            raise
+        else:
+            self.session.commit()
+        self.episode_map.clear()
 
     def do_episodes(self, arg):
         u"""Gets or sets the episodes for the current season.
 
-        Syntax: episodes [number]
+        Syntax: episodes [<number>]
 
         The 'episodes' command can be used to list the episodes of the
         currently selected season of the program. If an argument is given, the
@@ -595,43 +799,22 @@ class RipCmd(Cmd):
         If you simply wish to change the name of a single episode, see the
         'episode' command instead.
         """
+        if not self.config.season:
+            raise CmdError(u'No season has been set')
         if arg:
-            if not self.config.season:
-                raise CmdError(u'No season has been set')
-            start = 1
-            count = int(arg)
+            try:
+                count = int(arg)
+            except ValueError:
+                raise CmdSyntaxError('%s is not a valid episode count' % arg)
             if count < 1:
                 raise CmdSyntaxError(u'A season must contain at least 1 or more '
                     u'episodes (%d specified)' % count)
             elif count > 100:
                 raise CmdSyntaxError(u'%d episodes in a single season? '
                     u'I don\'t believe you...' % count)
-            else:
-                self.pprint(u'Please enter the names of the episodes. Leave a '
-                    u'name blank if you wish to terminate entry early:')
-                self.session.begin(subtransactions=True)
-                try:
-                    for e in self.session.query(Episode).filter(Episode.season==self.config.season):
-                        self.session.delete(e)
-                    for number in range(start, count + start):
-                        name = self.input(u'%2d: ' % number)
-                        if not name:
-                            self.pprint(u'Terminating episode name entry')
-                            break
-                        e = Episode(self.config.season, number, name)
-                        self.session.add(e)
-                except:
-                    self.session.rollback()
-                    raise
-                else:
-                    self.session.commit()
-            self.map = {}
-        elif self.config.season:
-            self.pprint(u'Episodes for season %d of program %s (* indicates ripped):' % (self.config.season.number, self.config.program.name))
-            for e in self.session.query(Episode).filter(Episode.season==self.config.season):
-                self.pprint(u'%1s%2d: %s' % (u'*' if e.ripped else u'', e.number, e.name))
+            self.define_episodes(count)
         else:
-            raise CmdError(u'No season has been set')
+            self.pprint_episodes()
 
     def do_season(self, arg):
         u"""Sets which season of the program the disc contains.
@@ -651,9 +834,11 @@ class RipCmd(Cmd):
         try:
             arg = int(arg)
         except ValueError:
-            raise CmdSyntaxError(u'A season must be a valid number (%s specified)' % arg)
+            raise CmdSyntaxError(u'A season must be a valid number '
+                '(%s specified)' % arg)
         if arg < 1:
-            raise CmdSyntaxError(u'A season number must be 1 or higher (%d specified)' % arg)
+            raise CmdSyntaxError(u'A season number must be 1 or higher '
+                '(%d specified)' % arg)
         try:
             self.config.season = self.session.query(Season).\
                 filter(Season.program==self.config.program).\
@@ -685,7 +870,8 @@ class RipCmd(Cmd):
                 raise
             else:
                 self.session.commit()
-        self.map = {}
+        self.episode_map.clear()
+        self.map_ripped()
 
     def complete_season(self, text, line, start, finish):
         return [
@@ -705,18 +891,11 @@ class RipCmd(Cmd):
         current program, along with a summary of how many episodes are defined
         for each season.
         """
-        if self.config.program:
-            count = 0
-            for season in self.session.query(Season).filter(Season.program==self.config.program).order_by(Season.number):
-                self.pprint(u'Season %d has %d episode(s)' % (
-                    season.number,
-                    len(season.episodes),
-                ))
-                count += 1
-            if not count:
-                self.pprint(u'No seasons have been defined for program %s' % self.config.program.name)
-        else:
+        if arg:
+            raise CmdSyntaxError(u'Invalid argument %s' % arg)
+        if not self.config.program:
             raise CmdError(u'No program has been set')
+        self.pprint_seasons()
 
     def do_program(self, arg):
         u"""Sets the name of the program.
@@ -730,6 +909,8 @@ class RipCmd(Cmd):
         given does not exist, it will be entered into the database and you will
         be prompted for season and episode information.
         """
+        if not arg:
+            raise CmdSyntaxError(u'You must specify a program name')
         try:
             self.config.program = self.session.query(Program).\
                 filter(Program.name==arg).one()
@@ -763,7 +944,8 @@ class RipCmd(Cmd):
         self.config.season = self.session.query(Season).\
             filter(Season.program==self.config.program).\
             order_by(Season.number).first()
-        self.map = {}
+        self.episode_map.clear()
+        self.map_ripped()
 
     program_re = re.compile(ur'^program\s+')
     def complete_program(self, text, line, start, finish):
@@ -783,17 +965,95 @@ class RipCmd(Cmd):
         database, along with a summary of how many seasons and episodes are
         defined for each.
         """
-        count = 0
-        for (program, seasons, episodes) in self.session.query(
-                    Program.name,
-                    sa.func.count(Season.number.distinct()),
-                    sa.func.count(Episode.number)
-                ).outerjoin(Season).outerjoin(Episode).\
-                group_by(Program.name).order_by(Program.name):
-            self.pprint(u'Program %s has %d season(s) and %d episode(s)' % (program, seasons, episodes))
-            count += 1
-        if not count:
-            self.pprint(u'No programs are defined')
+        if arg:
+            raise CmdSyntaxError('Invalid argument %s' % arg)
+        self.pprint_programs()
+
+    def do_disc(self, arg=u''):
+        u"""Displays information about the last scanned disc.
+
+        Syntax: disc
+
+        The 'disc' command re-displays the top-level information that was
+        discovered during the last 'scan' command. It shows the disc's
+        identifier and serial number, along with a summary of title
+        information.
+        """
+        if not self.disc:
+            raise CmdError(u'No disc has been scanned yet')
+        self.pprint(u'Disc identifier: %s' % self.disc.ident)
+        self.pprint(u'Disc serial: %s' % self.disc.serial)
+        self.pprint(u'Disc has %d titles' % len(self.disc.titles))
+        for title in self.disc.titles:
+            self.pprint(u'Title %2d, chapters: %2d, duration: %s, audio: %s' % (
+                title.number,
+                len(title.chapters),
+                title.duration,
+                u' '.join(track.language for track in title.audio_tracks)
+            ))
+
+    def do_title(self, arg):
+        u"""Displays information about the specified title(s).
+
+        Syntax: title <titles>...
+
+        The 'title' command displays detailed information about the specified
+        titles including chapter starts and durations, audio tracks, and
+        subtitle tracks.
+        """
+        if not self.disc:
+            raise CmdError(u'No disc has been scanned yet')
+        elif not self.disc.titles:
+            raise CmdError(u'No titles found on the scanned disc')
+        elif not arg:
+            raise CmdSyntaxError(u'You must specify a title')
+        for number in parse_number_list(arg):
+            try:
+                title = [
+                    t for t in self.disc.titles
+                    if t.number == number
+                ][0]
+            except IndexError:
+                # If the user specifies an invalid title number, ignore it
+                # (useful with large ranges of titles)
+                pass
+            else:
+                self.pprint(u'Title %d (duration: %s)' % (
+                    title.number,
+                    title.duration,
+                ))
+                self.pprint(u'  %d chapters' % len(title.chapters))
+                for chapter in title.chapters:
+                    self.pprint(u'    %2d: %s->%s (duration: %s)' % (
+                        chapter.number,
+                        chapter.start,
+                        chapter.finish,
+                        chapter.duration,
+                    ))
+                self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
+                for track in title.audio_tracks:
+                    suffix = u''
+                    if track.best and self.config.in_audio_langs(track.language):
+                        suffix = u'[best]'
+                    self.pprint(u'    %2d: %s, %s %s %s %s' % (
+                        track.number,
+                        track.language,
+                        track.name,
+                        track.encoding,
+                        track.channel_mix,
+                        suffix
+                    ))
+                self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
+                for track in title.subtitle_tracks:
+                    suffix = u''
+                    if track.best and self.config.in_subtitle_langs(track.language):
+                        suffix = u'[best]'
+                    self.pprint(u'    %2d: %s, %s %s' % (
+                        track.number,
+                        track.language,
+                        track.name,
+                        suffix
+                    ))
 
     def do_scan(self, arg):
         u"""Scans the source device for episodes.
@@ -810,125 +1070,20 @@ class RipCmd(Cmd):
         elif not (self.config.duration_min and self.config.duration_max):
             raise CmdError(u'No duration range has been specified')
         self.pprint(u'Scanning disc in %s' % self.config.source)
-        self.map = {}
+        self.episode_map.clear()
         self.disc = Disc()
-        self.disc.scan(self.config)
-        self.pprint(u'Disc identifier: %s' % self.disc.ident)
-        self.pprint(u'Disc serial: %s' % self.disc.serial)
-        for title in self.disc.titles:
-            self.pprint(u'Title %d (duration: %s)' % (
-                title.number,
-                title.duration,
-            ))
-            self.pprint(u'  %d chapters' % len(title.chapters))
-            for chapter in title.chapters:
-                self.pprint(u'    %d: %s->%s (duration: %s)' % (
-                    chapter.number,
-                    chapter.start,
-                    chapter.finish,
-                    chapter.duration,
-                ))
-            self.pprint(u'  %d audio tracks' % len(title.audio_tracks))
-            for track in title.audio_tracks:
-                suffix = u''
-                if track.best and self.config.in_audio_langs(track.language):
-                    suffix = u'[best]'
-                self.pprint(u'    %d: %s, %s %s %s %s' % (
-                    track.number,
-                    track.language,
-                    track.name,
-                    track.encoding,
-                    track.channel_mix,
-                    suffix
-                ))
-            self.pprint(u'  %d subtitle tracks' % len(title.subtitle_tracks))
-            for track in title.subtitle_tracks:
-                suffix = u''
-                if track.best and self.config.in_subtitle_langs(track.language):
-                    suffix = u'[best]'
-                self.pprint(u'    %d: %s, %s %s' % (
-                    track.number,
-                    track.language,
-                    track.name,
-                    suffix
-                ))
+        try:
+            self.disc.scan(self.config)
+        except IOError, e:
+            self.disc = None
+            raise CmdError(e)
+        self.map_ripped()
+        self.do_disc()
 
-    def do_automap(self, arg):
-        u"""Maps episodes to titles or chapter ranges automatically.
-
-        Syntax: automap [<titles>]...
-
-        The 'automap' command is used to have the application attempt to figure
-        out which titles (or chapters of titles) contain the next set of
-        unripped episodes. If no title numbers are specified, all titles are
-        considered candidates. Otherwise, only those titles specified are
-        considered. If direct title mapping fails, chapter-based mapping is
-        attempted instead.
-
-        The current episode mapping can be viewed in the output of the 'config'
-        command.
-        """
-        self.pprint(u'Performing auto-mapping')
-        # Generate the list of titles, either specified or implied in the
-        # arguments
-        if arg:
-            to_map = []
-            try:
-                for a in arg.split(u' '):
-                    if u'-' in a:
-                        start, finish = (int(i) for i in a.split(u'-', 1))
-                        to_map.extend(t for t in self.disc.titles if start <= t.number <= finish)
-                    else:
-                        try:
-                            to_map.append([t for t in self.disc.titles if t.number == int(a)][0])
-                        except IndexError:
-                            raise CmdError(u'Title %d does not exist or is not rippable' % int(a))
-            except ValueError:
-                raise CmdSyntaxError(u'You must specify space separated title numbers')
-            to_map = sorted(to_map, key=attrgetter('number'))
-            # XXX Should remove duplicates here?
-        else:
-            to_map = list(self.disc.titles)
-        # Map all the titles that have been previously ripped from this disc,
-        # then attempt to find title mappings for the remaining unripped
-        # titles. If we don't manage to find a single title to map to an
-        # episode it's possible we're dealing with one of those weird discs
-        # where lots of episodes are in one title with chapters delimiting the
-        # episodes so we attempt chapter-mapping instead
-        new_map = self.automap_ripped(to_map)
-        for mapping in new_map.itervalues():
-            if isinstance(mapping, Title):
-                to_map.remove(title)
-            else:
-                start_chapter, end_chapter = mapping
-                to_map.remove(start_chapter.title)
-        unripped = [e for e in self.config.season.episodes if not e.ripped]
-        if any(unripped):
-            new_map.update(
-                self.automap_titles(to_map, unripped) or
-                self.automap_chapters(to_map, unripped)
-            )
-        # If we succeeded in mapping anything at all, rewrite the current
-        # episode map, otherwise throw an error
-        if new_map:
-            self.map = {}
-            for episode, mapping in sorted(new_map.iteritems(), key=lambda t: t[0].number):
-                if isinstance(mapping, Title):
-                    self.do_map(u'%d %d' % (episode.number, title.number))
-                else:
-                    start_chapter, end_chapter = mapping
-                    self.do_map(u'%d %d.%d-%d' % (
-                        episode.number,
-                        start_chapter.title.number,
-                        start_chapter.number,
-                        end_chapter.number,
-                    ))
-        else:
-            raise CmdError(u'Failed to find a valid mapping for the selected titles')
-
-    def automap_ripped(self, to_map):
-        self.pprint(u'Mapping already ripped episodes (if any)')
-        result = {}
+    def map_ripped(self):
+        """Adds titles/chapters which were previously ripped to the episode map"""
+        if not self.disc:
+            return
         # The rather complex filter below deals with the different methods of
         # identifying discs. In the first version of tvrip, disc serial number
         # was used but was found to be insufficient (manufacturers sometimes
@@ -949,133 +1104,74 @@ class RipCmd(Cmd):
                     )
                 ):
             try:
-                title = [t for t in self.disc.titles if t.number==episode.disc_title][0]
+                title = [
+                    t for t in self.disc.titles
+                    if t.number==episode.disc_title
+                ][0]
             except IndexError:
-                raise CmdError('Previously ripped title %d not found on the scanned disc (id %s)' % (
-                    episode.disc_title, episode.disc_id))
+                self.pprint(u'Warning: previously ripped title %d not found '
+                    'on the scanned disc (id %s)' %
+                    (episode.disc_title, episode.disc_id))
             else:
                 if episode.start_chapter is None:
-                    result[episode] = title
+                    self.episode_map[episode] = title
                 else:
-                    result[episode] = (
+                    self.episode_map[episode] = (
                         title.chapters[episode.start_chapter],
                         title.chapters[episode.end_chapter]
                     )
-        return result
 
-    def automap_titles(self, to_map, unripped):
-        self.pprint(u'Attempting title-based mapping')
-        result = {}
-        try_chapters = True
-        for title in to_map:
-            if self.config.duration_min <= title.duration <= self.config.duration_max:
-                result[episode] = title
-                if len(result) == len(unripped):
-                    break
-            else:
-                self.pprint(u'Title %d is not an episode (duration: %s)' % (
-                    title.number,
-                    title.duration,
-                ))
-        return result
+    def do_automap(self, arg):
+        u"""Maps episodes to titles or chapter ranges automatically.
 
-    def automap_chapters(self, to_map, unripped):
-        self.pprint(u'Attempting chapter-based mapping')
-        title = sorted(to_map, key=attrgetter('duration'))[-1]
-        self.pprint(u'Longest title is %d (duration: %s), containing %d chapters' % (
-            title.number,
-            title.duration,
-            len(title.chapters),
-        ))
-        # We represent mappings within this method as a list of chapter counts,
-        # hence the mapping [2, 3, 4, 2] means the first episode consists of
-        # two chapters, the second episode consists of the next three chapters
-        # and so on
-        to_map = title.chapters
-        # XXX Remove trailing empty chapters
-        result = []
-        def partition(seq, counts):
-            index = 0
-            for count in counts:
-                yield seq[index:index + count]
-                index += count
-        def valid(chapters, unripped, mapping):
-            return (
-                (len(mapping) <= len(unripped)) and
-                (sum(mapping) == len(chapters)) and
-                all(
-                    self.config.duration_min <= sum(
-                        (chapter.duration for chapter in episode_chapters),
-                        timedelta()
-                    ) <= self.config.duration_max
-                    for episode_chapters in partition(chapters, mapping)
-                )
-            )
-        def explore(chapters, unripped, mapping=[], solutions=[]):
-            duration = timedelta()
-            for count, chapter in enumerate(chapters[sum(mapping):]):
-                duration += chapter.duration
-                if duration > self.config.duration_max:
-                    break
-                elif duration >= self.config.duration_min:
-                    if valid(chapters, unripped, mapping + [count + 1]):
-                        solutions.append(mapping + [count + 1])
-                    explore(chapters, unripped, mapping + [count + 1], solutions)
-            if not mapping:
-                return solutions
-        def output(chapters, unripped, solution):
-            start_chapter = 1
-            for episode, count in zip(unripped, solution):
-                self.pprint(u'Episode %d = Chapter %d-%d (%s)' % (
-                    episode.number,
-                    start_chapter,
-                    start_chapter + count - 1,
-                    str(sum((
-                        c.duration
-                        for c in to_map[start_chapter - 1:start_chapter + count - 1]
-                    ), timedelta()))
-                ))
-                start_chapter += count
-        solutions = explore(to_map, unripped)
-        if len(solutions) > 1:
-            self.pprint(u'Found %d potential chapter mappings' % len(solutions))
-            for index, solution in enumerate(solutions):
-                self.pprint(u'')
-                self.pprint(u'Solution %d' % (index + 1))
-                output(to_map, unripped, solution)
-            self.pprint(u'')
+        Syntax: automap [<titles>]...
+
+        The 'automap' command is used to have the application attempt to figure
+        out which titles (or chapters of titles) contain the next set of
+        unripped episodes. If no title numbers are specified, all titles are
+        considered candidates. Otherwise, only those titles specified are
+        considered. If direct title mapping fails, chapter-based mapping is
+        attempted instead.
+
+        The current episode mapping can be viewed in the output of the 'config'
+        command.
+        """
+        self.pprint(u'Performing auto-mapping')
+        # Generate the list of titles, either specified or implied in the
+        # arguments
+        # XXX Use parse functions
+        if arg:
+            to_map = []
             try:
-                selection = int(self.input('Enter solution number to use [1-%d] ' % len(solutions)))
-                if not 1 <= selection <= len(solutions):
-                    raise ValueError
-            except ValueError:
-                while True:
-                    try:
-                        selection = int(self.input('Invalid input. Please enter a number [1-%d] ' % len(solutions)))
-                        if not 1 <= selection <= len(solutions):
-                            raise ValueError
-                    except ValueError:
-                        pass
+                for a in arg.split(u' '):
+                    if u'-' in a:
+                        start, finish = (int(i) for i in a.split(u'-', 1))
+                        to_map.extend(
+                            t for t in self.disc.titles
+                            if start <= t.number <= finish
+                        )
                     else:
-                        break
-            solution = solutions[selection - 1]
-        elif len(solutions) == 1:
-            self.pprint(u'Solution:')
-            output(to_map, unripped, solutions[0])
-            solution = solutions[0]
+                        try:
+                            to_map.append([
+                                t for t in self.disc.titles
+                                if t.number == int(a)
+                            ][0])
+                        except IndexError:
+                            raise CmdError(u'Title %d does not exist or is '
+                                'not rippable' % int(a))
+            except ValueError:
+                raise CmdSyntaxError(u'You must specify space separated '
+                    'title numbers')
+            to_map = sorted(to_map, key=attrgetter('number'))
+            # XXX Should remove duplicates here?
         else:
-            self.pprint(u'No potential chapter mappings found')
-            return {}
-        return dict(
-            (episode, (chapters[0], chapters[-1]))
-            for (episode, chapters) in zip(unripped, partition(to_map, solution))
-        )
+            to_map = list(self.disc.titles)
 
 
     def do_map(self, arg):
         u"""Maps episodes to titles or chapter ranges.
 
-        Syntax: map <episode> <title>[.<start>-<end>]
+        Syntax: map [<episode> <title>[.<start>-<end>]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
@@ -1085,8 +1181,8 @@ class RipCmd(Cmd):
         tvrip> map 7 4
         tvrip> map 5 2.1-12
 
-        The current episode mapping can be viewed in the output of the 'config'
-        command.
+        If no arguments are specified, the current episode map will be
+        displayed.
         """
         if not self.disc:
             raise CmdError(u'No disc has been scanned yet')
@@ -1097,7 +1193,37 @@ class RipCmd(Cmd):
         elif not self.config.season:
             raise CmdError(u'No season has been set')
         elif not arg:
-            raise CmdSyntaxError(u'You must specify an episode and title')
+            self.pprint(u'Episode Mapping (* indicates ripped):')
+            self.pprint(u'')
+            if self.episode_map:
+                for episode, mapping in self.episode_map.iteritems():
+                    if isinstance(mapping, Title):
+                        index = u'%.2d' % mapping.number
+                        duration = u'%s' % mapping.duration
+                    else:
+                        chapter_start, chapter_end = mapping
+                        index = u'%.2d.%.02d-%.02d' % (
+                            chapter_start.title.number,
+                            chapter_start.number,
+                            chapter_end.number
+                        )
+                        duration = u'%s' % sum(
+                            (
+                                c.duration for c in chapter_start.title.chapters
+                                if chapter_start.number <= c.number <= chapter_end.number
+                            ),
+                            timedelta()
+                        )
+                    self.pprint(u'%2stitle %s (%s) = episode %2d, "%s"' % (
+                        u'*' if episode.ripped else u' ',
+                        index,
+                        duration,
+                        episode.number,
+                        episode.name
+                    ))
+            else:
+                self.pprint(u'Episode map is currently empty')
+            return
         try:
             episode, title = arg.split(u' ')
         except ValueError:
@@ -1105,7 +1231,9 @@ class RipCmd(Cmd):
         if u'.' in title:
             try:
                 title, chapters = title.split(u'.')
-                chapter_start, chapter_end = (int(i) for i in chapters.split(u'-'))
+                chapter_start, chapter_end = (
+                    int(i) for i in chapters.split(u'-')
+                )
             except ValueError:
                 raise CmdSyntaxError(u'Unable to parse specified chapter range')
         else:
@@ -1114,33 +1242,47 @@ class RipCmd(Cmd):
             title = int(title)
             episode = int(episode)
         except ValueError:
-            raise CmdSyntaxError(u'Titles, chapters, and episodes must be integer numbers')
+            raise CmdSyntaxError(u'Titles, chapters, and episodes must be '
+                'integer numbers')
         try:
             title = [t for t in self.disc.titles if t.number==title][0]
         except IndexError:
             raise CmdError(u'There is no title %d on the scanned disc' % title)
         if chapter_start:
             try:
-                chapter_start = [c for c in title.chapters if c.number==chapter_start][0]
+                chapter_start = [
+                    c for c in title.chapters
+                    if c.number == chapter_start
+                ][0]
             except IndexError:
-                raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_start, title.number))
+                raise CmdError(u'There is no chapter %d within title %d on '
+                    'the scanned disc' % (chapter_start, title.number))
         if chapter_end:
             try:
-                chapter_end = [c for c in title.chapters if c.number==chapter_end][0]
+                chapter_end = [
+                    c for c in title.chapters
+                    if c.number == chapter_end
+                ][0]
             except IndexError:
-                raise CmdError(u'There is no chapter %d within title %d on the scanned disc' % (chapter_end, title.number))
+                raise CmdError(u'There is no chapter %d within title %d on '
+                    'the scanned disc' % (chapter_end, title.number))
         try:
             episode = self.session.query(Episode).\
                 filter(Episode.season==self.config.season).\
                 filter(Episode.number==episode).one()
         except sa.orm.exc.NoResultFound:
-            raise CmdError(u'There is no episode %d in the current season' % episode)
+            raise CmdError(u'There is no episode %d in the current '
+                'season' % episode)
         if chapter_start:
-            self.pprint(u'Mapping chapters %d-%d (duration %s) of title %d to episode %d, "%s"' % (
+            self.pprint(u'Mapping chapters %d-%d (duration %s) of title %d '
+                'to episode %d, "%s"' % (
                 chapter_start.number,
                 chapter_end.number,
                 sum(
-                    [c.duration for c in title.chapters if chapter_start.number <= c.number <= chapter_end.number],
+                    [
+                        c.duration for c in title.chapters
+                        if chapter_start.number <= c.number <= chapter_end.number
+                    ],
                     timedelta()
                 ),
                 title.number,
@@ -1178,10 +1320,15 @@ class RipCmd(Cmd):
         except ValueError:
             raise CmdSyntaxError(u'You must specify an integer title number')
         try:
-            episode = [e for e in self.config.season.episodes if e.number==arg][0]
+            episode = [
+                e for e in self.config.season.episodes
+                if e.number == arg
+            ][0]
         except IndexError:
-            raise CmdError(u'Episode %d does not exist within the selected season' % arg)
-        self.pprint(u'Removing mapping for episode %d, %s' % (episode.number, episode.name))
+            raise CmdError(u'Episode %d does not exist within the '
+                'selected season' % arg)
+        self.pprint(u'Removing mapping for episode %d, %s' %
+            (episode.number, episode.name))
         del self.map[episode]
 
     def do_rip(self, arg):
@@ -1203,7 +1350,8 @@ class RipCmd(Cmd):
             raise CmdError(u'No titles have been mapped to episodes')
         elif arg.strip():
             raise CmdSyntaxError(u'You must not specify any arguments')
-        for episode, mapping in sorted(self.map.iteritems(), key=lambda t: t[0].number):
+        for episode, mapping in sorted(self.map.iteritems(),
+                key=lambda t: t[0].number):
             if not episode.ripped:
                 if isinstance(mapping, Title):
                     chapter_start = chapter_end = None
@@ -1226,7 +1374,8 @@ class RipCmd(Cmd):
                     subtitle_tracks = [t for t in subtitle_tracks if t.best]
                 self.pprint(u'Ripping episode %d, "%s"' % (
                     episode.number, episode.name))
-                self.disc.rip(self.config, episode, title, audio_tracks, subtitle_tracks, chapter_start, chapter_end)
+                self.disc.rip(self.config, episode, title, audio_tracks,
+                    subtitle_tracks, chapter_start, chapter_end)
                 episode.disc_id = self.disc.ident
                 episode.disc_title = title.number
                 if chapter_start:
@@ -1299,17 +1448,9 @@ class RipCmd(Cmd):
             return
         self.config.source = arg
 
-    def complete_path(self, text, line, start, finish):
-        dir, base = os.path.split(line)
-        return [
-            item
-            for item in os.listdir(os.path.expanduser(dir))
-            if item.startswith(text)
-        ]
-
     source_re = re.compile(u'^source\s+')
     def complete_source(self, text, line, start, finish):
-        return self.complete_path(text, self.source_re.sub('', line), start, finish)
+        return complete_path(text, self.source_re.sub('', line), start, finish)
 
     def do_target(self, arg):
         u"""Sets the target path.
@@ -1332,7 +1473,7 @@ class RipCmd(Cmd):
 
     target_re = re.compile(ur'^target\s+')
     def complete_target(self, text, line, start, finish):
-        return self.complete_path(text, self.target_re.sub('', line), start, finish)
+        return complete_path(text, self.target_re.sub('', line), start, finish)
 
     def do_temp(self, arg):
         u"""Sets the temporary files path.
@@ -1358,7 +1499,7 @@ class RipCmd(Cmd):
 
     temp_re = re.compile(ur'^temp\s+')
     def complete_temp(self, text, line, start, finish):
-        return self.complete_path(text, self.temp_re.sub('', line), start, finish)
+        return complete_path(text, self.temp_re.sub('', line), start, finish)
 
     def do_template(self, arg):
         u"""Sets the template used for filenames.
@@ -1378,9 +1519,9 @@ class RipCmd(Cmd):
                 'name':    'Foo Bar',
             }
         except KeyError, e:
-            raise CmdError('The new template contains an invalid substitution key: %s' % e)
+            raise CmdError('The new template contains an invalid '
+                'substitution key: %s' % e)
         self.config.template = arg
 
     do_EOF = do_exit
-
 
