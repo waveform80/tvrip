@@ -16,6 +16,9 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import (
+    unicode_literals, print_function, absolute_import, division)
+
 import sys
 import os
 import re
@@ -76,7 +79,7 @@ class Disc(object):
     def scan(self, config):
         self.titles = []
         cmdline = [
-            config.get_path('handbrake'),
+            config.get_path(u'handbrake'),
             u'-i', config.source, # specify the input device
             u'-t', u'0'    # ask for a scan of the entire disc
         ]
@@ -177,12 +180,13 @@ class Disc(object):
     def rip(self, config, episode, title, audio_tracks, subtitle_tracks, start_chapter=None, end_chapter=None):
         if not isinstance(config, Configuration):
             raise ValueError(u'config must a Configuration instance')
-        filename = config.template % {
-            u'program': config.program.name,
-            u'season':  config.season.number,
-            u'episode': episode.number,
-            u'name':    episode.name,
-        }
+        filename = config.template.format(
+            program=config.program.name,
+            season=config.season.number,
+            episode=episode.number,
+            name=episode.name,
+            now=datetime.now(),
+        )
         # Convert the subtitle track(s) if required
         if config.subtitle_format == u'subrip':
             for track in subtitle_tracks:

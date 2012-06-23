@@ -17,14 +17,16 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-import pdb
+from __future__ import (
+    unicode_literals, print_function, absolute_import, division)
+
 import sys
 import os
 import re
 import logging
 import traceback
 from optparse import OptionParser
-from tvrip.cmdline import RipCmd
+from tvrip.ripcmd import RipCmd
 
 __version__ = '0.7'
 

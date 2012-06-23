@@ -16,10 +16,17 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Implements the data model for the tvrip application's database"""
+
+from __future__ import (
+    unicode_literals, print_function, absolute_import, division)
+
 import os
 import tempfile
-import shutil
-from sqlalchemy import Column, ForeignKeyConstraint, ForeignKey, CheckConstraint, create_engine
+from sqlalchemy import (
+    Column, ForeignKeyConstraint, ForeignKey,
+    CheckConstraint, create_engine
+)
 from sqlalchemy.types import Unicode, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, synonym, sessionmaker
@@ -27,12 +34,12 @@ from datetime import timedelta
 from tvrip.const import DATADIR
 
 
-session = None
+Session = sessionmaker()
 DeclarativeBase = declarative_base()
 
 
 class Episode(DeclarativeBase):
-    u"""Represents an episode of a season of a program"""
+    """Represents an episode of a season of a program"""
 
     __tablename__ = 'episodes'
     __table_args__ = (
@@ -56,10 +63,11 @@ class Episode(DeclarativeBase):
 
     @property
     def ripped(self):
+        """Indicates whether the episode has been ripped yet"""
         return bool(self.disc_id)
 
     def __repr__(self):
-        return u"<Episode(%s, %d, %d, %s)>" % (
+        return "<Episode(%s, %d, %d, %s)>" % (
             repr(self.season.program.name),
             self.season.number,
             self.number,
@@ -68,7 +76,7 @@ class Episode(DeclarativeBase):
 
 
 class Season(DeclarativeBase):
-    u"""Represents a season of a program"""
+    """Represents a season of a program"""
 
     __tablename__ = 'seasons'
 
@@ -80,11 +88,11 @@ class Season(DeclarativeBase):
     selected = relationship('Configuration', backref='season', uselist=False)
 
     def __repr__(self):
-        return u"<Season(%s, %d)>" % (repr(self.program.name), self.number)
+        return "<Season(%s, %d)>" % (repr(self.program.name), self.number)
 
 
 class Program(DeclarativeBase):
-    u"""Represents a program (i.e. a TV series)"""
+    """Represents a program (i.e. a TV series)"""
 
     __tablename__ = 'programs'
 
@@ -93,11 +101,11 @@ class Program(DeclarativeBase):
     selected = relationship('Configuration', backref='program', uselist=False)
 
     def __repr__(self):
-        return u"<Program(%s)>" % repr(self.name)
+        return "<Program(%s)>" % repr(self.name)
 
 
 class AudioLanguage(DeclarativeBase):
-    u"""Represents an audio language in the stored configuration"""
+    """Represents an audio language in the stored configuration"""
 
     __tablename__ = 'config_audio'
 
@@ -106,11 +114,11 @@ class AudioLanguage(DeclarativeBase):
     lang = Column(Unicode(3), primary_key=True)
 
     def __repr__(self):
-        return u"<AudioLanguage(%s)>" % repr(self.lang)
+        return "<AudioLanguage(%s)>" % repr(self.lang)
 
 
 class SubtitleLanguage(DeclarativeBase):
-    u"""Represents a subtitle language in the stored configuration"""
+    """Represents a subtitle language in the stored configuration"""
 
     __tablename__ = 'config_subtitles'
 
@@ -119,11 +127,11 @@ class SubtitleLanguage(DeclarativeBase):
     lang = Column(Unicode(3), primary_key=True)
 
     def __repr__(self):
-        return u"<SubtitleLanguage(%s)>" % repr(self.lang)
+        return "<SubtitleLanguage(%s)>" % repr(self.lang)
 
 
 class ConfigPath(DeclarativeBase):
-    u"""Represents a path to an external utility in the stored configuration"""
+    """Represents a path to an external utility in the stored configuration"""
 
     __tablename__ = 'config_paths'
 
@@ -133,11 +141,11 @@ class ConfigPath(DeclarativeBase):
     path = Column(Unicode(300), nullable=False)
 
     def __repr__(self):
-        return u"<ConfigPath(%s, %s)>" % (repr(self.name), repr(self.path))
+        return "<ConfigPath(%s, %s)>" % (repr(self.name), repr(self.path))
 
 
 class Configuration(DeclarativeBase):
-    u"""Represents a stored configuration for the application"""
+    """Represents a stored configuration for the application"""
 
     __tablename__  = 'config'
     __table_args__ = (
@@ -153,23 +161,26 @@ class Configuration(DeclarativeBase):
     )
 
     id = Column(Integer, primary_key=True)
-    source = Column(Unicode(300), nullable=False, default=u'/dev/dvd')
-    target = Column(Unicode(300), nullable=False, default=os.path.expanduser(u'~/Videos'))
-    temp = Column(Unicode(300), nullable=False, default=unicode(tempfile.gettempdir()))
-    template = Column(Unicode(300), nullable=False, default=u'%(program)s - %(season)dx%(episode)02d - %(name)s.mp4')
+    source = Column(Unicode(300), nullable=False, default='/dev/dvd')
+    target = Column(Unicode(300), nullable=False,
+        default=os.path.expanduser('~/Videos'))
+    temp = Column(Unicode(300), nullable=False,
+        default=unicode(tempfile.gettempdir()))
+    template = Column(Unicode(300), nullable=False,
+        default='{program} - {season}x{episode:02d} - {name}.mp4')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)
     _duration_max = Column('duration_max', Integer, nullable=False, default=50)
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(Unicode(6),
-        CheckConstraint(u"subtitle_format in ('none', 'vobsub')"),
-        nullable=False, default=u'none')
+        CheckConstraint("subtitle_format in ('none', 'vobsub')"),
+        nullable=False, default='none')
     audio_mix = Column(Unicode(6),
-        CheckConstraint(u"audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
-        nullable=False, default=u'dpl2')
+        CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
+        nullable=False, default='dpl2')
     decomb = Column(Unicode(4),
-        CheckConstraint(u"decomb in ('off', 'on', 'auto')"),
-        nullable=False, default=u'off')
+        CheckConstraint("decomb in ('off', 'on', 'auto')"),
+        nullable=False, default='off')
     audio_all = Column(Boolean, nullable=False, default=False)
     audio_langs = relationship('AudioLanguage', backref='config')
     subtitle_all = Column(Boolean, nullable=False, default=False)
@@ -191,34 +202,48 @@ class Configuration(DeclarativeBase):
         descriptor=property(_get_duration_max, _set_duration_max))
 
     def in_audio_langs(self, lang):
+        """Returns True if lang is a selected audio language"""
         return any(l.lang == lang for l in self.audio_langs)
 
     def in_subtitle_langs(self, lang):
+        """Returns True if lang is a selected subtitle language"""
         return any(l.lang == lang for l in self.subtitle_langs)
 
     def get_path(self, name):
+        """Returns the configured path of the specified utility"""
+        session = Session.object_session(self)
         return session.query(ConfigPath).\
-            filter(ConfigPath.id==self.id).\
+            filter(ConfigPath.config_id==self.id).\
             filter(ConfigPath.name==name).one().path
 
     def set_path(self, name, value):
+        """Sets the configured path of the specified utility"""
+        session = Session.object_session(self)
         session.query(ConfigPath).\
-            filter(ConfigPath.id==self.id).\
+            filter(ConfigPath.config_id==self.id).\
             filter(ConfigPath.name==name).one().path = value
         session.commit()
 
     def __repr__(self):
-        return u"<Configuration(...)>"
+        return "<Configuration(...)>"
 
-
+SESSION = None
 def init_session(url=None, debug=False):
-    global session
-    assert session is None
+    """Initializes the connection to the database and returns a new session
+
+    This routine must be called once during the application to open the
+    connection to the tvrip database and obtain a session object for
+    manipulating that connection.
+    """
+    # The SESSION global is simply used to ensure this is a one-time call so
+    # multiple simultaneous database connections don't get opened
+    global SESSION
+    assert SESSION is None
 
     if url is None:
-        url = u'sqlite:///%s' % os.path.join(DATADIR, u'tvrip.db')
+        url = 'sqlite:///%s' % os.path.join(DATADIR, 'tvrip.db')
     engine = create_engine(url, echo=debug)
-    session = sessionmaker(bind=engine)()
+    SESSION = Session(bind=engine)
     DeclarativeBase.metadata.bind = engine
     DeclarativeBase.metadata.create_all()
-    return session
+    return SESSION

@@ -16,10 +16,13 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Contains suite-level constants defined as globals"""
+
+from __future__ import unicode_literals, print_function, absolute_import, division
+
 import os
 
-# Stuff you probably don't want to change
-
+# The path under which tvrip-related data will be kept
 DATADIR = os.path.expanduser('~/.tvrip') # must be absolute
 if not os.path.exists(DATADIR):
     os.mkdir(DATADIR)

@@ -16,6 +16,15 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""A custom mapping class for episodes and disc-titles.
+
+The EpisodeMap class defined in this module is a simple dict variant which
+includes some additional methods for automatically calculating a mapping that
+meets certain criteria (duration-based).
+"""
+
+from __future__ import unicode_literals, print_function, absolute_import, division
+
 import logging
 from datetime import timedelta
 from itertools import izip, groupby

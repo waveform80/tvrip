@@ -20,7 +20,7 @@
 from setuptools import setup, find_packages
 from utils import description, get_version, require_python
 
-require_python(0x020500f0)
+require_python(0x020600f0)
 
 classifiers = [
     'Development Status :: 4 - Beta',
