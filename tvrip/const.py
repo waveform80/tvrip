@@ -18,7 +18,8 @@
 
 """Contains suite-level constants defined as globals"""
 
-from __future__ import unicode_literals, print_function, absolute_import, division
+from __future__ import (
+    unicode_literals, print_function, absolute_import, division)
 
 import os
 

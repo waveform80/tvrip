@@ -62,12 +62,13 @@ __all__ = ['CmdError', 'CmdSyntaxError', 'Cmd']
 
 
 class CmdError(Exception):
-    """Base class for non-fatal Cmd errors"""
+    "Base class for non-fatal Cmd errors"
 
 class CmdSyntaxError(CmdError):
-    """Exception raised when the user makes a syntax error"""
+    "Exception raised when the user makes a syntax error"
 
 class Cmd(cmd.Cmd):
+    "An enhanced version of the standard Cmd command line processor"
     use_rawinput = True
     history_file = None
     history_size = 1000 # <0 implies infinite history
@@ -283,7 +284,10 @@ class Cmd(cmd.Cmd):
                 self.pprint('')
         else:
             commands = [
-                (method[3:], self.parse_docstring(getattr(self, method).__doc__)[0])
+                (
+                    method[3:],
+                    self.parse_docstring(getattr(self, method).__doc__)[0]
+                )
                 for method in self.get_names()
                 if method.startswith('do_')
                 and method != 'do_EOF'

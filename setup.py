@@ -17,8 +17,20 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import (
+    unicode_literals, print_function, absolute_import, division)
+
 from setuptools import setup, find_packages
 from utils import description, get_version, require_python
+
+# Workaround <http://bugs.python.org/issue10945>
+import codecs
+try:
+    codecs.lookup('mbcs')
+except LookupError:
+    ascii = codecs.lookup('ascii')
+    func = lambda name, enc=ascii: {True: enc}.get(name=='mbcs')
+    codecs.register(func)
 
 require_python(0x020600f0)
 
@@ -38,7 +50,7 @@ classifiers = [
 
 entry_points = {
     'console_scripts': [
-        'tvrip = tvrip.main:tvrip_main',
+        'tvrip = tvrip.main:main',
     ]
 }
 

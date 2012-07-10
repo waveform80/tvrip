@@ -17,25 +17,32 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Implements the main loop and option parser for the tvrip application"""
+
 from __future__ import (
     unicode_literals, print_function, absolute_import, division)
 
 import sys
-import os
-import re
 import logging
 import traceback
-from optparse import OptionParser
+from optparse import OptionParser, OptParseError
 from tvrip.ripcmd import RipCmd
 
 __version__ = '0.7'
 
-def tvrip_main(args=None):
-    if args is None:
-        args = sys.argv[1:]
+
+# Set up a console logging handler which just prints messages without any other
+# adornments
+CONSOLE = logging.StreamHandler(sys.stderr)
+CONSOLE.setFormatter(logging.Formatter('%(message)s'))
+CONSOLE.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(CONSOLE)
+
+
+def main(args=None):
     parser = OptionParser(
-        usage=u'%prog [options]',
-        description=u"""\
+        usage='%prog [options]',
+        description="""\
 This utility simplifies the extraction and transcoding of a DVD containing part
 of a season of a given TV program, including ripping and OCRing subtitles into
 a text-based form like SubRip.""")
@@ -45,55 +52,68 @@ a text-based form like SubRip.""")
         logfile='',
         loglevel=logging.WARNING
     )
-    parser.add_option(u'-q', u'--quiet', dest=u'loglevel', action=u'store_const', const=logging.ERROR,
-        help=u"""produce less console output""")
-    parser.add_option(u'-v', u'--verbose', dest=u'loglevel', action=u'store_const', const=logging.INFO,
-        help=u"""produce more console output""")
-    parser.add_option(u'-l', u'--log-file', dest=u'logfile',
-        help=u"""log messages to the specified file""")
-    parser.add_option(u'-n', u'--dry-run', dest=u'test', action=u'store_true',
-        help=u"""test a configuration without actually executing anything""")
+    parser.add_option(
+        '-q', '--quiet', dest='loglevel', action='store_const',
+        const=logging.ERROR, help='produce less console output')
+    parser.add_option(
+        '-v', '--verbose', dest='loglevel', action='store_const',
+        const=logging.INFO, help='produce more console output')
+    parser.add_option(
+        '-l', '--log-file', dest='logfile',
+        help='log messages to the specified file')
+    parser.add_option(
+        '-n', '--dry-run', dest='test', action='store_true',
+        help='test a configuration without actually executing anything')
+    sys.excepthook = handle_exception
+    if args is None:
+        args = sys.argv[1:]
     (options, args) = parser.parse_args(args)
-    if options.debug:
-        options.loglevel = logging.DEBUG
-    else:
-        sys.excepthook = handle_exception
-    # Set up the logging handlers
-    console = logging.StreamHandler(sys.stderr)
-    console.setFormatter(logging.Formatter(u'%(message)s'))
-    console.setLevel(options.loglevel)
-    logging.getLogger().addHandler(console)
+    CONSOLE.setLevel(options.loglevel)
     if options.logfile:
         logfile = logging.FileHandler(options.logfile)
-        logfile.setFormatter(logging.Formatter(u'%(asctime)s, %(levelname)s, %(message)s'))
+        logfile.setFormatter(
+            logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
         logfile.setLevel(logging.DEBUG)
         logging.getLogger().addHandler(logfile)
-    logging.getLogger().setLevel(options.loglevel)
+    if options.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.INFO)
     # Check a device has been specified
     if len(args) != 0:
-        parser.error(u'you may not specify any filenames')
+        parser.error('you may not specify any filenames')
     # Start the interpreter
-    r = RipCmd()
-    r.pprint(u'TVRip %s' % __version__)
-    r.pprint(u'Type "help" for more information.')
-    r.cmdloop()
+    cmd = RipCmd()
+    cmd.pprint('TVRip %s' % __version__)
+    cmd.pprint('Type "help" for more information.')
+    cmd.cmdloop()
 
-def handle_exception(type, value, tb):
-    u"""Exception handler for non-debug mode."""
-    # I/O errors should be simple to solve - no need to bother the user with a
-    # full stack trace, just the error message will suffice. Same for user
-    # interrupts
-    if issubclass(type, (IOError, KeyboardInterrupt)):
-        logging.critical(str(value))
+def handle_exception(exc_type, exc_value, exc_tb):
+    "Friendly exception handler"
+    if issubclass(exc_type, (SystemExit, KeyboardInterrupt)):
+        # Just ignore system exit and keyboard interrupt errors (after all,
+        # they're user generated)
+        sys.exit(130)
+    elif issubclass(exc_type, (ValueError, IOError)):
+        # For simple errors like IOError just output the message which
+        # should be sufficient for the end user (no need to confuse them
+        # with a full stack trace)
+        logging.critical(str(exc_value))
+        sys.exit(1)
+    elif issubclass(exc_type, (OptParseError,)):
+        # For option parser errors output the error along with a message
+        # indicating how the help page can be displayed
+        logging.critical(str(exc_value))
+        logging.critical('Try the --help option for more information.')
+        sys.exit(2)
     else:
         # Otherwise, log the stack trace and the exception into the log file
         # for debugging purposes
-        for line in traceback.format_exception(type, value, tb):
+        for line in traceback.format_exception(exc_type, exc_value, exc_tb):
             for s in line.rstrip().split('\n'):
                 logging.critical(s)
-    # Exit with a non-zero code
-    sys.exit(1)
+        sys.exit(1)
 
-if __name__ == u'__main__':
+if __name__ == '__main__':
     main()
     sys.exit(0)
