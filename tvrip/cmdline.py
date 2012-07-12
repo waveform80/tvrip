@@ -124,7 +124,7 @@ class Cmd(cmd.Cmd):
         result = []
         for i in s.split(','):
             if '-' in i:
-                start, finish = parse_number_range(i)
+                start, finish = self.parse_number_range(i)
                 result.extend(range(start, finish + 1))
             else:
                 try:

@@ -29,6 +29,8 @@ from __future__ import (
 import logging
 from datetime import timedelta
 from operator import attrgetter
+from tvrip.database import Episode
+from tvrip.ripper import Title, Chapter
 
 __all__ = ['EpisodeMap']
 
@@ -96,6 +98,9 @@ def calculate(unripped, chapters, duration_min, duration_max,
 class Error(Exception):
     "Base class for mapping errors"
 
+class NoMappingError(rror):
+    "Exception raised when no title mapping is found"
+
 class NoSolutionsError(Error):
     "Exception raised when no solutions are found by automap"
 
@@ -109,6 +114,16 @@ class EpisodeMap(dict):
         for episode in sorted(self, key=attrgetter('number')):
             yield episode
 
+    def __setitem__(self, key, value):
+        assert isinstance(key, Episode)
+        try:
+            start, finish = value
+            assert isinstance(start, Chapter)
+            assert isinstance(finish, Chapter)
+        except TypeError, ValueError:
+            assert isinstance(value, Title)
+        super(EpisodeMap, self).__setitem__(key, value)
+
     def iterkeys(self):
         for k in self:
             yield k
@@ -119,7 +134,7 @@ class EpisodeMap(dict):
 
     def automap(self, unripped, unmapped, duration_min, duration_max):
         "Automatically map unripped titles to unmapped episodes"
-        pass
+        try:
 
     def _automap_titles(self, to_map, unripped, duration_min, duration_max):
         "Auto-mapping using a title-based algorithm"
@@ -135,6 +150,8 @@ class EpisodeMap(dict):
                     title.number,
                     title.duration,
                 ))
+        if not result:
+            raise
         self.clear()
         self.update(result)
 

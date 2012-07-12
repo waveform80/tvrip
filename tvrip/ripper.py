@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Implements the disc scanner and ripper"""
+
 from __future__ import (
     unicode_literals, print_function, absolute_import, division)
 
@@ -34,136 +36,40 @@ from subprocess import Popen, PIPE, STDOUT
 from tvrip.database import Configuration
 from tvrip.subtitles import Subtitle, Subtitles, SubtitleCorrections
 
-AUDIO_MIX_ORDER = [u'5.1 ch', u'5.0 ch', u'Dolby Surround', u'2.0 ch', u'1.0 ch']
-AUDIO_ENCODING_ORDER = [u'DTS', u'AC3']
+AUDIO_MIX_ORDER = ['5.1 ch', '5.0 ch', 'Dolby Surround', '2.0 ch', '1.0 ch']
+AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 
 
 class Error(Exception):
-    u"""Base class for ripper errors"""
+    "Base class for ripper errors"
 
 class ProcessError(Error):
-    u"""Class for errors returned by external processes"""
+    "Class for errors returned by external processes"
 
 
 class Disc(object):
-    u"""Represents a DVD disc"""
+    "Represents a DVD disc"
 
     def __init__(self):
         super(Disc, self).__init__()
+        self.match = None
+        self.clear()
+
+    def clear(self):
         self.titles = []
+        self.name = ''
         self.serial = None
         self.ident = None
-        self.match = None
-
-    def test(self, pattern, line):
-        self.match = pattern.match(line)
-        return self.match
 
     def __repr__(self):
-        return u"<Disc()>"
+        return "<Disc()>"
 
-    error1_re = re.compile(ur"libdvdread: Can't open .* for reading")
-    error2_re = re.compile(ur'libdvdnav: vm: failed to open/read the DVD')
-    disc_serial_re = re.compile(ur'^libdvdnav: DVD Serial Number: (?P<serial>.*)$')
-    title_re = re.compile(ur'^\+ title (?P<number>\d+):$')
-    duration_re = re.compile(ur'^  \+ duration: (?P<duration>.*)$')
-    stats_re = re.compile(ur'^  \+ size: (?P<size>.*), aspect: (?P<aspect_ratio>.*), (?P<frame_rate>.*) fps$')
-    crop_re = re.compile(ur'^  \+ autocrop: (?P<crop>.*)$')
-    comb_re = re.compile(ur'^  \+ combing detected,.*$')
-    chapters_re = re.compile(ur'^  \+ chapters:$')
-    chapter_re = re.compile(ur'^    \+ (?P<number>\d+): cells \d+->\d+, \d+ blocks, duration (?P<duration>.*)$')
-    audio_tracks_re = re.compile(ur'^  \+ audio tracks:$')
-    audio_track_re = re.compile(ur'^    \+ (?P<number>\d+), (?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? \((?P<channel_mix>[^)]*)\) \(iso639-2: (?P<language>[a-z]{2,3})\), (?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$')
-    subtitle_tracks_re = re.compile(ur'^  \+ subtitle tracks:$')
-    subtitle_track_re = re.compile(ur'^    \+ (?P<number>\d+), (?P<name>.*) \(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>.*)\))?$')
-    def scan(self, config):
-        self.titles = []
-        cmdline = [
-            config.get_path(u'handbrake'),
-            u'-i', config.source, # specify the input device
-            u'-t', u'0'    # ask for a scan of the entire disc
-        ]
-        process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
-        output = process.communicate()[0]
-        state = set([u'disc'])
-        title = None
-        # Parse the output into child objects
-        for line in output.splitlines():
-            if u'disc' in state and (
-                    self.test(self.error1_re, line) or
-                    self.test(self.error2_re, line)
-                ):
-                raise IOError('Unable to read disc in %s' % config.source)
-            if u'disc' in state and self.test(self.disc_serial_re, line):
-                self.serial = self.match.group(u'serial')
-            elif u'disc' in state and self.test(self.title_re, line):
-                if title:
-                    title.chapters = sorted(title.chapters, key=attrgetter(u'number'))
-                    title.audio_tracks = sorted(title.audio_tracks, key=attrgetter(u'number'))
-                    title.subtitle_tracks = sorted(title.subtitle_tracks, key=attrgetter(u'number'))
-                state = set([u'disc', u'title'])
-                title = Title(self)
-                title.number = int(self.match.group(u'number'))
-            elif u'title' in state and self.test(self.duration_re, line):
-                state = set([u'disc', u'title'])
-                hours, minutes, seconds = (int(i) for i in self.match.group(u'duration').split(u':'))
-                title.duration = timedelta(seconds=seconds, minutes=minutes, hours=hours)
-            elif u'title' in state and self.test(self.stats_re, line):
-                state = set([u'disc', u'title'])
-                title.size = (int(i) for i in self.match.group(u'size').split(u'x'))
-                title.aspect_ratio = float(self.match.group(u'aspect_ratio'))
-                title.frame_rate = float(self.match.group(u'frame_rate'))
-            elif u'title' in state and self.test(self.crop_re, line):
-                state = set([u'disc', u'title'])
-                title.crop = (int(i) for i in self.match.group(u'crop').split(u'/'))
-            elif u'title' in state and self.test(self.comb_re, line):
-                title.interlaced = True
-            elif u'title' in state and self.test(self.chapters_re, line):
-                state = set([u'disc', u'title', u'chapter'])
-            elif u'chapter' in state and self.test(self.chapter_re, line):
-                chapter = Chapter(title)
-                chapter.number = int(self.match.group(u'number'))
-                hours, minutes, seconds = (int(i) for i in self.match.group(u'duration').split(u':'))
-                chapter.duration = timedelta(seconds=seconds, minutes=minutes, hours=hours)
-            elif u'title' in state and self.test(self.audio_tracks_re, line):
-                state = set([u'disc', u'title', u'audio'])
-            elif u'audio' in state and self.test(self.audio_track_re, line):
-                track = AudioTrack(title)
-                track.number = int(self.match.group(u'number'))
-                if self.match.group(u'label'):
-                    track.name = '%s (%s)' % (
-                        self.match.group(u'name'),
-                        self.match.group(u'label'),
-                    )
-                else:
-                    track.name = self.match.group(u'name')
-                track.language = self.match.group(u'language')
-                track.encoding = self.match.group(u'encoding')
-                track.channel_mix = self.match.group(u'channel_mix')
-                track.sample_rate = int(self.match.group(u'sample_rate'))
-                track.bit_rate = int(self.match.group(u'bit_rate'))
-            elif u'title' in state and self.test(self.subtitle_tracks_re, line):
-                state = set([u'disc', u'title', u'subtitle'])
-            elif u'subtitle' in state and self.test(self.subtitle_track_re, line):
-                track = SubtitleTrack(title)
-                track.number = int(self.match.group(u'number'))
-                track.name = self.match.group(u'name')
-                track.language = self.match.group(u'language')
-                track.type = self.match.group(u'type')
-        self.titles = sorted(self.titles, key=attrgetter(u'number'))
-        # Determine the best audio and subtitle tracks
-        for title in self.titles:
-            for key, group in groupby(sorted(title.audio_tracks, key=attrgetter('name')), key=attrgetter('name')):
-                group = sorted(group, key=lambda track: (
-                    AUDIO_MIX_ORDER.index(track.channel_mix),
-                    AUDIO_ENCODING_ORDER.index(track.encoding)
-                ))
-                if group:
-                    group[0].best = True
-            for key, group in groupby(sorted(title.subtitle_tracks, key=attrgetter('name')), key=attrgetter('name')):
-                group = list(group)
-                if group:
-                    group[0].best = True
+    def scan(self, config, titles=None):
+        self.clear()
+        if titles is None:
+            titles = [0]
+        for title in titles:
+            self._scan_title(config, title)
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
         h = hashlib.sha1()
@@ -177,9 +83,148 @@ class Disc(object):
                 h.update(str(chapter.duration))
         self.ident = '$H1$' + h.hexdigest()
 
-    def rip(self, config, episode, title, audio_tracks, subtitle_tracks, start_chapter=None, end_chapter=None):
+    def _match(self, pattern, line):
+        self.match = pattern.match(line)
+        return self.match
+
+    error1_re = re.compile(r"libdvdread: Can't open .* for reading")
+    error2_re = re.compile(r'libdvdnav: vm: failed to open/read the DVD')
+    disc_name_re = re.compile(r'^libdvdnav: DVD Title: (?P<name>.*)$')
+    disc_serial_re = re.compile(
+        r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$')
+    title_re = re.compile(r'^\+ title (?P<number>\d+):$')
+    duration_re = re.compile(r'^  \+ duration: (?P<duration>.*)$')
+    stats_re = re.compile(
+        r'^  \+ size: (?P<size>.*), aspect: (?P<aspect_ratio>.*), '
+        r'(?P<frame_rate>.*) fps$')
+    crop_re = re.compile(r'^  \+ autocrop: (?P<crop>.*)$')
+    comb_re = re.compile(r'^  \+ combing detected,.*$')
+    chapters_re = re.compile(r'^  \+ chapters:$')
+    chapter_re = re.compile(
+        r'^    \+ (?P<number>\d+): cells \d+->\d+, \d+ blocks, '
+        r'duration (?P<duration>.*)$')
+    audio_tracks_re = re.compile(r'^  \+ audio tracks:$')
+    audio_track_re = re.compile(
+        r'^    \+ (?P<number>\d+), '
+        r'(?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? '
+        r'\((?P<channel_mix>[^)]*)\) \(iso639-2: (?P<language>[a-z]{2,3})\), '
+        r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$')
+    subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$')
+    subtitle_track_re = re.compile(
+        r'^    \+ (?P<number>\d+), (?P<name>.*) '
+        r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>[^)]*)\))?'
+        r'(?P<cc>\(CC\))?$')
+    def _scan_title(self, config, title):
+        cmdline = [
+            config.get_path('handbrake'),
+            '-i', config.source, # specify the input device
+            '-t', str(title),    # select the specified title
+            '--scan',            # scan only
+        ]
+        process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
+        output = process.communicate()[0]
+        state = set(['disc'])
+        title = None
+        # Parse the output into child objects
+        for line in output.splitlines():
+            if 'disc' in state and (
+                    self._match(self.error1_re, line) or
+                    self._match(self.error2_re, line)
+                ):
+                raise IOError(
+                    'Unable to read disc in {}'.format(config.source))
+            if 'disc' in state and self._match(self.disc_name_re, line):
+                self.name = self.match.group('name')
+            elif 'disc' in state and self._match(self.disc_serial_re, line):
+                self.serial = self.match.group('serial')
+            elif 'disc' in state and self._match(self.title_re, line):
+                if title:
+                    title.chapters = sorted(
+                        title.chapters, key=attrgetter('number'))
+                    title.audio_tracks = sorted(
+                        title.audio_tracks, key=attrgetter('number'))
+                    title.subtitle_tracks = sorted(
+                        title.subtitle_tracks, key=attrgetter('number'))
+                state = set(['disc', 'title'])
+                title = Title(self)
+                title.number = int(self.match.group('number'))
+            elif 'title' in state and self._match(self.duration_re, line):
+                state = set(['disc', 'title'])
+                hours, minutes, seconds = (
+                    int(i) for i in self.match.group('duration').split(':'))
+                title.duration = timedelta(
+                    seconds=seconds, minutes=minutes, hours=hours)
+            elif 'title' in state and self._match(self.stats_re, line):
+                state = set(['disc', 'title'])
+                title.size = (
+                    int(i) for i in self.match.group('size').split('x'))
+                title.aspect_ratio = float(self.match.group('aspect_ratio'))
+                title.frame_rate = float(self.match.group('frame_rate'))
+            elif 'title' in state and self._match(self.crop_re, line):
+                state = set(['disc', 'title'])
+                title.crop = (
+                    int(i) for i in self.match.group('crop').split('/'))
+            elif 'title' in state and self._match(self.comb_re, line):
+                title.interlaced = True
+            elif 'title' in state and self._match(self.chapters_re, line):
+                state = set(['disc', 'title', 'chapter'])
+            elif 'chapter' in state and self._match(self.chapter_re, line):
+                chapter = Chapter(title)
+                chapter.number = int(self.match.group('number'))
+                hours, minutes, seconds = (
+                    int(i) for i in self.match.group('duration').split(':'))
+                chapter.duration = timedelta(
+                    seconds=seconds, minutes=minutes, hours=hours)
+            elif 'title' in state and self._match(self.audio_tracks_re, line):
+                state = set(['disc', 'title', 'audio'])
+            elif 'audio' in state and self._match(self.audio_track_re, line):
+                track = AudioTrack(title)
+                track.number = int(self.match.group('number'))
+                if self.match.group('label'):
+                    track.name = '{name} ({label})'.format(
+                        name=self.match.group('name'),
+                        label=self.match.group('label'))
+                else:
+                    track.name = self.match.group('name')
+                track.language = self.match.group('language')
+                track.encoding = self.match.group('encoding')
+                track.channel_mix = self.match.group('channel_mix')
+                track.sample_rate = int(self.match.group('sample_rate'))
+                track.bit_rate = int(self.match.group('bit_rate'))
+            elif 'title' in state and self._match(
+                    self.subtitle_tracks_re, line):
+                state = set(['disc', 'title', 'subtitle'])
+            elif 'subtitle' in state and self._match(
+                    self.subtitle_track_re, line):
+                track = SubtitleTrack(title)
+                track.number = int(self.match.group('number'))
+                track.name = self.match.group('name')
+                track.language = self.match.group('language')
+                track.type = self.match.group('type')
+                track.closed_captions = bool(self.match.group('cc'))
+        self.titles = sorted(self.titles, key=attrgetter('number'))
+        # Determine the best audio and subtitle tracks
+        for title in self.titles:
+            for key, group in groupby(
+                    sorted(title.audio_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = sorted(group, key=lambda track: (
+                    AUDIO_MIX_ORDER.index(track.channel_mix),
+                    AUDIO_ENCODING_ORDER.index(track.encoding)
+                ))
+                if group:
+                    group[0].best = True
+            for key, group in groupby(
+                    sorted(title.subtitle_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = list(group)
+                if group:
+                    group[0].best = True
+
+    def rip(self, config, episode, title, audio_tracks, subtitle_tracks,
+            start_chapter=None, end_chapter=None):
         if not isinstance(config, Configuration):
-            raise ValueError(u'config must a Configuration instance')
+            raise ValueError('config must a Configuration instance')
         filename = config.template.format(
             program=config.program.name,
             season=config.season.number,
@@ -188,7 +233,7 @@ class Disc(object):
             now=datetime.now(),
         )
         # Convert the subtitle track(s) if required
-        if config.subtitle_format == u'subrip':
+        if config.subtitle_format == 'subrip':
             for track in subtitle_tracks:
                 assert track.title is title
                 track.convert(config, filename)
@@ -202,69 +247,72 @@ class Disc(object):
             for track in subtitle_tracks
         ]
         cmdline = [
-            config.get_path(u'handbrake'),
-            u'-i', config.source,
-            u'-t', unicode(title.number),
-            u'-o', os.path.join(config.target, filename),
-            u'-f', u'mp4',          # output an MP4 container
-            u'-O',                  # optimize for streaming
-            u'-m',                  # include chapter markers
-            u'--strict-anamorphic', # store pixel aspect ratio
-            u'-e', u'x264',         # use x264 for encoding
-            u'-q', u'23',           # quality 23
-            u'-x', u'b-adapt=2:rc-lookahead=50', # advanced encoding options (mostly defaults from High Profile)
-            u'-a', u','.join(unicode(num) for (num, _, _)  in audio_defs),
-            u'-6', u','.join(mix          for (_, mix, _)  in audio_defs),
-            u'-A', u','.join(name         for (_, _, name) in audio_defs),
+            config.get_path('handbrake'),
+            '-i', config.source,
+            '-t', unicode(title.number),
+            '-o', os.path.join(config.target, filename),
+            '-f', 'mp4',          # output an MP4 container
+            '-O',                  # optimize for streaming
+            '-m',                  # include chapter markers
+            '--strict-anamorphic', # store pixel aspect ratio
+            '-e', 'x264',         # use x264 for encoding
+            '-q', '23',           # quality 23
+            '-x', 'b-adapt=2:rc-lookahead=50', # advanced encoding options (mostly defaults from High Profile)
+            '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
+            '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
+            '-A', ','.join(name         for (_, _, name) in audio_defs),
         ]
         if start_chapter:
-            cmdline.append(u'-c')
+            cmdline.append('-c')
             if end_chapter:
-                cmdline.append(u'%d-%d' % (start_chapter.number, end_chapter.number))
+                cmdline.append('%d-%d' % (start_chapter.number, end_chapter.number))
             else:
                 cmdline.append(unicode(start_chapter.number))
-        if config.subtitle_format == u'vobsub':
-            cmdline.append(u'-s')
-            cmdline.append(u','.join(unicode(num) for (num, _) in subtitle_defs))
-        if config.decomb == u'on':
-            cmdline.append(u'-d')
-            cmdline.append(u'slow')
-        elif config.decomb == u'auto':
-            cmdline.append(u'-5')
+        if config.subtitle_format == 'vobsub':
+            cmdline.append('-s')
+            cmdline.append(','.join(unicode(num) for (num, _) in subtitle_defs))
+        if config.decomb == 'on':
+            cmdline.append('-d')
+            cmdline.append('slow')
+        elif config.decomb == 'auto':
+            cmdline.append('-5')
         p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
         p.communicate()
         if p.returncode != 0:
-            raise ValueError(u'Handbrake exited with non-zero return code %d' % p.returncode)
+            raise ValueError(
+                'Handbrake exited with non-zero return code {}'.format(
+                    p.returncode))
         # Tag the resulting file
         tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
         try:
             cmdline = [
-                config.get_path(u'atomicparsley'),
+                config.get_path('atomicparsley'),
                 os.path.join(config.target, filename),
-                u'-o', tmpfile,
-                u'--stik', u'TV Show',
+                '-o', tmpfile,
+                '--stik', 'TV Show',
                 # set tags for TV shows
-                u'--TVShowName',   episode.season.program.name,
-                u'--TVSeasonNum',  unicode(episode.season.number),
-                u'--TVEpisodeNum', unicode(episode.number),
-                u'--TVEpisode',    episode.name,
+                '--TVShowName',   episode.season.program.name,
+                '--TVSeasonNum',  unicode(episode.season.number),
+                '--TVEpisodeNum', unicode(episode.number),
+                '--TVEpisode',    episode.name,
                 # also set tags for music files as these have wider support
-                u'--artist',       episode.season.program.name,
-                u'--album',        u'Season %d' % episode.season.number,
-                u'--tracknum',     unicode(episode.number),
-                u'--title',        episode.name
+                '--artist',       episode.season.program.name,
+                '--album',        'Season {}'.format(episode.season.number),
+                '--tracknum',     unicode(episode.number),
+                '--title',        episode.name
             ]
             p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
             p.communicate()
             if p.returncode != 0:
-                raise ValueError('AtomicParsley exited with non-zero return code %d' % p.returncode)
+                raise ValueError(
+                    'AtomicParsley exited with non-zero return code %d' % p.returncode)
             os.chmod(tmpfile, os.stat(os.path.join(config.target, filename)).st_mode)
             shutil.move(tmpfile, os.path.join(config.target, filename))
         finally:
             os.close(tmphandle)
 
 class Title(object):
-    u"""Represents a title on a DVD"""
+    "Represents a title on a DVD"
 
     def __init__(self, disc):
         super(Title, self).__init__()
@@ -282,11 +330,11 @@ class Title(object):
         self.interlaced = False
 
     def __repr__(self):
-        return u"<Title(%d)>" % self.number
+        return "<Title(%d)>" % self.number
 
 
 class Chapter(object):
-    u"""Represents a chapter marker within a Title object"""
+    "Represents a chapter marker within a Title object"
 
     def __init__(self, title):
         super(Chapter, self).__init__()
@@ -310,45 +358,46 @@ class Chapter(object):
         return (result + self.duration).time()
 
     def __repr__(self):
-        return u"<Chapter(%d, %s)>" % (self.number, self.duration)
+        return "<Chapter(%d, %s)>" % (self.number, self.duration)
 
 
 class AudioTrack(object):
-    u"""Represents an audio track within a Title object"""
+    "Represents an audio track within a Title object"
 
     def __init__(self, title):
         super(AudioTrack, self).__init__()
         title.audio_tracks.append(self)
         self.title = title
-        self.name = u''
+        self.name = ''
         self.number = 0
-        self.language = u''
-        self.encoding = u''
-        self.channel_mix = u''
+        self.language = ''
+        self.encoding = ''
+        self.channel_mix = ''
         self.sample_rate = 0
         self.bit_rate = 0
         self.best = False
 
     def __repr__(self):
-        return u"<AudioTrack(%d, '%s')>" % (self.number, self.name)
+        return "<AudioTrack(%d, '%s')>" % (self.number, self.name)
 
 
 class SubtitleTrack(object):
-    u"""Represents a subtitle track within a Title object"""
+    "Represents a subtitle track within a Title object"
 
     def __init__(self, title):
         super(SubtitleTrack, self).__init__()
         title.subtitle_tracks.append(self)
         self.title = title
         self.number = 0
-        self.name = u''
-        self.language = u''
-        self.type = u''
+        self.name = ''
+        self.language = ''
+        self.type = ''
+        self.closed_captions = False
         self.best = False
-        self.log = u''
+        self.log = ''
         self.corrections = SubtitleCorrections()
 
     def __repr__(self):
-        return u"<SubtitleTrack(%d, '%s')>" % (self.number, self.name)
+        return "<SubtitleTrack(%d, '%s')>" % (self.number, self.name)
 
 

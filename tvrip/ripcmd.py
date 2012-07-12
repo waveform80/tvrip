@@ -46,20 +46,32 @@ class RipCmd(Cmd):
         self.episode_map = EpisodeMap()
         self.session = init_session(debug=debug)
         # Read the configuration from the database
-        with self.session.begin(subtransactions=True):
-            try:
-                self.config = self.session.query(Configuration).one()
-            except sa.orm.exc.NoResultFound:
-                self.config = Configuration()
-                self.session.add(self.config)
-                self.session.add(AudioLanguage(lang='eng'))
-                self.session.add(SubtitleLanguage(lang='eng'))
-                self.session.add(ConfigPath(name='handbrake',
-                    path='/usr/bin/HandBrakeCLI'))
-                self.session.add(ConfigPath(name='atomicparsley',
-                    path='/usr/bin/AtomicParsley'))
-                self.session.add(ConfigPath(name='vlc',
-                    path='/usr/bin/vlc'))
+        try:
+            self.config = self.session.query(Configuration).one()
+        except sa.orm.exc.NoResultFound:
+            self.config = Configuration()
+            self.session.add(self.config)
+            self.session.add(AudioLanguage(lang='eng'))
+            self.session.add(SubtitleLanguage(lang='eng'))
+            self.session.add(ConfigPath(name='handbrake',
+                path='/usr/bin/HandBrakeCLI'))
+            self.session.add(ConfigPath(name='atomicparsley',
+                path='/usr/bin/AtomicParsley'))
+            self.session.add(ConfigPath(name='vlc',
+                path='/usr/bin/vlc'))
+            self.session.commit()
+
+    def onecmd(self, line):
+        # Ensure that the current transaction is committed after a command, or
+        # that everything the command did is rolled back in the case of an
+        # exception
+        try:
+            result = Cmd.onecmd(self, line)
+            self.session.commit()
+            return result
+        except:
+            self.session.rollback()
+            raise
 
     def _get_disc(self):
         "Returns the Disc object for the current source"
@@ -237,24 +249,23 @@ class RipCmd(Cmd):
         "Removes all seasons from the specified program"
         if program is None:
             program = self.config.program
-        with self.session.begin(subtransactions=True):
-            for season in self.session.query(Season).\
-                    filter(Season.program==program):
-                self.session.delete(season)
+        for season in self.session.query(Season).\
+                filter(Season.program==program):
+            self.session.delete(season)
 
     def clear_episodes(self, season=None):
         "Removes all episodes from the specified season"
         if season is None:
             season = self.config.season
-        with self.session.begin(subtransactions=True):
-            for episode in self.session.query(Episode).\
-                    filter(Episode.season==season):
-                self.session.delete(episode)
+        for episode in self.session.query(Episode).\
+                filter(Episode.season==season):
+            self.session.delete(episode)
 
     def pprint_disc(self):
         "Prints the details of the currently scanned disc"
         self.pprint('Disc identifier: {}'.format(self.disc.ident))
         self.pprint('Disc serial: {}'.format(self.disc.serial))
+        self.pprint('Disc name: {}'.format(self.disc.name))
         self.pprint('Disc has {} titles'.format(len(self.disc.titles)))
         self.pprint('')
         table = [('Title', 'Chapters', 'Duration', 'Audio')]
@@ -444,14 +455,13 @@ class RipCmd(Cmd):
         """
         arg = arg.lower().split(' ')
         new_langs = set(arg)
-        with self.session.begin():
-            for lang in self.config.audio_langs:
-                if lang.lang in new_langs:
-                    new_langs.remove(lang.lang)
-                else:
-                    self.session.delete(lang)
-            for lang in new_langs:
-                self.session.add(AudioLanguage(lang=lang))
+        for lang in self.config.audio_langs:
+            if lang.lang in new_langs:
+                new_langs.remove(lang.lang)
+            else:
+                self.session.delete(lang)
+        for lang in new_langs:
+            self.session.add(AudioLanguage(lang=lang))
 
     def do_audio_mix(self, arg):
         """Sets the audio mixdown
@@ -481,8 +491,7 @@ class RipCmd(Cmd):
             }[arg.strip().lower()]
         except KeyError:
             raise CmdSyntaxError('Invalid audio mix {}'.format(arg))
-        with self.session.begin():
-            self.config.audio_mix = arg
+        self.config.audio_mix = arg
 
     def do_audio_all(self, arg):
         """Sets whether to extract all language-matched audio tracks
@@ -496,8 +505,7 @@ class RipCmd(Cmd):
         (tvrip) audio_tracks off
         (tvrip) audio_tracks on
         """
-        with self.session.begin():
-            self.config.audio_all = self.parse_boolean(arg)
+        self.config.audio_all = self.parse_boolean(arg)
 
     def do_subtitle_langs(self, arg):
         """Sets the list of subtitle languages to rip.
@@ -513,14 +521,13 @@ class RipCmd(Cmd):
         """
         arg = arg.lower().split(' ')
         new_langs = set(arg)
-        with self.session.begin():
-            for lang in self.config.subtitle_langs:
-                if lang.lang in new_langs:
-                    new_langs.remove(lang.lang)
-                else:
-                    self.session.delete(lang)
-            for lang in new_langs:
-                self.session.add(SubtitleLanguage(lang=lang))
+        for lang in self.config.subtitle_langs:
+            if lang.lang in new_langs:
+                new_langs.remove(lang.lang)
+            else:
+                self.session.delete(lang)
+        for lang in new_langs:
+            self.session.add(SubtitleLanguage(lang=lang))
 
     def do_subtitle_format(self, arg):
         """Sets the subtitle extraction mode
@@ -545,8 +552,7 @@ class RipCmd(Cmd):
         except KeyError:
             raise CmdSyntaxError(
                 'Invalid subtitle extraction mode {}'.format(arg))
-        with self.session.begin():
-            self.config.subtitle_format = arg
+        self.config.subtitle_format = arg
 
     def do_subtitle_all(self, arg):
         """Sets whether to extract all language-matched subtitles
@@ -561,8 +567,7 @@ class RipCmd(Cmd):
         (tvrip) subtitle_all off
         (tvrip) subtitle_all on
         """
-        with self.session.begin():
-            self.config.subtitle_all = self.parse_boolean(arg)
+        self.config.subtitle_all = self.parse_boolean(arg)
 
     def do_decomb(self, arg):
         """Sets the decomb option for video conversion.
@@ -575,14 +580,13 @@ class RipCmd(Cmd):
         (tvrip) decomb off
         (tvrip) decomb on
         """
-        with self.session.begin():
-            try:
-                self.config.decomb = ['off', 'on'][self.parse_boolean(arg)]
-            except CmdSyntaxError:
-                if arg.strip().lower() == 'auto':
-                    self.config.decomb = 'auto'
-                else:
-                    raise
+        try:
+            self.config.decomb = ['off', 'on'][self.parse_boolean(arg)]
+        except CmdSyntaxError:
+            if arg.strip().lower() == 'auto':
+                self.config.decomb = 'auto'
+            else:
+                raise
 
     def do_duration(self, arg):
         """Sets range of episode duration.
@@ -596,11 +600,10 @@ class RipCmd(Cmd):
         (tvrip) duration 40-50
         (tvrip) duration 25-35
         """
-        with self.session.begin():
-            self.config.duration_min, self.config.duration_max = (
-                timedelta(minutes=i)
-                for i in self.parse_number_range(arg)
-            )
+        self.config.duration_min, self.config.duration_max = (
+            timedelta(minutes=i)
+            for i in self.parse_number_range(arg)
+        )
 
     def do_episode(self, arg):
         """Sets the name of a single episode.
@@ -614,24 +617,24 @@ class RipCmd(Cmd):
         if arg:
             (number, name) = arg.split(' ', 1)
             episode = self.parse_episode(number, must_exist=False)
-            with self.session.begin():
-                if episode is None:
-                    episode = Episode(self.config.season, number, name)
-                    self.session.add(episode)
-                    self.pprint(
-                        'Added episode {episode} to season {season} '
-                        'of {program}'.format(
-                            episode=episode.number,
-                            season=episode.season.number,
-                            program=episode.season.program.name))
-                else:
-                    episode.name = name
-                    self.pprint(
-                        'Renamed episode {episode} of season {season} '
-                        'of {program}'.format(
-                            episode=episode.number,
-                            season=episode.season.number,
-                            program=episode.season.program.name))
+            if episode is None:
+                episode = Episode(
+                    season=self.config.season, number=number, name=name)
+                self.session.add(episode)
+                self.pprint(
+                    'Added episode {episode} to season {season} '
+                    'of {program}'.format(
+                        episode=episode.number,
+                        season=episode.season.number,
+                        program=episode.season.program.name))
+            else:
+                episode.name = name
+                self.pprint(
+                    'Renamed episode {episode} of season {season} '
+                    'of {program}'.format(
+                        episode=episode.number,
+                        season=episode.season.number,
+                        program=episode.season.program.name))
         else:
             raise CmdError('You must specify an episode number and name')
 
@@ -641,20 +644,19 @@ class RipCmd(Cmd):
             season = self.config.season
         self.pprint('Please enter the names of the episodes. Leave a '
             'name blank if you wish to terminate entry early:')
-        with self.session.begin(subtransactions=True):
-            self.clear_episodes()
-            for number in range(1, count + 1):
-                name = self.input('{:2d}: '.format(number))
-                if not name:
-                    self.pprint('Terminating episode name entry')
-                    break
-                episode = Episode(season, number, name)
-                self.session.add(episode)
+        self.clear_episodes()
+        for number in range(1, count + 1):
+            name = self.input('{:2d}: '.format(number))
+            if not name:
+                self.pprint('Terminating episode name entry')
+                break
+            episode = Episode(season=season, number=number, name=name)
+            self.session.add(episode)
 
     def do_episodes(self, arg):
         """Gets or sets the episodes for the current season.
 
-        Syntax: episodes [<number>]
+        Syntax: episodes [number]
 
         The 'episodes' command can be used to list the episodes of the
         currently selected season of the program. If an argument is given, the
@@ -710,37 +712,38 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(
                 'A season number must be 1 or higher '
                 '({} specified)'.format(arg))
-        with self.session.begin(subtransactions=True):
+        try:
+            self.config.season = self.session.query(Season).\
+                filter(Season.program==self.config.program).\
+                filter(Season.number==arg).one()
+        except sa.orm.exc.NoResultFound:
+            self.config.season = Season(
+                program=self.config.program, number=arg)
+            self.session.add(self.config.season)
             try:
-                self.config.season = self.session.query(Season).\
-                    filter(Season.program==self.config.program).\
-                    filter(Season.number==arg).one()
-            except sa.orm.exc.NoResultFound:
-                self.config.season = Season(self.config.program, arg)
-                self.session.add(self.config.season)
-                try:
-                    count = int(self.input('Season {season} of program '
-                        '{program} is new. Please enter the number of '
-                        'episodes in this season (enter 0 if you do not '
-                        'wish to define episodes at this time) '
-                        '[0-n] '.format(
-                            season=self.config.season.number,
-                            program=self.config.program.name)))
-                except ValueError:
-                    while True:
-                        try:
-                            count = int(self.input(
-                                'Invalid input. Please enter a number [0-n] '))
-                        except ValueError:
-                            pass
-                        else:
-                            break
-                if count != 0:
-                    self.onecmd('episodes {}'.format(count))
+                count = int(self.input('Season {season} of program '
+                    '{program} is new. Please enter the number of '
+                    'episodes in this season (enter 0 if you do not '
+                    'wish to define episodes at this time) '
+                    '[0-n] '.format(
+                        season=self.config.season.number,
+                        program=self.config.program.name)))
+            except ValueError:
+                while True:
+                    try:
+                        count = int(self.input(
+                            'Invalid input. Please enter a number [0-n] '))
+                    except ValueError:
+                        pass
+                    else:
+                        break
+            if count != 0:
+                self.do_episodes(count)
         self.episode_map.clear()
         self.map_ripped()
 
     def complete_season(self, text, line, start, finish):
+        "Auto-completer for season command"
         return [
             unicode(season.number) for season in
             self.session.query(Season).\
@@ -778,31 +781,30 @@ class RipCmd(Cmd):
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
-        with self.session.begin(subtransactions=True):
+        try:
+            self.config.program = self.session.query(Program).\
+                filter(Program.name==arg).one()
+        except sa.orm.exc.NoResultFound:
+            self.config.program = Program(name=arg)
+            self.session.add(self.config.program)
             try:
-                self.config.program = self.session.query(Program).\
-                    filter(Program.name==arg).one()
-            except sa.orm.exc.NoResultFound:
-                self.config.program = Program(arg)
-                self.session.add(self.config.program)
-                try:
-                    count = int(self.input(
-                        'Program {} is new. How many seasons exist (enter '
-                        '0 if you do not wish to define seasons and episodes '
-                        'at this time)? [0-n] '.format(
-                            self.config.program.name)))
-                except ValueError:
-                    while True:
-                        try:
-                            count = int(self.input(
-                                'Invalid input. Please enter a number [0-n] '))
-                        except ValueError:
-                            pass
-                        else:
-                            break
-                self.config.season = None
-                for number in range(1, count + 1):
-                    self.onecmd('season {}'.format(number))
+                count = int(self.input(
+                    'Program {} is new. How many seasons exist (enter '
+                    '0 if you do not wish to define seasons and episodes '
+                    'at this time)? [0-n] '.format(
+                        self.config.program.name)))
+            except ValueError:
+                while True:
+                    try:
+                        count = int(self.input(
+                            'Invalid input. Please enter a number [0-n] '))
+                    except ValueError:
+                        pass
+                    else:
+                        break
+            self.config.season = None
+            for number in range(1, count + 1):
+                self.do_season(number)
         self.config.season = self.session.query(Season).\
             filter(Season.program==self.config.program).\
             order_by(Season.number).first()
@@ -811,6 +813,7 @@ class RipCmd(Cmd):
 
     program_re = re.compile(ur'^program\s+')
     def complete_program(self, text, line, start, finish):
+        "Auto-completer for program command"
         match = self.program_re.match(line)
         name = line[match.end():]
         return [
@@ -848,7 +851,7 @@ class RipCmd(Cmd):
     def do_title(self, arg):
         """Displays information about the specified title(s).
 
-        Syntax: title <titles>...
+        Syntax: title <title>...
 
         The 'title' command displays detailed information about the specified
         titles including chapter starts and durations, audio tracks, and
@@ -876,7 +879,7 @@ class RipCmd(Cmd):
     def do_scan(self, arg):
         """Scans the source device for episodes.
 
-        Syntax: scan
+        Syntax: scan [title]...
 
         The 'scan' command scans the current source device to discover what
         titles, audio tracks, and subtitle tracks exist on the disc in the
@@ -887,11 +890,15 @@ class RipCmd(Cmd):
             raise CmdError('No source has been specified')
         elif not (self.config.duration_min and self.config.duration_max):
             raise CmdError('No duration range has been specified')
+        elif arg:
+            titles = self.parse_number_list(arg)
+        else:
+            titles = None
         self.pprint('Scanning disc in {}'.format(self.config.source))
         self.episode_map.clear()
         self.disc = Disc()
         try:
-            self.disc.scan(self.config)
+            self.disc.scan(self.config, titles)
         except IOError as exc:
             self.disc = None
             raise CmdError(exc)
@@ -944,7 +951,7 @@ class RipCmd(Cmd):
     def do_automap(self, arg):
         """Maps episodes to titles or chapter ranges automatically.
 
-        Syntax: automap [<titles>]...
+        Syntax: automap [title]...
 
         The 'automap' command is used to have the application attempt to figure
         out which titles (or chapters of titles) contain the next set of
@@ -953,7 +960,7 @@ class RipCmd(Cmd):
         considered. If direct title mapping fails, chapter-based mapping is
         attempted instead.
 
-        The current episode mapping can be viewed in the output of the 'config'
+        The current episode mapping can be viewed in the output of the 'map'
         command.
         """
         self.pprint('Performing auto-mapping')
@@ -992,7 +999,7 @@ class RipCmd(Cmd):
     def do_map(self, arg):
         """Maps episodes to titles or chapter ranges.
 
-        Syntax: map [<episode> <title>[.<start>-<end>]]
+        Syntax: map [episode title[.start-end]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
@@ -1107,29 +1114,31 @@ class RipCmd(Cmd):
                 'There is no episode {} in the current '
                 'season'.format(episode))
         if chapter_start:
-            self.pprint('Mapping chapters %d-%d (duration %s) of title %d '
-                'to episode %d, "%s"' % (
-                chapter_start.number,
-                chapter_end.number,
-                sum(
-                    [
-                        c.duration for c in title.chapters
-                        if chapter_start.number <= c.number <= chapter_end.number
-                    ],
-                    timedelta()
-                ),
-                title.number,
-                episode.number,
-                episode.name
-            ))
+            self.pprint(
+                'Mapping chapters {chapter_start}-{chapter_end} (duration '
+                '{duration}) of title {title} to episode {episode_num}, '
+                '"{episode_title}"'.format(
+                    chapter_start=chapter_start.number,
+                    chapter_end=chapter_end.number,
+                    duration=sum(
+                        [
+                            c.duration for c in title.chapters
+                            if chapter_start.number <= c.number <= chapter_end.number
+                        ],
+                        timedelta()
+                    ),
+                    title=title.number,
+                    episode_num=episode.number,
+                    episode_title=episode.name))
             self.map[episode] = (chapter_start, chapter_end)
         else:
-            self.pprint('Mapping title %d (duration %s) to episode %d, "%s"' % (
-                title.number,
-                title.duration,
-                episode.number,
-                episode.name
-            ))
+            self.pprint(
+                'Mapping title {title} (duration {duration}) to episode '
+                '{episode_num}, "{episode_title}"'.format(
+                    title=title.number,
+                    duration=title.duration,
+                    episode_num=episode.number,
+                    episode_title=episode.name))
             self.map[episode] = title
 
     def do_unmap(self, arg):
@@ -1158,10 +1167,12 @@ class RipCmd(Cmd):
                 if e.number == arg
             ][0]
         except IndexError:
-            raise CmdError('Episode %d does not exist within the '
-                'selected season' % arg)
-        self.pprint('Removing mapping for episode %d, %s' %
-            (episode.number, episode.name))
+            raise CmdError(
+                'Episode {} does not exist within the '
+                'selected season'.format(arg))
+        self.pprint(
+            'Removing mapping for episode {episode.number}, '
+            '{episode.name}'.format(episode=episode))
         del self.map[episode]
 
     def do_rip(self, arg):
@@ -1205,19 +1216,19 @@ class RipCmd(Cmd):
                 ]
                 if self.config.subtitle_tracks == 'best':
                     subtitle_tracks = [t for t in subtitle_tracks if t.best]
-                self.pprint('Ripping episode %d, "%s"' % (
-                    episode.number, episode.name))
+                self.pprint(
+                    'Ripping episode {episode.number}, '
+                    '"{episode.name}"'.format(episode=episode))
                 self.disc.rip(self.config, episode, title, audio_tracks,
                     subtitle_tracks, chapter_start, chapter_end)
-                with self.session.begin(subtransactions=True):
-                    episode.disc_id = self.disc.ident
-                    episode.disc_title = title.number
-                    if chapter_start:
-                        episode.start_chapter = chapter_start.number
-                        episode.end_chapter = chapter_end.number
-                    else:
-                        episode.start_chapter = None
-                        episode.end_chapter = None
+                episode.disc_id = self.disc.ident
+                episode.disc_title = title.number
+                if chapter_start:
+                    episode.start_chapter = chapter_start.number
+                    episode.end_chapter = chapter_end.number
+                else:
+                    episode.start_chapter = None
+                    episode.end_chapter = None
 
     def do_unrip(self, arg):
         """Changes the status of the specified episode to unripped.
@@ -1236,13 +1247,12 @@ class RipCmd(Cmd):
         (tvrip) unrip 3
         (tvrip) unrip 7
         """
-        with self.session.begin(subtransactions=True):
-            for episode in self.parse_episode_list(arg, must_exist=False):
-                if episode:
-                    episode.disc_id = None
-                    episode.disc_title = None
-                    episode.start_chapter = None
-                    episode.end_chapter = None
+        for episode in self.parse_episode_list(arg, must_exist=False):
+            if episode:
+                episode.disc_id = None
+                episode.disc_title = None
+                episode.start_chapter = None
+                episode.end_chapter = None
 
     def do_source(self, arg):
         """Sets the source device.
@@ -1257,7 +1267,7 @@ class RipCmd(Cmd):
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
-            self.pprint('Path %s does not exist' % arg)
+            self.pprint('Path {} does not exist'.format(arg))
             return
         self.config.source = arg
 
@@ -1278,10 +1288,10 @@ class RipCmd(Cmd):
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
-            self.pprint('Path %s does not exist' % arg)
+            self.pprint('Path {} does not exist'.format(arg))
             return
         if not os.path.isdir(arg):
-            self.pprint('Path %s is not a directory' % arg)
+            self.pprint('Path {} is not a directory'.format(arg))
             return
         self.config.target = arg
 
@@ -1305,10 +1315,10 @@ class RipCmd(Cmd):
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
-            self.pprint('Path %s does not exist' % arg)
+            self.pprint('Path {} does not exist'.format(arg))
             return
         if not os.path.isdir(arg):
-            self.pprint('Path %s is not a directory' % arg)
+            self.pprint('Path {} is not a directory'.format(arg))
             return
         self.config.temp = arg
 
