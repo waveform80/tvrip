@@ -19,7 +19,11 @@
 """Implements the data model for the tvrip application's database"""
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    print_function,
+    absolute_import,
+    division,
+    )
 
 import os
 import tempfile
@@ -66,6 +70,11 @@ class Episode(DeclarativeBase):
         """Indicates whether the episode has been ripped yet"""
         return bool(self.disc_id)
 
+    def __init__(self, program, season, number):
+        self.program = program
+        self.season = season
+        self.number = number
+
     def __repr__(self):
         return "<Episode(%s, %d, %d, %s)>" % (
             repr(self.season.program.name),
@@ -87,6 +96,10 @@ class Season(DeclarativeBase):
         order_by=[Episode.number])
     selected = relationship('Configuration', backref='season', uselist=False)
 
+    def __init__(self, program, number):
+        self.program = program
+        self.number = number
+
     def __repr__(self):
         return "<Season(%s, %d)>" % (repr(self.program.name), self.number)
 
@@ -99,6 +112,9 @@ class Program(DeclarativeBase):
     name = Column(Unicode(200), primary_key=True)
     seasons = relationship('Season', backref='program', order_by=[Season.number])
     selected = relationship('Configuration', backref='program', uselist=False)
+
+    def __init__(self, name):
+        self.name = name
 
     def __repr__(self):
         return "<Program(%s)>" % repr(self.name)
@@ -113,6 +129,10 @@ class AudioLanguage(DeclarativeBase):
         onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
 
+    def __init__(self, config, lang):
+        self.config = config
+        self.lang = lang
+
     def __repr__(self):
         return "<AudioLanguage(%s)>" % repr(self.lang)
 
@@ -125,6 +145,10 @@ class SubtitleLanguage(DeclarativeBase):
     config_id = Column(Integer, ForeignKey('config.id',
         onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
+
+    def __init__(self, config, lang):
+        self.config = config
+        self.lang = lang
 
     def __repr__(self):
         return "<SubtitleLanguage(%s)>" % repr(self.lang)
@@ -139,6 +163,11 @@ class ConfigPath(DeclarativeBase):
         onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
     name = Column(Unicode(100), primary_key=True)
     path = Column(Unicode(300), nullable=False)
+
+    def __init__(self, config, name, path):
+        self.config = config
+        self.name = name
+        self.path = path
 
     def __repr__(self):
         return "<ConfigPath(%s, %s)>" % (repr(self.name), repr(self.path))

@@ -19,7 +19,11 @@
 """Implements the command line processor for the tvrip application"""
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    print_function,
+    absolute_import,
+    division,
+    )
 
 import os
 import re
@@ -203,11 +207,18 @@ class RipCmd(Cmd):
         """
         if not '-' in titles:
             raise CmdSyntaxError('Expected two dash-separated numbers')
-        start, finish = (
-            self.parse_title(i)
-            for i in titles.split('-', 1)
-        )
+        start, finish = (self.parse_title(i) for i in titles.split('-', 1))
         return start, finish
+
+    def parse_title_list(self, titles):
+        """Parse a string containing a title list.
+
+        Given a string representing a list of titles as a comma-separated
+        list of numbers and number-ranges, this method returns a sequence of
+        Title objects. If titles within the list do not exist an error will
+        be thrown.
+        """
+        return [self.parse_title(i) for i in self.parse_number_list(titles)]
 
     def parse_chapter(self, title, chapter):
         """Parse a string containing a chapter number.
@@ -332,7 +343,7 @@ class RipCmd(Cmd):
                 ).outerjoin(Season).outerjoin(Episode).\
                 group_by(Program.name).order_by(Program.name):
             table.append((program, seasons, episodes,
-                '{}%'.format(ripped * 100 / episodes)))
+                '{:.1f}%'.format(ripped * 100 / episodes)))
         self.pprint_table(table)
 
     def pprint_seasons(self, program=None):
@@ -351,7 +362,7 @@ class RipCmd(Cmd):
                 group_by(Season.number).\
                 order_by(Season.number):
             table.append((season, episodes,
-                '{}%'.format(ripped * 100 / episodes)))
+                '{:.1f}%'.format(ripped * 100 / episodes)))
         self.pprint_table(table)
 
     def pprint_episodes(self, season=None):
@@ -444,7 +455,7 @@ class RipCmd(Cmd):
     def do_audio_langs(self, arg):
         """Sets the list of audio languages to rip.
 
-        Syntax: audio_langs lang1 lang2...
+        Syntax: audio_langs <lang>...
 
         The 'audio_langs' command sets the list of languages for which audio
         tracks will be extracted and converted. Languages are specified as
@@ -510,7 +521,7 @@ class RipCmd(Cmd):
     def do_subtitle_langs(self, arg):
         """Sets the list of subtitle languages to rip.
 
-        Syntax: subtitle_langs lang1 lang2...
+        Syntax: subtitle_langs <lang>...
 
         The 'subtitle_langs' command sets the list of languages for which
         subtitle tracks will be extracted and converted. Languages are
@@ -600,6 +611,8 @@ class RipCmd(Cmd):
         (tvrip) duration 40-50
         (tvrip) duration 25-35
         """
+        if not arg:
+            raise CmdSyntaxError('You must specify a new duration')
         self.config.duration_min, self.config.duration_max = (
             timedelta(minutes=i)
             for i in self.parse_number_range(arg)
@@ -614,29 +627,28 @@ class RipCmd(Cmd):
         specified episode or, if two arguments are given, will redefine the
         name of the specified episode.
         """
-        if arg:
-            (number, name) = arg.split(' ', 1)
-            episode = self.parse_episode(number, must_exist=False)
-            if episode is None:
-                episode = Episode(
-                    season=self.config.season, number=number, name=name)
-                self.session.add(episode)
-                self.pprint(
-                    'Added episode {episode} to season {season} '
-                    'of {program}'.format(
-                        episode=episode.number,
-                        season=episode.season.number,
-                        program=episode.season.program.name))
-            else:
-                episode.name = name
-                self.pprint(
-                    'Renamed episode {episode} of season {season} '
-                    'of {program}'.format(
-                        episode=episode.number,
-                        season=episode.season.number,
-                        program=episode.season.program.name))
+        if not arg:
+            raise CmdSyntaxError('You must specify an episode number and name')
+        (number, name) = arg.split(' ', 1)
+        episode = self.parse_episode(number, must_exist=False)
+        if episode is None:
+            episode = Episode(
+                season=self.config.season, number=number, name=name)
+            self.session.add(episode)
+            self.pprint(
+                'Added episode {episode} to season {season} '
+                'of {program}'.format(
+                    episode=episode.number,
+                    season=episode.season.number,
+                    program=episode.season.program.name))
         else:
-            raise CmdError('You must specify an episode number and name')
+            episode.name = name
+            self.pprint(
+                'Renamed episode {episode} of season {season} '
+                'of {program}'.format(
+                    episode=episode.number,
+                    season=episode.season.number,
+                    program=episode.season.program.name))
 
     def create_episodes(self, count, season=None):
         "Creates the specified number of episodes in the current season"
@@ -815,7 +827,7 @@ class RipCmd(Cmd):
     def complete_program(self, text, line, start, finish):
         "Auto-completer for program command"
         match = self.program_re.match(line)
-        name = line[match.end():]
+        name = unicode(line[match.end():])
         return [
             program.name[start - match.end():] for program in
             self.session.query(Program).filter(Program.name.startswith(name))
@@ -851,7 +863,7 @@ class RipCmd(Cmd):
     def do_title(self, arg):
         """Displays information about the specified title(s).
 
-        Syntax: title <title>...
+        Syntax: title <titles>
 
         The 'title' command displays detailed information about the specified
         titles including chapter starts and durations, audio tracks, and
@@ -879,7 +891,7 @@ class RipCmd(Cmd):
     def do_scan(self, arg):
         """Scans the source device for episodes.
 
-        Syntax: scan [title]...
+        Syntax: scan [titles]
 
         The 'scan' command scans the current source device to discover what
         titles, audio tracks, and subtitle tracks exist on the disc in the
@@ -951,7 +963,7 @@ class RipCmd(Cmd):
     def do_automap(self, arg):
         """Maps episodes to titles or chapter ranges automatically.
 
-        Syntax: automap [title]...
+        Syntax: automap [episodes [titles]]
 
         The 'automap' command is used to have the application attempt to figure
         out which titles (or chapters of titles) contain the next set of
@@ -966,37 +978,25 @@ class RipCmd(Cmd):
         self.pprint('Performing auto-mapping')
         # Generate the list of titles, either specified or implied in the
         # arguments
-        # XXX Use parse functions
-        if arg:
-            to_map = []
-            try:
-                for a in arg.split(' '):
-                    if '-' in a:
-                        start, finish = (int(i) for i in a.split('-', 1))
-                        to_map.extend(
-                            t for t in self.disc.titles
-                            if start <= t.number <= finish
-                        )
-                    else:
-                        try:
-                            to_map.append([
-                                t for t in self.disc.titles
-                                if t.number == int(a)
-                            ][0])
-                        except IndexError:
-                            raise CmdError(
-                                'Title {} does not exist or is '
-                                'not rippable'.format(int(a)))
-            except ValueError:
-                raise CmdSyntaxError('You must specify space separated '
-                    'title numbers')
-            to_map = sorted(to_map, key=attrgetter('number'))
-            # XXX Should remove duplicates here?
+        if ' ' in arg:
+            episodes, titles = arg.split(' ', 1)
+            episodes = self.parse_episode_list(episodes)
+            titles = self.parse_title_list(titles)
+        elif arg:
+            episodes = self.parse_episode_list(arg)
+            titles = list(self.disc.titles)
         else:
-            to_map = list(self.disc.titles)
+            episodes = self.session.query(Episode).\
+                filter(Episode.season==self.config.season).\
+                filter(Episode.disc_id==None).\
+                order_by(Episode.number).all()
+            titles = list(self.disc.titles)
+        self.episode_map.automap(
+            titles, episodes, self.config.duration_min,
+            self.config.duration_max)
+        self.do_map()
 
-
-    def do_map(self, arg):
+    def do_map(self, arg=''):
         """Maps episodes to titles or chapter ranges.
 
         Syntax: map [episode title[.start-end]]
@@ -1026,13 +1026,13 @@ class RipCmd(Cmd):
             if self.episode_map:
                 for episode, mapping in self.episode_map.iteritems():
                     if isinstance(mapping, Title):
-                        index = '{:.2d}'.format(mapping.number)
+                        index = '{:2d}'.format(mapping.number)
                         duration = str(mapping.duration)
                     else:
                         chapter_start, chapter_end = mapping
                         index = (
-                            '{title:.2d}.{chapter_start:.02d}-'
-                            '{chapter_end:.02d}'.format(
+                            '{title:2d}.{chapter_start:02d}-'
+                            '{chapter_end:02d}'.format(
                             title=chapter_start.title.number,
                             chapter_start=chapter_start.number,
                             chapter_end=chapter_end.number))
@@ -1043,16 +1043,16 @@ class RipCmd(Cmd):
                             ),
                             timedelta()
                         )
-                        self.pprint(
-                            '{ripped:2s}title {title} ({duration}) = '
-                            'episode {episode_num:2d}, '
-                            '"{episode_title}"'.format(
-                                ripped='*' if episode.ripped else ' ',
-                                title=index,
-                                duration=duration,
-                                episode_num=episode.number,
-                                episode_title=episode.name
-                            ))
+                    self.pprint(
+                        '{ripped:2s}title {title} ({duration}) = '
+                        'episode {episode_num:2d}, '
+                        '"{episode_title}"'.format(
+                            ripped='*' if episode.ripped else ' ',
+                            title=index,
+                            duration=duration,
+                            episode_num=episode.number,
+                            episode_title=episode.name
+                        ))
             else:
                 self.pprint('Episode map is currently empty')
             return
@@ -1144,7 +1144,7 @@ class RipCmd(Cmd):
     def do_unmap(self, arg):
         """Removes an episode mapping.
 
-        Syntax: unmap <episode>
+        Syntax: unmap <episodes>
 
         The 'unmap' command is used to remove a title to episode mapping. For
         example, if the auto-mapping when scanning a disc makes an error, you
@@ -1161,19 +1161,11 @@ class RipCmd(Cmd):
             arg = int(arg)
         except ValueError:
             raise CmdSyntaxError('You must specify an integer title number')
-        try:
-            episode = [
-                e for e in self.config.season.episodes
-                if e.number == arg
-            ][0]
-        except IndexError:
-            raise CmdError(
-                'Episode {} does not exist within the '
-                'selected season'.format(arg))
-        self.pprint(
-            'Removing mapping for episode {episode.number}, '
-            '{episode.name}'.format(episode=episode))
-        del self.map[episode]
+        for episode in self.parse_episode_list(arg):
+            self.pprint(
+                'Removing mapping for episode {episode.number}, '
+                '{episode.name}'.format(episode=episode))
+            del self.map[episode]
 
     def do_rip(self, arg):
         """Starts the ripping and transcoding process.
@@ -1233,7 +1225,7 @@ class RipCmd(Cmd):
     def do_unrip(self, arg):
         """Changes the status of the specified episode to unripped.
 
-        Syntax: unrip <episode>...
+        Syntax: unrip <episodes>
 
         The 'unrip' command is used to set the status of an episode or episodes
         to unripped. Episodes may be specified as a range (1-5) or as a comma

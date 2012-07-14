@@ -24,7 +24,11 @@ meets certain criteria (duration-based).
 """
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    print_function,
+    absolute_import,
+    division,
+    )
 
 import logging
 from datetime import timedelta
@@ -43,11 +47,11 @@ def partition(seq, counts):
         yield seq[index:index + count]
         index += count
 
-def valid(mapping, unripped, chapters, duration_min, duration_max):
+def valid(mapping, chapters, episodes, duration_min, duration_max):
     "Checks whether a possible mapping is valid"
     return (
         # Check the mapping doesn't specify more episodes than are available
-        (len(mapping) <= len(unripped)) and
+        (len(mapping) <= len(episodes)) and
         # Check the mapping doesn't exceed the number of available chapters
         (sum(mapping) == len(chapters)) and
         # Check each grouping of chapters has a valid duration
@@ -60,7 +64,7 @@ def valid(mapping, unripped, chapters, duration_min, duration_max):
         )
     )
 
-def calculate(unripped, chapters, duration_min, duration_max,
+def calculate(chapters, episodes, duration_min, duration_max,
         mapping=None, solutions=None):
     "Recursive function for calculating mapping solutions"
     if mapping is None:
@@ -85,12 +89,14 @@ def calculate(unripped, chapters, duration_min, duration_max,
             # If the duration of the group of chapters is within range, check
             # whether the mapping is a whole is valid and add it to the
             # solutions list if so
-            if valid(new_map, unripped, chapters, duration_min, duration_max):
+            if valid(new_map, chapters, episodes, duration_min, duration_max):
                 solutions.append(new_map)
             # Regardless of whether the current mapping is valid (it could be
             # the start of a valid mapping), recursively call ourselves with
             # the new group appended to the mapping
-            calculate(unripped, chapters, duration_min, duration_max, new_map, solutions)
+            calculate(
+                chapters, episodes, duration_min, duration_max,
+                new_map, solutions)
     if not mapping:
         return solutions
 
@@ -98,7 +104,7 @@ def calculate(unripped, chapters, duration_min, duration_max,
 class Error(Exception):
     "Base class for mapping errors"
 
-class NoMappingError(rror):
+class NoMappingError(Error):
     "Exception raised when no title mapping is found"
 
 class NoSolutionsError(Error):
@@ -111,7 +117,7 @@ class EpisodeMap(dict):
     "Represents a mapping of episodes to titles/chapters"
 
     def __iter__(self):
-        for episode in sorted(self, key=attrgetter('number')):
+        for episode in sorted(super(EpisodeMap, self).__iter__(), key=attrgetter('number')):
             yield episode
 
     def __setitem__(self, key, value):
@@ -132,18 +138,24 @@ class EpisodeMap(dict):
         for k in self:
             yield (k, self[k])
 
-    def automap(self, unripped, unmapped, duration_min, duration_max):
-        "Automatically map unripped titles to unmapped episodes"
+    def automap(self, titles, episodes, duration_min, duration_max,
+            choose_mapping=None):
+        "Automatically map unmapped titles to unripped episodes"
         try:
+            self._automap_titles(
+                titles, episodes, duration_min, duration_max)
+        except NoMappingError:
+            self._automap_chapters(
+                titles, episodes, duration_min, duration_max, choose_mapping)
 
-    def _automap_titles(self, to_map, unripped, duration_min, duration_max):
+    def _automap_titles(self, titles, episodes, duration_min, duration_max):
         "Auto-mapping using a title-based algorithm"
         result = {}
         try_chapters = True
-        for title in to_map:
+        for title in titles:
             if duration_min <= title.duration <= duration_max:
-                result[episode] = title
-                if len(result) == len(unripped):
+                result[episodes.pop(0)] = title
+                if not episodes:
                     break
             else:
                 logging.debug('Title %d is not an episode (duration: %s)' % (
@@ -151,49 +163,49 @@ class EpisodeMap(dict):
                     title.duration,
                 ))
         if not result:
-            raise
+            raise NoMappingError('No mapping for any titles found')
         self.clear()
         self.update(result)
 
-    def _automap_chapters(self, to_map, unripped, duration_min, duration_max,
+    def _automap_chapters(self, titles, episodes, duration_min, duration_max,
             choose_mapping=None):
         "Auto-mapping with a chapter-based algorithm"
-        longest_title = sorted(to_map, key=attrgetter('duration'))[-1]
+        longest_title = sorted(titles, key=attrgetter('duration'))[-1]
         logging.debug('Longest title is %d (duration: %s), containing '
             '%d chapters' % (
-            title.number,
-            title.duration,
-            len(title.chapters),
+            longest_title.number,
+            longest_title.duration,
+            len(longest_title.chapters),
         ))
-        to_map = longest_title.chapters
+        chapters = longest_title.chapters
         # XXX Remove trailing empty chapters
-        solutions = calculate(to_map, unripped, duration_min, duration_max)
+        solutions = calculate(chapters, episodes, duration_min, duration_max)
         if not solutions:
             raise NoSolutionsError('No chapter mappings found')
         elif len(solutions) == 1:
             solution = solutions[0]
         elif len(solutions) > 1:
             if not choose_mapping:
-                raise MultiSolutionsError(
+                raise MultipleSolutionsError(
                     'Multiple possible chapter mappings found')
             solution = choose_mapping(solutions)
         self.clear()
         self.update(
             (episode, (chapters[0], chapters[-1]))
             for (episode, chapters)
-            in zip(unripped, partition(to_map, solution))
+            in zip(episodes, partition(titles, solution))
         )
 
-        def output(chapters, unripped, solution):
+        def output(chapters, episodes, solution):
             start_chapter = 1
-            for episode, count in zip(unripped, solution):
+            for episode, count in zip(episodes, solution):
                 self.cmd.pprint('Episode %d = Chapter %d-%d (%s)' % (
                     episode.number,
                     start_chapter,
                     start_chapter + count - 1,
                     str(sum((
                         c.duration
-                        for c in to_map[start_chapter - 1:start_chapter + count - 1]
+                        for c in unmapped[start_chapter - 1:start_chapter + count - 1]
                     ), timedelta()))
                 ))
                 start_chapter += count
@@ -202,7 +214,7 @@ class EpisodeMap(dict):
             for index, solution in enumerate(solutions):
                 self.cmd.pprint('')
                 self.cmd.pprint('Solution %d' % (index + 1))
-                output(to_map, unripped, solution)
+                output(unmapped, episodes, solution)
             self.cmd.pprint('')
             try:
                 selection = int(self.input('Enter solution number to use [1-%d] ' % len(solutions)))
@@ -221,13 +233,13 @@ class EpisodeMap(dict):
             solution = solutions[selection - 1]
         elif len(solutions) == 1:
             self.cmd.pprint('Solution:')
-            output(to_map, unripped, solutions[0])
+            output(unmapped, episodes, solutions[0])
             solution = solutions[0]
         else:
             self.cmd.pprint('No potential chapter mappings found')
             return {}
         return dict(
             (episode, (chapters[0], chapters[-1]))
-            for (episode, chapters) in zip(unripped, partition(to_map, solution))
+            for (episode, chapters) in zip(episodes, partition(unmapped, solution))
         )
 

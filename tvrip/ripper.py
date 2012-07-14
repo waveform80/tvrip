@@ -19,7 +19,11 @@
 """Implements the disc scanner and ripper"""
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    print_function,
+    absolute_import,
+    division,
+    )
 
 import sys
 import os
@@ -62,7 +66,7 @@ class Disc(object):
         self.ident = None
 
     def __repr__(self):
-        return "<Disc()>"
+        return '<Disc()>'
 
     def scan(self, config, titles=None):
         self.clear()
@@ -87,33 +91,37 @@ class Disc(object):
         self.match = pattern.match(line)
         return self.match
 
-    error1_re = re.compile(r"libdvdread: Can't open .* for reading")
-    error2_re = re.compile(r'libdvdnav: vm: failed to open/read the DVD')
+    error1_re = re.compile(
+        r"libdvdread: Can't open .* for reading", re.UNICODE)
+    error2_re = re.compile(
+        r'libdvdnav: vm: failed to open/read the DVD', re.UNICODE)
     disc_name_re = re.compile(r'^libdvdnav: DVD Title: (?P<name>.*)$')
     disc_serial_re = re.compile(
-        r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$')
-    title_re = re.compile(r'^\+ title (?P<number>\d+):$')
-    duration_re = re.compile(r'^  \+ duration: (?P<duration>.*)$')
+        r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
+    title_re = re.compile(
+        r'^\+ title (?P<number>\d+):$', re.UNICODE)
+    duration_re = re.compile(
+        r'^  \+ duration: (?P<duration>.*)$', re.UNICODE)
     stats_re = re.compile(
         r'^  \+ size: (?P<size>.*), aspect: (?P<aspect_ratio>.*), '
-        r'(?P<frame_rate>.*) fps$')
-    crop_re = re.compile(r'^  \+ autocrop: (?P<crop>.*)$')
-    comb_re = re.compile(r'^  \+ combing detected,.*$')
-    chapters_re = re.compile(r'^  \+ chapters:$')
+        r'(?P<frame_rate>.*) fps$', re.UNICODE)
+    crop_re = re.compile(r'^  \+ autocrop: (?P<crop>.*)$', re.UNICODE)
+    comb_re = re.compile(r'^  \+ combing detected,.*$', re.UNICODE)
+    chapters_re = re.compile(r'^  \+ chapters:$', re.UNICODE)
     chapter_re = re.compile(
         r'^    \+ (?P<number>\d+): cells \d+->\d+, \d+ blocks, '
-        r'duration (?P<duration>.*)$')
-    audio_tracks_re = re.compile(r'^  \+ audio tracks:$')
+        r'duration (?P<duration>.*)$', re.UNICODE)
+    audio_tracks_re = re.compile(r'^  \+ audio tracks:$', re.UNICODE)
     audio_track_re = re.compile(
         r'^    \+ (?P<number>\d+), '
         r'(?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? '
         r'\((?P<channel_mix>[^)]*)\) \(iso639-2: (?P<language>[a-z]{2,3})\), '
-        r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$')
-    subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$')
+        r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$', re.UNICODE)
+    subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$', re.UNICODE)
     subtitle_track_re = re.compile(
         r'^    \+ (?P<number>\d+), (?P<name>.*) '
         r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>[^)]*)\))?'
-        r'(?P<cc>\(CC\))?$')
+        r'(?P<cc>\(CC\))?$', re.UNICODE)
     def _scan_title(self, config, title):
         cmdline = [
             config.get_path('handbrake'),
@@ -136,7 +144,7 @@ class Disc(object):
             if 'disc' in state and self._match(self.disc_name_re, line):
                 self.name = self.match.group('name')
             elif 'disc' in state and self._match(self.disc_serial_re, line):
-                self.serial = self.match.group('serial')
+                self.serial = unicode(self.match.group('serial'))
             elif 'disc' in state and self._match(self.title_re, line):
                 if title:
                     title.chapters = sorted(
@@ -186,9 +194,9 @@ class Disc(object):
                         label=self.match.group('label'))
                 else:
                     track.name = self.match.group('name')
-                track.language = self.match.group('language')
-                track.encoding = self.match.group('encoding')
-                track.channel_mix = self.match.group('channel_mix')
+                track.language = unicode(self.match.group('language'))
+                track.encoding = unicode(self.match.group('encoding'))
+                track.channel_mix = unicode(self.match.group('channel_mix'))
                 track.sample_rate = int(self.match.group('sample_rate'))
                 track.bit_rate = int(self.match.group('bit_rate'))
             elif 'title' in state and self._match(
@@ -198,9 +206,9 @@ class Disc(object):
                     self.subtitle_track_re, line):
                 track = SubtitleTrack(title)
                 track.number = int(self.match.group('number'))
-                track.name = self.match.group('name')
-                track.language = self.match.group('language')
-                track.type = self.match.group('type')
+                track.name = unicode(self.match.group('name'))
+                track.language = unicode(self.match.group('language'))
+                track.type = unicode(self.match.group('type'))
                 track.closed_captions = bool(self.match.group('cc'))
         self.titles = sorted(self.titles, key=attrgetter('number'))
         # Determine the best audio and subtitle tracks
