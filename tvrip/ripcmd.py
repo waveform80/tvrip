@@ -28,7 +28,6 @@ from __future__ import (
 import os
 import re
 import sqlalchemy as sa
-from operator import attrgetter
 from datetime import timedelta, datetime
 from tvrip.ripper import Disc, Title
 from tvrip.database import (
@@ -993,8 +992,14 @@ class RipCmd(Cmd):
             titles = list(self.disc.titles)
         self.episode_map.automap(
             titles, episodes, self.config.duration_min,
-            self.config.duration_max)
+            self.config.duration_max, self.choose_mapping)
         self.do_map()
+
+    def choose_mapping(self, mappings):
+        for mapping in mappings:
+            print(mapping)
+            print("------------------------------------------------------")
+        raise NotImplementedError
 
     def do_map(self, arg=''):
         """Maps episodes to titles or chapter ranges.
@@ -1333,7 +1338,7 @@ class RipCmd(Cmd):
         (tvrip) template S{season:02d}E{episode02d}_{name}.mp4
         """
         try:
-            testname = arg.format(
+            arg.format(
                 program='Program Name',
                 season=1,
                 episode=10,

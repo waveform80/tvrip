@@ -31,8 +31,7 @@ import re
 import shutil
 import logging
 import tempfile
-import shutil
-import hashlib
+from hashlib import sha1
 from datetime import datetime, date, time, timedelta, MINYEAR
 from operator import attrgetter
 from itertools import groupby
@@ -59,16 +58,18 @@ class Disc(object):
         self.match = None
         self.clear()
 
+    def __repr__(self):
+        return '<Disc()>'
+
     def clear(self):
+        "Clears all details and title tracks from the disc"
         self.titles = []
         self.name = ''
         self.serial = None
         self.ident = None
 
-    def __repr__(self):
-        return '<Disc()>'
-
     def scan(self, config, titles=None):
+        "Scan the disc specified by config for rippable titles"
         self.clear()
         if titles is None:
             titles = [0]
@@ -76,7 +77,7 @@ class Disc(object):
             self._scan_title(config, title)
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
-        h = hashlib.sha1()
+        h = sha1()
         h.update(self.serial)
         h.update(str(len(self.titles)))
         for title in self.titles:
@@ -86,10 +87,6 @@ class Disc(object):
                 h.update(str(chapter.start))
                 h.update(str(chapter.duration))
         self.ident = '$H1$' + h.hexdigest()
-
-    def _match(self, pattern, line):
-        self.match = pattern.match(line)
-        return self.match
 
     error1_re = re.compile(
         r"libdvdread: Can't open .* for reading", re.UNICODE)
@@ -123,6 +120,15 @@ class Disc(object):
         r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>[^)]*)\))?'
         r'(?P<cc>\(CC\))?$', re.UNICODE)
     def _scan_title(self, config, title):
+        "Internal method for scanning (a) disc title(s)"
+
+        # This is a simple utility method to make the pattern matching below a
+        # bit simpler. It returns the result of the match as a bool and stores
+        # the result as an instance attribute for later extraction of groups
+        def _match(pattern, line):
+            self.match = pattern.match(line)
+            return bool(self.match)
+
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source, # specify the input device
@@ -136,16 +142,16 @@ class Disc(object):
         # Parse the output into child objects
         for line in output.splitlines():
             if 'disc' in state and (
-                    self._match(self.error1_re, line) or
-                    self._match(self.error2_re, line)
+                    _match(self.error1_re, line) or
+                    _match(self.error2_re, line)
                 ):
                 raise IOError(
                     'Unable to read disc in {}'.format(config.source))
-            if 'disc' in state and self._match(self.disc_name_re, line):
+            if 'disc' in state and _match(self.disc_name_re, line):
                 self.name = self.match.group('name')
-            elif 'disc' in state and self._match(self.disc_serial_re, line):
+            elif 'disc' in state and _match(self.disc_serial_re, line):
                 self.serial = unicode(self.match.group('serial'))
-            elif 'disc' in state and self._match(self.title_re, line):
+            elif 'disc' in state and _match(self.title_re, line):
                 if title:
                     title.chapters = sorted(
                         title.chapters, key=attrgetter('number'))
@@ -156,36 +162,36 @@ class Disc(object):
                 state = set(['disc', 'title'])
                 title = Title(self)
                 title.number = int(self.match.group('number'))
-            elif 'title' in state and self._match(self.duration_re, line):
+            elif 'title' in state and _match(self.duration_re, line):
                 state = set(['disc', 'title'])
                 hours, minutes, seconds = (
                     int(i) for i in self.match.group('duration').split(':'))
                 title.duration = timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
-            elif 'title' in state and self._match(self.stats_re, line):
+            elif 'title' in state and _match(self.stats_re, line):
                 state = set(['disc', 'title'])
                 title.size = (
                     int(i) for i in self.match.group('size').split('x'))
                 title.aspect_ratio = float(self.match.group('aspect_ratio'))
                 title.frame_rate = float(self.match.group('frame_rate'))
-            elif 'title' in state and self._match(self.crop_re, line):
+            elif 'title' in state and _match(self.crop_re, line):
                 state = set(['disc', 'title'])
                 title.crop = (
                     int(i) for i in self.match.group('crop').split('/'))
-            elif 'title' in state and self._match(self.comb_re, line):
+            elif 'title' in state and _match(self.comb_re, line):
                 title.interlaced = True
-            elif 'title' in state and self._match(self.chapters_re, line):
+            elif 'title' in state and _match(self.chapters_re, line):
                 state = set(['disc', 'title', 'chapter'])
-            elif 'chapter' in state and self._match(self.chapter_re, line):
+            elif 'chapter' in state and _match(self.chapter_re, line):
                 chapter = Chapter(title)
                 chapter.number = int(self.match.group('number'))
                 hours, minutes, seconds = (
                     int(i) for i in self.match.group('duration').split(':'))
                 chapter.duration = timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
-            elif 'title' in state and self._match(self.audio_tracks_re, line):
+            elif 'title' in state and _match(self.audio_tracks_re, line):
                 state = set(['disc', 'title', 'audio'])
-            elif 'audio' in state and self._match(self.audio_track_re, line):
+            elif 'audio' in state and _match(self.audio_track_re, line):
                 track = AudioTrack(title)
                 track.number = int(self.match.group('number'))
                 if self.match.group('label'):
@@ -199,10 +205,10 @@ class Disc(object):
                 track.channel_mix = unicode(self.match.group('channel_mix'))
                 track.sample_rate = int(self.match.group('sample_rate'))
                 track.bit_rate = int(self.match.group('bit_rate'))
-            elif 'title' in state and self._match(
+            elif 'title' in state and _match(
                     self.subtitle_tracks_re, line):
                 state = set(['disc', 'title', 'subtitle'])
-            elif 'subtitle' in state and self._match(
+            elif 'subtitle' in state and _match(
                     self.subtitle_track_re, line):
                 track = SubtitleTrack(title)
                 track.number = int(self.match.group('number'))

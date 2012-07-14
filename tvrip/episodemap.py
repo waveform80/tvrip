@@ -47,6 +47,12 @@ def partition(seq, counts):
         yield seq[index:index + count]
         index += count
 
+def partition_ends(seq, counts):
+    "Make an iterator that returns the ends of chunks of seq defined by counts"
+    # partition_ends(range(10), [3, 1, 2]) --> [(0, 2), (3, 3), (4, 5)]
+    for s in partition(seq, counts):
+        yield (s[0], s[-1])
+
 def valid(mapping, chapters, episodes, duration_min, duration_max):
     "Checks whether a possible mapping is valid"
     return (
@@ -188,58 +194,11 @@ class EpisodeMap(dict):
             if not choose_mapping:
                 raise MultipleSolutionsError(
                     'Multiple possible chapter mappings found')
+            solution = choose_mapping(
+                EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
+                for solution in solutions
+            )
             solution = choose_mapping(solutions)
         self.clear()
-        self.update(
-            (episode, (chapters[0], chapters[-1]))
-            for (episode, chapters)
-            in zip(episodes, partition(titles, solution))
-        )
-
-        def output(chapters, episodes, solution):
-            start_chapter = 1
-            for episode, count in zip(episodes, solution):
-                self.cmd.pprint('Episode %d = Chapter %d-%d (%s)' % (
-                    episode.number,
-                    start_chapter,
-                    start_chapter + count - 1,
-                    str(sum((
-                        c.duration
-                        for c in unmapped[start_chapter - 1:start_chapter + count - 1]
-                    ), timedelta()))
-                ))
-                start_chapter += count
-        if len(solutions) > 1:
-            self.cmd.pprint('Found %d potential chapter mappings' % len(solutions))
-            for index, solution in enumerate(solutions):
-                self.cmd.pprint('')
-                self.cmd.pprint('Solution %d' % (index + 1))
-                output(unmapped, episodes, solution)
-            self.cmd.pprint('')
-            try:
-                selection = int(self.input('Enter solution number to use [1-%d] ' % len(solutions)))
-                if not 1 <= selection <= len(solutions):
-                    raise ValueError
-            except ValueError:
-                while True:
-                    try:
-                        selection = int(self.input('Invalid input. Please enter a number [1-%d] ' % len(solutions)))
-                        if not 1 <= selection <= len(solutions):
-                            raise ValueError
-                    except ValueError:
-                        pass
-                    else:
-                        break
-            solution = solutions[selection - 1]
-        elif len(solutions) == 1:
-            self.cmd.pprint('Solution:')
-            output(unmapped, episodes, solutions[0])
-            solution = solutions[0]
-        else:
-            self.cmd.pprint('No potential chapter mappings found')
-            return {}
-        return dict(
-            (episode, (chapters[0], chapters[-1]))
-            for (episode, chapters) in zip(episodes, partition(unmapped, solution))
-        )
+        self.update(zip(episodes, partition_ends(titles, solution)))
 
