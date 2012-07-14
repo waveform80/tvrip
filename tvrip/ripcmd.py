@@ -1135,7 +1135,7 @@ class RipCmd(Cmd):
                     title=title.number,
                     episode_num=episode.number,
                     episode_title=episode.name))
-            self.map[episode] = (chapter_start, chapter_end)
+            self.episode_map[episode] = (chapter_start, chapter_end)
         else:
             self.pprint(
                 'Mapping title {title} (duration {duration}) to episode '
@@ -1144,7 +1144,7 @@ class RipCmd(Cmd):
                     duration=title.duration,
                     episode_num=episode.number,
                     episode_title=episode.name))
-            self.map[episode] = title
+            self.episode_map[episode] = title
 
     def do_unmap(self, arg):
         """Removes an episode mapping.
@@ -1170,7 +1170,7 @@ class RipCmd(Cmd):
             self.pprint(
                 'Removing mapping for episode {episode.number}, '
                 '{episode.name}'.format(episode=episode))
-            del self.map[episode]
+            del self.episode_map[episode]
 
     def do_rip(self, arg):
         """Starts the ripping and transcoding process.
@@ -1187,11 +1187,11 @@ class RipCmd(Cmd):
             raise CmdError('No disc has been scanned yet')
         elif not self.disc.titles:
             raise CmdError('No titles found on the scanned disc')
-        elif not self.map:
+        elif not self.episode_map:
             raise CmdError('No titles have been mapped to episodes')
         elif arg.strip():
             raise CmdSyntaxError('You must not specify any arguments')
-        for episode, mapping in sorted(self.map.iteritems(),
+        for episode, mapping in sorted(self.episode_map.iteritems(),
                 key=lambda t: t[0].number):
             if not episode.ripped:
                 if isinstance(mapping, Title):
@@ -1205,13 +1205,13 @@ class RipCmd(Cmd):
                     t for t in title.audio_tracks
                     if self.config.in_audio_langs(t.language)
                 ]
-                if self.config.audio_tracks == 'best':
+                if not self.config.audio_all:
                     audio_tracks = [t for t in audio_tracks if t.best]
                 subtitle_tracks = [
                     t for t in title.subtitle_tracks
                     if self.config.in_subtitle_langs(t.language)
                 ]
-                if self.config.subtitle_tracks == 'best':
+                if not self.config.subtitle_all:
                     subtitle_tracks = [t for t in subtitle_tracks if t.best]
                 self.pprint(
                     'Ripping episode {episode.number}, '
