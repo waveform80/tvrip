@@ -29,15 +29,12 @@ import sys
 import os
 import re
 import shutil
-import logging
 import tempfile
 from hashlib import sha1
-from datetime import datetime, date, time, timedelta, MINYEAR
+from datetime import datetime, date, timedelta, MINYEAR
 from operator import attrgetter
 from itertools import groupby
 from subprocess import Popen, PIPE, STDOUT
-from tvrip.database import Configuration
-from tvrip.subtitles import Subtitle, Subtitles, SubtitleCorrections
 
 AUDIO_MIX_ORDER = ['5.1 ch', '5.0 ch', 'Dolby Surround', '2.0 ch', '1.0 ch']
 AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
@@ -56,21 +53,16 @@ class Disc(object):
     def __init__(self):
         super(Disc, self).__init__()
         self.match = None
-        self.clear()
-
-    def __repr__(self):
-        return '<Disc()>'
-
-    def clear(self):
-        "Clears all details and title tracks from the disc"
         self.titles = []
         self.name = ''
         self.serial = None
         self.ident = None
 
+    def __repr__(self):
+        return '<Disc()>'
+
     def scan(self, config, titles=None):
         "Scan the disc specified by config for rippable titles"
-        self.clear()
         if titles is None:
             titles = [0]
         for title in titles:
@@ -134,7 +126,7 @@ class Disc(object):
             '-i', config.source, # specify the input device
             '-t', str(title),    # select the specified title
             '--scan',            # scan only
-        ]
+            ]
         process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
         output = process.communicate()[0]
         state = set(['disc'])
@@ -143,8 +135,7 @@ class Disc(object):
         for line in output.splitlines():
             if 'disc' in state and (
                     _match(self.error1_re, line) or
-                    _match(self.error2_re, line)
-                ):
+                    _match(self.error2_re, line)):
                 raise IOError(
                     'Unable to read disc in {}'.format(config.source))
             if 'disc' in state and _match(self.disc_name_re, line):
@@ -225,7 +216,7 @@ class Disc(object):
                 group = sorted(group, key=lambda track: (
                     AUDIO_MIX_ORDER.index(track.channel_mix),
                     AUDIO_ENCODING_ORDER.index(track.encoding)
-                ))
+                    ))
                 if group:
                     group[0].best = True
             for key, group in groupby(
@@ -235,31 +226,42 @@ class Disc(object):
                 if group:
                     group[0].best = True
 
+    def play(self, config, title_or_chapter):
+        "Play the specified title or chapter"
+        if isinstance(title_or_chapter, Title):
+            mrl = 'dvd://{source}#{title}'.format(
+                source=config.source,
+                title=title_or_chapter.number)
+        elif isinstance(title_or_chapter, Chapter):
+            mrl = 'dvd://{source}#{title}:{chapter}'.format(
+                source=config.source,
+                title=title_or_chapter.title.number,
+                chapter=title_or_chapter.number)
+        cmdline = [config.get_path('vlc'), '--quiet', mrl]
+        process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        output = process.communicate()
+        if process.returncode != 0:
+            print('VLC exited with return code {}'.format(process.returncode))
+
     def rip(self, config, episode, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
-        if not isinstance(config, Configuration):
-            raise ValueError('config must a Configuration instance')
+        "Rip the specified title"
         filename = config.template.format(
             program=config.program.name,
             season=config.season.number,
             episode=episode.number,
             name=episode.name,
             now=datetime.now(),
-        )
-        # Convert the subtitle track(s) if required
-        if config.subtitle_format == 'subrip':
-            for track in subtitle_tracks:
-                assert track.title is title
-                track.convert(config, filename)
+            )
         # Convert the video track
         audio_defs = [
             (track.number, config.audio_mix, track.name)
             for track in audio_tracks
-        ]
+            ]
         subtitle_defs = [
             (track.number, track.name)
             for track in subtitle_tracks
-        ]
+            ]
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,
@@ -271,15 +273,19 @@ class Disc(object):
             '--strict-anamorphic', # store pixel aspect ratio
             '-e', 'x264',         # use x264 for encoding
             '-q', '23',           # quality 23
-            '-x', 'b-adapt=2:rc-lookahead=50', # advanced encoding options (mostly defaults from High Profile)
+            '-x', 'b-adapt=2:rc-lookahead=50', # advanced encoding options
+                                               # (mostly defaults from High
+                                               # Profile)
             '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
             '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
             '-A', ','.join(name         for (_, _, name) in audio_defs),
-        ]
+            ]
         if start_chapter:
             cmdline.append('-c')
             if end_chapter:
-                cmdline.append('%d-%d' % (start_chapter.number, end_chapter.number))
+                cmdline.append(
+                    '{start}-{end}'.format(
+                        start=start_chapter.number, end=end_chapter.number))
             else:
                 cmdline.append(unicode(start_chapter.number))
         if config.subtitle_format == 'vobsub':
@@ -290,12 +296,12 @@ class Disc(object):
             cmdline.append('slow')
         elif config.decomb == 'auto':
             cmdline.append('-5')
-        p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-        p.communicate()
-        if p.returncode != 0:
+        process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+        process.communicate()
+        if process.returncode != 0:
             raise ValueError(
                 'Handbrake exited with non-zero return code {}'.format(
-                    p.returncode))
+                    process.returncode))
         # Tag the resulting file
         tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
         try:
@@ -314,13 +320,16 @@ class Disc(object):
                 '--album',        'Season {}'.format(episode.season.number),
                 '--tracknum',     unicode(episode.number),
                 '--title',        episode.name
-            ]
-            p = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-            p.communicate()
-            if p.returncode != 0:
+                ]
+            process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+            process.communicate()
+            if process.returncode != 0:
                 raise ValueError(
-                    'AtomicParsley exited with non-zero return code %d' % p.returncode)
-            os.chmod(tmpfile, os.stat(os.path.join(config.target, filename)).st_mode)
+                    'AtomicParsley exited with non-zero return code {}'.format(
+                        process.returncode))
+            os.chmod(
+                tmpfile,
+                os.stat(os.path.join(config.target, filename)).st_mode)
             shutil.move(tmpfile, os.path.join(config.target, filename))
         finally:
             os.close(tmphandle)
@@ -344,7 +353,28 @@ class Title(object):
         self.interlaced = False
 
     def __repr__(self):
-        return "<Title(%d)>" % self.number
+        return '<Title({})>'.format(self.number)
+
+    @property
+    def previous(self):
+        "Returns the prior chapter within the disc or None"
+        i = self.disc.titles.index(self)
+        if i == 0:
+            return None
+        else:
+            return self.disc.titles[i - 1]
+
+    @property
+    def next(self):
+        "Returns the next title within the disc or None"
+        try:
+            return self.disc.titles[self.disc.titles.index(self) + 1]
+        except IndexError:
+            return None
+
+    def play(self, config):
+        "Starts VLC playing at the title start"
+        self.disc.play(config, self)
 
 
 class Chapter(object):
@@ -359,20 +389,44 @@ class Chapter(object):
 
     @property
     def start(self):
+        "Returns the start time of the chapter"
         result = datetime(MINYEAR, 1, 1)
-        for c in self.title.chapters:
-            if c.number >= self.number:
+        for chapter in self.title.chapters:
+            if chapter.number >= self.number:
                 break
-            result += c.duration
+            result += chapter.duration
         return result.time()
 
     @property
     def finish(self):
+        "Returns the finish time of the chapter"
         result = datetime.combine(date(MINYEAR, 1, 1), self.start)
         return (result + self.duration).time()
 
+    @property
+    def previous(self):
+        "Returns the prior chapter within the title or None"
+        i = self.title.chapters.index(self)
+        if i == 0:
+            return None
+        else:
+            return self.title.chapters[i - 1]
+
+    @property
+    def next(self):
+        "Returns the next chapter within the title or None"
+        try:
+            return self.title.chapters[self.title.chapters.index(self) + 1]
+        except IndexError:
+            return None
+
     def __repr__(self):
-        return "<Chapter(%d, %s)>" % (self.number, self.duration)
+        return '<Chapter({number}, {duration})>'.format(
+            number=self.number, duration=self.duration)
+
+    def play(self, config):
+        "Starts VLC playing at the chapter start"
+        self.title.disc.play(config, self)
 
 
 class AudioTrack(object):
@@ -392,7 +446,8 @@ class AudioTrack(object):
         self.best = False
 
     def __repr__(self):
-        return "<AudioTrack(%d, '%s')>" % (self.number, self.name)
+        return "<AudioTrack({number}, '{name}')>".format(
+            number=self.number, name=self.name)
 
 
 class SubtitleTrack(object):
@@ -409,9 +464,9 @@ class SubtitleTrack(object):
         self.closed_captions = False
         self.best = False
         self.log = ''
-        self.corrections = SubtitleCorrections()
 
     def __repr__(self):
-        return "<SubtitleTrack(%d, '%s')>" % (self.number, self.name)
+        return "<SubtitleTrack({number}, '{name}')>".format(
+            number=self.number, name=self.name)
 
 

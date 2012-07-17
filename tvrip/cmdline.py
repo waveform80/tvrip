@@ -79,26 +79,22 @@ class Cmd(cmd.Cmd):
         self.color_prompt = color_prompt
         self.base_prompt = self.prompt
 
-    def parse_boolean(self, s):
-        """Parse a boolean value.
+    def parse_bool(self, value, default=None):
+        """Parse a string containing a boolean value.
 
-        Given a string, interprets it as a boolean value (True, False).
+        Given a string representing a boolean value, this method returns True
+        or False, or raises a ValueError if the conversion cannot be performed.
         """
-        try:
-            return {
-                'false': False,
-                'off':   False,
-                'no':    False,
-                'n':     False,
-                '0':     False,
-                'true':  True,
-                'on':    True,
-                'yes':   True,
-                'y':     True,
-                '1':     True,
-            }[s.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError("invalid boolean literal '%s'" % s)
+        value = value.lower()
+        if value == '' and default is not None:
+            return default
+        elif value in set(('0', 'false', 'off', 'no', 'n')):
+            return False
+        elif value in set(('1', 'true', 'on', 'yes', 'y')):
+            return True
+        else:
+            raise ValueError(
+                'Invalid boolean expression {}'.format(value))
 
     def parse_number_range(self, s):
         """Parse a dash-separated number range.
@@ -111,7 +107,8 @@ class Cmd(cmd.Cmd):
         except ValueError, exc:
             raise CmdSyntaxError(exc)
         if finish < start:
-            raise CmdSyntaxError('%d-%d range goes backwards' % (start, finish))
+            raise CmdSyntaxError(
+                '{}-{} range goes backwards'.format(start, finish))
         return start, finish
 
     def parse_number_list(self, s):
@@ -166,7 +163,7 @@ class Cmd(cmd.Cmd):
         ]
 
     def default(self, line):
-        raise CmdSyntaxError('Syntax error: %s' % line)
+        raise CmdSyntaxError('Syntax error: {}'.format(line))
 
     def emptyline(self):
         # Do not repeat commands when given an empty line
@@ -271,9 +268,10 @@ class Cmd(cmd.Cmd):
         commands along with a brief description of each.
         """
         if arg:
-            if not hasattr(self, 'do_%s' % arg):
-                raise CmdError('Unknown command %s' % arg)
-            paras = self.parse_docstring(getattr(self, 'do_%s' % arg).__doc__)
+            if not hasattr(self, 'do_{}'.format(arg)):
+                raise CmdError('Unknown command {}'.format(arg))
+            paras = self.parse_docstring(
+                getattr(self, 'do_{}'.format(arg)).__doc__)
             for para in paras[1:]:
                 if para.startswith(self.base_prompt):
                     self.pprint('  ' + para, wrap=False)

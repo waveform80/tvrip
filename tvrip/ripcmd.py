@@ -33,7 +33,7 @@ from tvrip.ripper import Disc, Title
 from tvrip.database import (
     init_session, Configuration, Program, Season, Episode,
     AudioLanguage, SubtitleLanguage, ConfigPath
-)
+    )
 from tvrip.episodemap import EpisodeMap
 from tvrip.cmdline import Cmd, CmdError, CmdSyntaxError
 
@@ -92,21 +92,6 @@ class RipCmd(Cmd):
             self.discs[self.config.source] = value
     disc = property(_get_disc, _set_disc)
 
-    def parse_boolean(self, value):
-        """Parse a string containing a boolean value.
-
-        Given a string representing a boolean value, this method returns True
-        or False, or raises a ValueError if the conversion cannot be performed.
-        """
-        value = value.lower()
-        if value in ('0', 'false', 'off', 'no', 'n'):
-            return False
-        elif value in ('1', 'true', 'on', 'yes', 'y'):
-            return True
-        else:
-            raise ValueError(
-                'Invalid boolean expression {}'.format(value))
-
     def parse_episode(self, episode, must_exist=True):
         """Parse a string containing an episode number.
 
@@ -155,7 +140,7 @@ class RipCmd(Cmd):
         start, finish = (
             self.parse_episode(i, must_exist)
             for i in self.parse_number_range(episodes)
-        )
+            )
         return start, finish
 
     def parse_episode_list(self, episodes, must_exist=True):
@@ -170,7 +155,7 @@ class RipCmd(Cmd):
         return [
             self.parse_episode(i, must_exist)
             for i in self.parse_number_list(episodes)
-        ]
+            ]
 
     def parse_title(self, title):
         """Parse a string containing a title number.
@@ -252,7 +237,7 @@ class RipCmd(Cmd):
         start, finish = (
             self.parse_chapter(title, i)
             for i in chapters.split('-', 1)
-        )
+            )
         return start, finish
 
     def clear_seasons(self, program=None):
@@ -285,7 +270,7 @@ class RipCmd(Cmd):
                 len(title.chapters),
                 title.duration,
                 ' '.join(track.language for track in title.audio_tracks)
-            ))
+                ))
         self.pprint_table(table)
 
     def pprint_title(self, title):
@@ -300,7 +285,7 @@ class RipCmd(Cmd):
                 chapter.start,
                 chapter.finish,
                 chapter.duration,
-            ))
+                ))
         self.pprint_table(table)
         self.pprint('')
         table = [('Audio', 'Lang', 'Name', 'Encoding', 'Mix', 'Best')]
@@ -315,7 +300,7 @@ class RipCmd(Cmd):
                 track.encoding,
                 track.channel_mix,
                 suffix
-            ))
+                ))
         self.pprint_table(table)
         self.pprint('')
         table = [('Subtitle', 'Lang', 'Name', 'Best')]
@@ -328,7 +313,7 @@ class RipCmd(Cmd):
                 track.language,
                 track.name,
                 suffix
-            ))
+                ))
         self.pprint_table(table)
 
     def pprint_programs(self):
@@ -379,7 +364,7 @@ class RipCmd(Cmd):
                 episode.number,
                 episode.name,
                 ['', 'x'][episode.ripped]
-            ))
+                ))
         self.pprint_table(table)
 
     def do_config(self, arg):
@@ -498,7 +483,7 @@ class RipCmd(Cmd):
                 'dpl2':     'dpl2',
                 'surround': 'dpl2',
                 'prologic': 'dpl2',
-            }[arg.strip().lower()]
+                }[arg.strip().lower()]
         except KeyError:
             raise CmdSyntaxError('Invalid audio mix {}'.format(arg))
         self.config.audio_mix = arg
@@ -515,7 +500,7 @@ class RipCmd(Cmd):
         (tvrip) audio_tracks off
         (tvrip) audio_tracks on
         """
-        self.config.audio_all = self.parse_boolean(arg)
+        self.config.audio_all = self.parse_bool(arg)
 
     def do_subtitle_langs(self, arg):
         """Sets the list of subtitle languages to rip.
@@ -558,7 +543,7 @@ class RipCmd(Cmd):
                 'none':   'none',
                 'vob':    'vobsub',
                 'vobsub': 'vobsub',
-            }[arg.strip().lower()]
+                }[arg.strip().lower()]
         except KeyError:
             raise CmdSyntaxError(
                 'Invalid subtitle extraction mode {}'.format(arg))
@@ -577,7 +562,7 @@ class RipCmd(Cmd):
         (tvrip) subtitle_all off
         (tvrip) subtitle_all on
         """
-        self.config.subtitle_all = self.parse_boolean(arg)
+        self.config.subtitle_all = self.parse_bool(arg)
 
     def do_decomb(self, arg):
         """Sets the decomb option for video conversion.
@@ -591,7 +576,7 @@ class RipCmd(Cmd):
         (tvrip) decomb on
         """
         try:
-            self.config.decomb = ['off', 'on'][self.parse_boolean(arg)]
+            self.config.decomb = ['off', 'on'][self.parse_bool(arg)]
         except CmdSyntaxError:
             if arg.strip().lower() == 'auto':
                 self.config.decomb = 'auto'
@@ -615,7 +600,7 @@ class RipCmd(Cmd):
         self.config.duration_min, self.config.duration_max = (
             timedelta(minutes=i)
             for i in self.parse_number_range(arg)
-        )
+            )
 
     def do_episode(self, arg):
         """Sets the name of a single episode.
@@ -732,10 +717,10 @@ class RipCmd(Cmd):
                 program=self.config.program, number=arg)
             self.session.add(self.config.season)
             try:
-                count = int(self.input('Season {season} of program '
-                    '{program} is new. Please enter the number of '
-                    'episodes in this season (enter 0 if you do not '
-                    'wish to define episodes at this time) '
+                count = int(self.input(
+                    'Season {season} of program {program} is new. Please '
+                    'enter the number of episodes in this season (enter 0 if '
+                    'you do not wish to define episodes at this time) '
                     '[0-n] '.format(
                         season=self.config.season.number,
                         program=self.config.program.name)))
@@ -761,7 +746,7 @@ class RipCmd(Cmd):
             filter(Season.program==self.config.program).\
             filter("SUBSTR(CAST(season AS TEXT), 1, :length) = :season").\
             params(length=len(text), season=text)
-        ]
+            ]
 
     def do_seasons(self, arg):
         """Shows the defined seasons of the current program.
@@ -830,7 +815,7 @@ class RipCmd(Cmd):
         return [
             program.name[start - match.end():] for program in
             self.session.query(Program).filter(Program.name.startswith(name))
-        ]
+            ]
 
     def do_programs(self, arg):
         """Shows the defined programs.
@@ -879,7 +864,7 @@ class RipCmd(Cmd):
                 title = [
                     t for t in self.disc.titles
                     if t.number == number
-                ][0]
+                    ][0]
             except IndexError:
                 # If the user specifies an invalid title number, ignore it
                 # (useful with large ranges of titles)
@@ -943,7 +928,7 @@ class RipCmd(Cmd):
                 title = [
                     t for t in self.disc.titles
                     if t.number == episode.disc_title
-                ][0]
+                    ][0]
             except IndexError:
                 self.pprint(
                     'Warning: previously ripped title {title} not found '
@@ -957,7 +942,7 @@ class RipCmd(Cmd):
                     self.episode_map[episode] = (
                         title.chapters[episode.start_chapter],
                         title.chapters[episode.end_chapter]
-                    )
+                        )
 
     def do_automap(self, arg):
         """Maps episodes to titles or chapter ranges automatically.
@@ -996,10 +981,59 @@ class RipCmd(Cmd):
         self.do_map()
 
     def choose_mapping(self, mappings):
-        for mapping in mappings:
-            print(mapping)
-            print("------------------------------------------------------")
-        raise NotImplementedError
+        # Obtain a sorted list of all episodes that the possible mappings cover
+        # (all possible mappings cover all episodes so just use the first for
+        # this). No need for an explicit sort as an EpisodeMap instance always
+        # returns episodes in order
+        episodes = mappings[0].keys()
+        # Iterate over the episodes and ask the user in each case whether the
+        # first chapter is accurate by playing a clip with vlc
+        for episode in episodes:
+            self.pprint(
+                '{} possible mappings remaining'.format(len(mappings)))
+            chapters = set(mapping[episode][0] for mapping in mappings)
+            self.pprint(
+                'Episode {episode} has {count} potential starting '
+                'chapters: {chapters}'.format(
+                    episode=episode.number,
+                    count=len(chapters),
+                    chapters=','.join(
+                        unicode(chapter.number) for chapter in chapters)))
+            while len(chapters) > 1:
+                chapter = chapters.pop()
+                while True:
+                    self.pprint('Playing chapter {}'.format(chapter.number))
+                    chapter.play(self.config)
+                    while True:
+                        response = self.input(
+                            'Is chapter {chapter} the start of episode '
+                            '{episode}? [y/n/r] '.format(
+                                chapter=chapter.number,
+                                episode=episode.number))
+                        response = response.lower()[:1]
+                        if response in ('y', 'n', 'r'):
+                            break
+                        else:
+                            self.pprint('Invalid response')
+                    if response == 'y':
+                        chapter = [chapters]
+                        break
+                    elif response == 'n':
+                        break
+            assert len(chapters) == 1
+            chapter = chapters.pop()
+            mappings = [
+                mapping for mapping in mappings
+                if mapping[episode][0] == chapter
+                ]
+        if len(mappings) == 1:
+            self.pprint('Solution found!')
+            return mappings[0]
+        else:
+            self.pprint('Something has gone horribly wrong...')
+            for mapping in mappings:
+                print(mapping)
+                print('-------------------------------------------')
 
     def do_map(self, arg=''):
         """Maps episodes to titles or chapter ranges.
@@ -1042,12 +1076,9 @@ class RipCmd(Cmd):
                             chapter_start=chapter_start.number,
                             chapter_end=chapter_end.number))
                         duration = '%s' % sum(
-                            (
-                                c.duration for c in chapter_start.title.chapters
-                                if chapter_start.number <= c.number <= chapter_end.number
-                            ),
-                            timedelta()
-                        )
+                            (c.duration for c in chapter_start.title.chapters
+                            if chapter_start.number <= c.number <= chapter_end.number
+                            ), timedelta())
                     self.pprint(
                         '{ripped:2s}title {title} ({duration}) = '
                         'episode {episode_num:2d}, '
@@ -1057,7 +1088,7 @@ class RipCmd(Cmd):
                             duration=duration,
                             episode_num=episode.number,
                             episode_title=episode.name
-                        ))
+                            ))
             else:
                 self.pprint('Episode map is currently empty')
             return
@@ -1069,8 +1100,7 @@ class RipCmd(Cmd):
             try:
                 title, chapters = title.split('.')
                 chapter_start, chapter_end = (
-                    int(i) for i in chapters.split('-')
-                )
+                    int(i) for i in chapters.split('-'))
             except ValueError:
                 raise CmdSyntaxError('Unable to parse specified chapter range')
         else:
@@ -1091,7 +1121,7 @@ class RipCmd(Cmd):
                 chapter_start = [
                     c for c in title.chapters
                     if c.number == chapter_start
-                ][0]
+                    ][0]
             except IndexError:
                 raise CmdError(
                     'There is no chapter {chapter} within title {title} on '
@@ -1103,7 +1133,7 @@ class RipCmd(Cmd):
                 chapter_end = [
                     c for c in title.chapters
                     if c.number == chapter_end
-                ][0]
+                    ][0]
             except IndexError:
                 raise CmdError(
                     'There is no chapter {chapter} within title {title} on '
@@ -1126,12 +1156,9 @@ class RipCmd(Cmd):
                     chapter_start=chapter_start.number,
                     chapter_end=chapter_end.number,
                     duration=sum(
-                        [
-                            c.duration for c in title.chapters
-                            if chapter_start.number <= c.number <= chapter_end.number
-                        ],
-                        timedelta()
-                    ),
+                        [c.duration for c in title.chapters
+                        if chapter_start.number <= c.number <= chapter_end.number
+                        ], timedelta()),
                     title=title.number,
                     episode_num=episode.number,
                     episode_title=episode.name))
@@ -1204,13 +1231,13 @@ class RipCmd(Cmd):
                 audio_tracks = [
                     t for t in title.audio_tracks
                     if self.config.in_audio_langs(t.language)
-                ]
+                    ]
                 if not self.config.audio_all:
                     audio_tracks = [t for t in audio_tracks if t.best]
                 subtitle_tracks = [
                     t for t in title.subtitle_tracks
                     if self.config.in_subtitle_langs(t.language)
-                ]
+                    ]
                 if not self.config.subtitle_all:
                     subtitle_tracks = [t for t in subtitle_tracks if t.best]
                 self.pprint(
@@ -1344,7 +1371,7 @@ class RipCmd(Cmd):
                 episode=10,
                 name='Foo Bar',
                 now=datetime.now(),
-            )
+                )
         except KeyError as exc:
             raise CmdError(
                 'The new template contains an '

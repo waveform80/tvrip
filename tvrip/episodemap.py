@@ -123,7 +123,8 @@ class EpisodeMap(dict):
     "Represents a mapping of episodes to titles/chapters"
 
     def __iter__(self):
-        for episode in sorted(super(EpisodeMap, self).__iter__(), key=attrgetter('number')):
+        for episode in sorted(
+                super(EpisodeMap, self).__iter__(), key=attrgetter('number')):
             yield episode
 
     def __setitem__(self, key, value):
@@ -164,10 +165,9 @@ class EpisodeMap(dict):
                 if not episodes:
                     break
             else:
-                logging.debug('Title %d is not an episode (duration: %s)' % (
-                    title.number,
-                    title.duration,
-                ))
+                logging.debug(
+                    'Title %d is not an episode (duration: %s)',
+                    title.number, title.duration)
         if not result:
             raise NoMappingError('No mapping for any titles found')
         self.clear()
@@ -177,12 +177,11 @@ class EpisodeMap(dict):
             choose_mapping=None):
         "Auto-mapping with a chapter-based algorithm"
         longest_title = sorted(titles, key=attrgetter('duration'))[-1]
-        logging.debug('Longest title is %d (duration: %s), containing '
-            '%d chapters' % (
-            longest_title.number,
-            longest_title.duration,
-            len(longest_title.chapters),
-        ))
+        logging.debug(
+            'Longest title is %d (duration: %s), containing '
+            '%d chapters',
+            longest_title.number, longest_title.duration,
+            len(longest_title.chapters))
         chapters = longest_title.chapters
         # XXX Remove trailing empty chapters
         solutions = calculate(chapters, episodes, duration_min, duration_max)
@@ -194,11 +193,10 @@ class EpisodeMap(dict):
             if not choose_mapping:
                 raise MultipleSolutionsError(
                     'Multiple possible chapter mappings found')
-            solution = choose_mapping(
+            solution = choose_mapping([
                 EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
                 for solution in solutions
-            )
-            solution = choose_mapping(solutions)
+                ])
         self.clear()
         self.update(zip(episodes, partition_ends(titles, solution)))
 

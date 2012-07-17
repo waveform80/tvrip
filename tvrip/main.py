@@ -20,7 +20,11 @@
 """Implements the main loop and option parser for the tvrip application"""
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    print_function,
+    absolute_import,
+    division
+    )
 
 import sys
 import logging
