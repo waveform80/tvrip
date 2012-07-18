@@ -42,7 +42,7 @@ classifiers = [
     'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
     'Operating System :: POSIX',
     'Operating System :: Unix',
-    'Programming Language :: Python :: 2.5',
+    'Programming Language :: Python :: 2.6',
     'Programming Language :: SQL',
     'Topic :: Multimedia :: Video :: Conversion',
     'Topic :: Database',
