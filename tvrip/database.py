@@ -70,10 +70,10 @@ class Episode(DeclarativeBase):
         """Indicates whether the episode has been ripped yet"""
         return bool(self.disc_id)
 
-    def __init__(self, program, season, number):
-        self.program = program
+    def __init__(self, season, number, name):
         self.season = season
         self.number = number
+        self.name = name
 
     def __repr__(self):
         return "<Episode(%s, %d, %d, %s)>" % (

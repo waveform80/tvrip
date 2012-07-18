@@ -36,7 +36,13 @@ from operator import attrgetter
 from tvrip.database import Episode
 from tvrip.ripper import Title, Chapter
 
-__all__ = ['EpisodeMap']
+__all__ = [
+    'EpisodeMap',
+    'MapError',
+    'NoMappingError',
+    'NoSolutionsError',
+    'MultipleSolutionsError'
+    ]
 
 
 def partition(seq, counts):
@@ -56,9 +62,9 @@ def partition_ends(seq, counts):
 def valid(mapping, chapters, episodes, duration_min, duration_max):
     "Checks whether a possible mapping is valid"
     return (
-        # Check the mapping doesn't specify more episodes than are available
-        (len(mapping) <= len(episodes)) and
-        # Check the mapping doesn't exceed the number of available chapters
+        # Check the mapping covers all the specified episodes
+        (len(mapping) == len(episodes)) and
+        # Check the mapping covers all available chapters precisely
         (sum(mapping) == len(chapters)) and
         # Check each grouping of chapters has a valid duration
         all(
@@ -107,16 +113,16 @@ def calculate(chapters, episodes, duration_min, duration_max,
         return solutions
 
 
-class Error(Exception):
+class MapError(Exception):
     "Base class for mapping errors"
 
-class NoMappingError(Error):
+class NoMappingError(MapError):
     "Exception raised when no title mapping is found"
 
-class NoSolutionsError(Error):
+class NoSolutionsError(MapError):
     "Exception raised when no solutions are found by automap"
 
-class MultipleSolutionsError(Error):
+class MultipleSolutionsError(MapError):
     "Exception raised when multiple solutions are found with no selection"
 
 class EpisodeMap(dict):

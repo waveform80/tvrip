@@ -27,15 +27,18 @@ from __future__ import (
 
 import os
 import re
-import sqlalchemy as sa
 from datetime import timedelta, datetime
+
+import sqlalchemy as sa
+
 from tvrip.ripper import Disc, Title
 from tvrip.database import (
     init_session, Configuration, Program, Season, Episode,
     AudioLanguage, SubtitleLanguage, ConfigPath
     )
-from tvrip.episodemap import EpisodeMap
+from tvrip.episodemap import EpisodeMap, MapError
 from tvrip.cmdline import Cmd, CmdError, CmdSyntaxError
+from tvrip.const import DATADIR
 
 
 class RipCmd(Cmd):
@@ -48,20 +51,22 @@ class RipCmd(Cmd):
         self.discs = {}
         self.episode_map = EpisodeMap()
         self.session = init_session(debug=debug)
+        # Specify the history filename
+        self.history_file = os.path.join(DATADIR, 'tvrip.history')
         # Read the configuration from the database
         try:
             self.config = self.session.query(Configuration).one()
         except sa.orm.exc.NoResultFound:
             self.config = Configuration()
             self.session.add(self.config)
-            self.session.add(AudioLanguage(lang='eng'))
-            self.session.add(SubtitleLanguage(lang='eng'))
-            self.session.add(ConfigPath(name='handbrake',
-                path='/usr/bin/HandBrakeCLI'))
-            self.session.add(ConfigPath(name='atomicparsley',
-                path='/usr/bin/AtomicParsley'))
-            self.session.add(ConfigPath(name='vlc',
-                path='/usr/bin/vlc'))
+            self.session.add(AudioLanguage(self.config, 'eng'))
+            self.session.add(SubtitleLanguage(self.config, 'eng'))
+            self.session.add(
+                ConfigPath(self.config, 'handbrake', 'HandBrakeCLI'))
+            self.session.add(
+                ConfigPath(self.config, 'atomicparsley', 'AtomicParsley'))
+            self.session.add(
+                ConfigPath(self.config, 'vlc', 'vlc'))
             self.session.commit()
 
     def onecmd(self, line):
@@ -443,7 +448,7 @@ class RipCmd(Cmd):
 
         The 'audio_langs' command sets the list of languages for which audio
         tracks will be extracted and converted. Languages are specified as
-        lowercase 3-character ISO639 codes. For example:
+        space separated lowercase 3-character ISO639 codes. For example:
 
         (tvrip) audio_langs eng jpn
         (tvrip) audio_langs eng
@@ -509,7 +514,8 @@ class RipCmd(Cmd):
 
         The 'subtitle_langs' command sets the list of languages for which
         subtitle tracks will be extracted and converted. Languages are
-        specified as lowercase 3-character ISO639 codes. For example:
+        specified as space separated lowercase 3-character ISO639 codes. For
+        example:
 
         (tvrip) subtitle_langs eng jpn
         (tvrip) subtitle_langs eng
@@ -616,8 +622,7 @@ class RipCmd(Cmd):
         (number, name) = arg.split(' ', 1)
         episode = self.parse_episode(number, must_exist=False)
         if episode is None:
-            episode = Episode(
-                season=self.config.season, number=number, name=name)
+            episode = Episode(self.config.season, number, name)
             self.session.add(episode)
             self.pprint(
                 'Added episode {episode} to season {season} '
@@ -646,7 +651,7 @@ class RipCmd(Cmd):
             if not name:
                 self.pprint('Terminating episode name entry')
                 break
-            episode = Episode(season=season, number=number, name=name)
+            episode = Episode(season, number, name)
             self.session.add(episode)
 
     def do_episodes(self, arg):
@@ -713,8 +718,7 @@ class RipCmd(Cmd):
                 filter(Season.program==self.config.program).\
                 filter(Season.number==arg).one()
         except sa.orm.exc.NoResultFound:
-            self.config.season = Season(
-                program=self.config.program, number=arg)
+            self.config.season = Season(self.config.program, arg)
             self.session.add(self.config.season)
             try:
                 count = int(self.input(
@@ -951,8 +955,8 @@ class RipCmd(Cmd):
 
         The 'automap' command is used to have the application attempt to figure
         out which titles (or chapters of titles) contain the next set of
-        unripped episodes. If no title numbers are specified, all titles are
-        considered candidates. Otherwise, only those titles specified are
+        unripped episodes. If no episode numbers are specified, all episodes
+        are considered candidates. Otherwise, only those titles specified are
         considered. If direct title mapping fails, chapter-based mapping is
         attempted instead.
 
@@ -975,9 +979,12 @@ class RipCmd(Cmd):
                 filter(Episode.disc_id==None).\
                 order_by(Episode.number).all()
             titles = list(self.disc.titles)
-        self.episode_map.automap(
-            titles, episodes, self.config.duration_min,
-            self.config.duration_max, self.choose_mapping)
+        try:
+            self.episode_map.automap(
+                titles, episodes, self.config.duration_min,
+                self.config.duration_max, self.choose_mapping)
+        except MapError as exc:
+            raise CmdError(str(exc))
         self.do_map()
 
     def choose_mapping(self, mappings):
