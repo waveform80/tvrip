@@ -139,9 +139,12 @@ class EpisodeMap(dict):
             start, finish = value
             assert isinstance(start, Chapter)
             assert isinstance(finish, Chapter)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             assert isinstance(value, Title)
         super(EpisodeMap, self).__setitem__(key, value)
+
+    def keys(self):
+        return [k for k in self]
 
     def iterkeys(self):
         for k in self:
@@ -164,7 +167,6 @@ class EpisodeMap(dict):
     def _automap_titles(self, titles, episodes, duration_min, duration_max):
         "Auto-mapping using a title-based algorithm"
         result = {}
-        try_chapters = True
         for title in titles:
             if duration_min <= title.duration <= duration_max:
                 result[episodes.pop(0)] = title
@@ -204,5 +206,5 @@ class EpisodeMap(dict):
                 for solution in solutions
                 ])
         self.clear()
-        self.update(zip(episodes, partition_ends(titles, solution)))
+        self.update(solution)
 

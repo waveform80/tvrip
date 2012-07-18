@@ -210,7 +210,7 @@ class Disc(object):
         self.titles = sorted(self.titles, key=attrgetter('number'))
         # Determine the best audio and subtitle tracks
         for title in self.titles:
-            for key, group in groupby(
+            for _, group in groupby(
                     sorted(title.audio_tracks, key=attrgetter('name')),
                     key=attrgetter('name')):
                 group = sorted(group, key=lambda track: (
@@ -219,7 +219,7 @@ class Disc(object):
                     ))
                 if group:
                     group[0].best = True
-            for key, group in groupby(
+            for _, group in groupby(
                     sorted(title.subtitle_tracks, key=attrgetter('name')),
                     key=attrgetter('name')):
                 group = list(group)
@@ -238,8 +238,8 @@ class Disc(object):
                 title=title_or_chapter.title.number,
                 chapter=title_or_chapter.number)
         cmdline = [config.get_path('vlc'), '--quiet', mrl]
-        process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-        output = process.communicate()
+        process = Popen(cmdline, stdout=open('/dev/null', 'w'), stderr=STDOUT)
+        process.communicate()
         if process.returncode != 0:
             print('VLC exited with return code {}'.format(process.returncode))
 
