@@ -172,7 +172,7 @@ class Cmd(cmd.Cmd):
     def preloop(self):
         if self.color_prompt:
             self.prompt = COLOR_BOLD + COLOR_GREEN + self.prompt + COLOR_RESET
-        if self.history_file:
+        if self.history_file and os.path.exists(self.history_file):
             readline.read_history_file(self.history_file)
 
     def precmd(self, line):
