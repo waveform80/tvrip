@@ -1085,7 +1085,7 @@ class RipCmd(Cmd):
             except ValueError:
                 raise CmdSyntaxError('You must specify two arguments')
             episode = self.parse_episode(episode)
-            target = self.parse_title_or_change_range(target)
+            target = self.parse_title_or_chapter_range(target)
             if isinstance(target, Title):
                 title = target
                 self.pprint(
