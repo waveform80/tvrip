@@ -253,6 +253,8 @@ class Disc(object):
             name=episode.name,
             now=datetime.now(),
             )
+        # Replace invalid characters in the filename with -
+        filename = re.sub(r'[\/:]', '-', filename)
         # Convert the video track
         audio_defs = [
             (track.number, config.audio_mix, track.name)
@@ -267,15 +269,21 @@ class Disc(object):
             '-i', config.source,
             '-t', unicode(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'mp4',          # output an MP4 container
+            '-f', 'mp4',           # output an MP4 container
             '-O',                  # optimize for streaming
             '-m',                  # include chapter markers
-            '--strict-anamorphic', # store pixel aspect ratio
-            '-e', 'x264',         # use x264 for encoding
-            '-q', '23',           # quality 23
-            '-x', 'b-adapt=2:rc-lookahead=50', # advanced encoding options
-                                               # (mostly defaults from High
-                                               # Profile)
+            '-e', 'x264',          # use x264 for encoding
+            '-q', '23',            # quality 23
+            # disable cropping (otherwise vobsub subtitles screw up) but don't
+            # sacrifice cropping for aligned storage
+            '--crop', '0:0:0:0',
+            '--loose-crop',
+            # use efficient storage options (actually defaults but no harm in
+            # explicitly specifying them)
+            '--loose-anamorphic',
+            '--modulus', '16',
+            # advanced encoding options (mostly defaults from High Profile)
+            '-x', 'b-adapt=2:rc-lookahead=50',
             '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
             '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
             '-A', ','.join(name         for (_, _, name) in audio_defs),
