@@ -54,7 +54,7 @@ def partition(seq, counts):
         index += count
 
 def partition_ends(seq, counts):
-    "Make an iterator that returns the ends of chunks of seq defined by counts"
+    "Make an iterator that returns the start and end of chunks of seq defined by counts"
     # partition_ends(range(10), [3, 1, 2]) --> [(0, 2), (3, 3), (4, 5)]
     for s in partition(seq, counts):
         yield (s[0], s[-1])
