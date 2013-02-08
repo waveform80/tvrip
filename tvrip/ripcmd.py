@@ -31,7 +31,7 @@ from datetime import timedelta, datetime
 
 import sqlalchemy as sa
 
-from tvrip.ripper import Disc, Title
+from tvrip.ripper import Disc, Title, RipperError, TaggerError
 from tvrip.database import (
     init_session, Configuration, Program, Season, Episode,
     AudioLanguage, SubtitleLanguage, ConfigPath
@@ -1202,16 +1202,20 @@ class RipCmd(Cmd):
                 self.pprint(
                     'Ripping episode {episode.number}, '
                     '"{episode.name}"'.format(episode=episode))
-                self.disc.rip(self.config, episode, title, audio_tracks,
-                    subtitle_tracks, chapter_start, chapter_end)
-                episode.disc_id = self.disc.ident
-                episode.disc_title = title.number
-                if chapter_start:
-                    episode.start_chapter = chapter_start.number
-                    episode.end_chapter = chapter_end.number
+                try:
+                    self.disc.rip(self.config, episode, title, audio_tracks,
+                        subtitle_tracks, chapter_start, chapter_end)
+                except (RipperError, TaggerError) as exc:
+                    raise CmdError(str(exc))
                 else:
-                    episode.start_chapter = None
-                    episode.end_chapter = None
+                    episode.disc_id = self.disc.ident
+                    episode.disc_title = title.number
+                    if chapter_start:
+                        episode.start_chapter = chapter_start.number
+                        episode.end_chapter = chapter_end.number
+                    else:
+                        episode.start_chapter = None
+                        episode.end_chapter = None
 
     def do_unrip(self, arg):
         """Changes the status of the specified episode to unripped.

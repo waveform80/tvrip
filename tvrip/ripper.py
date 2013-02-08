@@ -46,6 +46,12 @@ class Error(Exception):
 class ProcessError(Error):
     "Class for errors returned by external processes"
 
+class RipperError(ProcessError):
+    "Class for errors returned by HandBrake"
+
+class TaggerError(ProcessError):
+    "Class for errors returned by AtomicParsley"
+
 
 class Disc(object):
     "Represents a DVD disc"
@@ -283,7 +289,7 @@ class Disc(object):
             '--loose-anamorphic',
             '--modulus', '16',
             # advanced encoding options (mostly defaults from High Profile)
-            '-x', 'b-adapt=2:rc-lookahead=50',
+            '-x', 'b-adapt=2:rc-lookahead=50:psy-rd=1|0.15:me=umh',
             '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
             '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
             '-A', ','.join(name         for (_, _, name) in audio_defs),
@@ -307,7 +313,7 @@ class Disc(object):
         process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
         process.communicate()
         if process.returncode != 0:
-            raise ValueError(
+            raise RipperError(
                 'Handbrake exited with non-zero return code {}'.format(
                     process.returncode))
         # Tag the resulting file
@@ -332,7 +338,7 @@ class Disc(object):
             process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
             process.communicate()
             if process.returncode != 0:
-                raise ValueError(
+                raise TaggerError(
                     'AtomicParsley exited with non-zero return code {}'.format(
                         process.returncode))
             os.chmod(
