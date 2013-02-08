@@ -20,8 +20,11 @@
 from __future__ import (
     unicode_literals, print_function, absolute_import, division)
 
+import os
 from setuptools import setup, find_packages
 from utils import description, get_version, require_python
+
+HERE = os.path.abspath(os.path.dirname(__file__))
 
 # Workaround <http://bugs.python.org/issue10945>
 import codecs
@@ -34,7 +37,11 @@ except LookupError:
 
 require_python(0x020600f0)
 
-classifiers = [
+REQUIRES = ['sqlalchemy']
+
+EXTRA_REQUIRES = {}
+
+CLASSIFIERS = [
     'Development Status :: 4 - Beta',
     'Environment :: Console',
     'Intended Audience :: Developers',
@@ -43,34 +50,37 @@ classifiers = [
     'Operating System :: POSIX',
     'Operating System :: Unix',
     'Programming Language :: Python :: 2.6',
+    'Programming Language :: Python :: 2.7',
     'Programming Language :: SQL',
     'Topic :: Multimedia :: Video :: Conversion',
     'Topic :: Database',
-]
+    ]
 
-entry_points = {
+ENTRY_POINTS = {
     'console_scripts': [
         'tvrip = tvrip.main:main',
-    ]
-}
+        ]
+    }
 
 def main():
     setup(
         name                 = 'tvrip',
-        version              = get_version('tvrip/main.py'),
+        version              = get_version(os.path.join(HERE, 'tvrip/main.py')),
         description          = 'Command line TV series ripper',
-        long_description     = description('README.txt'),
+        long_description     = description(os.path.join(HERE, 'README.rst')),
+        classifiers          = CLASSIFIERS,
         author               = 'Dave Hughes',
         author_email         = 'dave@waveform.org.uk',
         url                  = 'http://www.waveform.org.uk/trac/tvrip/',
+        keywords             = 'tv ripper',
         packages             = find_packages(exclude=['distribute_setup', 'utils']),
-        install_requires     = ['sqlalchemy'],
+        install_requires     = REQUIRES,
+        extras_require       = EXTRA_REQUIRES,
         include_package_data = True,
         platforms            = 'ALL',
         zip_safe             = False,
-        entry_points         = entry_points,
-        classifiers          = classifiers,
-    )
+        entry_points         = ENTRY_POINTS,
+        )
 
 if __name__ == '__main__':
     main()
