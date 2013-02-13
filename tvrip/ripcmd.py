@@ -989,10 +989,14 @@ class RipCmd(Cmd):
 
         The 'automap' command is used to have the application attempt to figure
         out which titles (or chapters of titles) contain the next set of
-        unripped episodes. If no episode numbers are specified, all episodes
-        are considered candidates. Otherwise, only those titles specified are
-        considered. If direct title mapping fails, chapter-based mapping is
-        attempted instead.
+        unripped episodes. If no episode numbers are specified, or * is
+        specified all unripped episodes are considered candidates. Otherwise,
+        only those episodes specified are considered.
+
+        If no title numbers are specified, all titles on the disc are
+        considered candidates. Otherwise, only the titles specified are
+        considered. If title mapping fails, chapter-based mapping is attempted
+        instead.
 
         The current episode mapping can be viewed in the output of the 'map'
         command.
@@ -1002,17 +1006,22 @@ class RipCmd(Cmd):
         # arguments
         if ' ' in arg:
             episodes, titles = arg.split(' ', 1)
-            episodes = self.parse_episode_list(episodes)
-            titles = self.parse_title_list(titles)
         elif arg:
-            episodes = self.parse_episode_list(arg)
-            titles = list(self.disc.titles)
+            episodes = arg
+            titles = '*'
         else:
+            episodes = titles = '*'
+        if episodes == '*':
             episodes = self.session.query(Episode).\
                 filter(Episode.season==self.config.season).\
                 filter(Episode.disc_id==None).\
                 order_by(Episode.number).all()
+        else:
+            episodes = self.parse_episode_list(episodes)
+        if titles == '*':
             titles = list(self.disc.titles)
+        else:
+            titles = self.parse_title_list(titles)
         try:
             self.episode_map.automap(
                 titles, episodes, self.config.duration_min,
