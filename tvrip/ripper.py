@@ -115,8 +115,8 @@ class Disc(object):
     subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$', re.UNICODE)
     subtitle_track_re = re.compile(
         r'^    \+ (?P<number>\d+), (?P<name>.*) '
-        r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>[^)]*)\))?'
-        r'(?P<cc>\(CC\))?$', re.UNICODE)
+        r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>Text|Bitmap)\))?'
+        r'\((?P<format>CC|VOBSUB)\)?$', re.UNICODE)
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
 
@@ -211,8 +211,7 @@ class Disc(object):
                 track.number = int(self.match.group('number'))
                 track.name = unicode(self.match.group('name'))
                 track.language = unicode(self.match.group('language'))
-                track.type = unicode(self.match.group('type'))
-                track.closed_captions = bool(self.match.group('cc'))
+                track.format = self.match.group('format').lower()
         self.titles = sorted(self.titles, key=attrgetter('number'))
         # Determine the best audio and subtitle tracks
         for title in self.titles:
@@ -474,8 +473,7 @@ class SubtitleTrack(object):
         self.number = 0
         self.name = ''
         self.language = ''
-        self.type = ''
-        self.closed_captions = False
+        self.format = 'VOBSUB'
         self.best = False
         self.log = ''
 

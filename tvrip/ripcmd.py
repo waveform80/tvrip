@@ -344,7 +344,7 @@ class RipCmd(Cmd):
                 ))
         self.pprint_table(table)
         self.pprint('')
-        table = [('Subtitle', 'Lang', 'Name', 'Best')]
+        table = [('Subtitle', 'Lang', 'Name', 'Format', 'Best')]
         for track in title.subtitle_tracks:
             suffix = ''
             if track.best and self.config.in_subtitle_langs(track.language):
@@ -353,6 +353,7 @@ class RipCmd(Cmd):
                 track.number,
                 track.language,
                 track.name,
+                track.format,
                 suffix
                 ))
         self.pprint_table(table)
@@ -576,8 +577,12 @@ class RipCmd(Cmd):
 
         The 'subtitle_format' command sets the subtitles extraction mode used
         by the 'rip' command. The valid formats are 'none' indicating that
-        subtitles should not be extracted at all, and 'vobsub' which causes
-        subtitles to be extracted as timed image overlays. For example:
+        subtitles should not be extracted at all, 'vobsub' which causes
+        subtitles to be extracted as timed image overlays, 'cc' which causes
+        text-based closed captions to be embedded in the resulting MP4, or
+        'any' which indicates any format of subtitle should be accepted.  Be
+        aware that text-based closed captions do not work with several players.
+        For example:
 
         (tvrip) subtitle_format vobsub
         (tvrip) subtitle_format none
@@ -588,6 +593,13 @@ class RipCmd(Cmd):
                 'none':   'none',
                 'vob':    'vobsub',
                 'vobsub': 'vobsub',
+                'bmp':    'vobsub',
+                'bitmap': 'vobsub',
+                'cc':     'cc',
+                'text':   'cc',
+                'any':    'any',
+                'all':    'any',
+                'both':   'any',
                 }[arg.strip().lower()]
         except KeyError:
             raise CmdSyntaxError(
@@ -1205,6 +1217,10 @@ class RipCmd(Cmd):
                 subtitle_tracks = [
                     t for t in title.subtitle_tracks
                     if self.config.in_subtitle_langs(t.language)
+                    and (
+                        t.format == self.config.subtitle_format
+                        or self.config.subtitle_format == 'any'
+                        )
                     ]
                 if not self.config.subtitle_all:
                     subtitle_tracks = [t for t in subtitle_tracks if t.best]
