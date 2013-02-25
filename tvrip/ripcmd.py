@@ -501,7 +501,7 @@ class RipCmd(Cmd):
             else:
                 self.session.delete(lang)
         for lang in new_langs:
-            self.session.add(AudioLanguage(lang=lang))
+            self.session.add(AudioLanguage(self.config, lang=lang))
 
     def do_audio_mix(self, arg):
         """Sets the audio mixdown
@@ -568,7 +568,7 @@ class RipCmd(Cmd):
             else:
                 self.session.delete(lang)
         for lang in new_langs:
-            self.session.add(SubtitleLanguage(lang=lang))
+            self.session.add(SubtitleLanguage(self.config, lang=lang))
 
     def do_subtitle_format(self, arg):
         """Sets the subtitle extraction mode
@@ -634,7 +634,7 @@ class RipCmd(Cmd):
         """
         try:
             self.config.decomb = ['off', 'on'][self.parse_bool(arg)]
-        except CmdSyntaxError:
+        except ValueError:
             if arg.strip().lower() == 'auto':
                 self.config.decomb = 'auto'
             else:

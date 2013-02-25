@@ -202,7 +202,7 @@ class Configuration(DeclarativeBase):
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(Unicode(6),
-        CheckConstraint("subtitle_format in ('none', 'vobsub')"),
+        CheckConstraint("subtitle_format in ('none', 'vobsub', 'cc', 'any')"),
         nullable=False, default='none')
     audio_mix = Column(Unicode(6),
         CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
