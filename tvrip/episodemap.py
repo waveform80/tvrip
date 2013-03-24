@@ -46,7 +46,7 @@ __all__ = [
 
 
 def partition(seq, counts):
-    "Make an iterator that returns seq in chunks of length found in counts"
+    "An iterator that returns seq in chunks of length found in counts"
     # partition(range(10), [3, 1, 2]) --> [[0, 1, 2], [3], [4, 5]]
     index = 0
     for count in counts:
@@ -54,7 +54,7 @@ def partition(seq, counts):
         index += count
 
 def partition_ends(seq, counts):
-    "Make an iterator that returns the start and end of chunks of seq defined by counts"
+    "An iterator that returns the start and end of chunks of seq defined by counts"
     # partition_ends(range(10), [3, 1, 2]) --> [(0, 2), (3, 3), (4, 5)]
     for s in partition(seq, counts):
         yield (s[0], s[-1])
@@ -178,7 +178,6 @@ class EpisodeMap(dict):
                     title.number, title.duration)
         if not result:
             raise NoMappingError('No mapping for any titles found')
-        self.clear()
         self.update(result)
 
     def _automap_chapters(self, titles, episodes, duration_min, duration_max,
@@ -193,10 +192,12 @@ class EpisodeMap(dict):
         chapters = longest_title.chapters
         # XXX Remove trailing empty chapters
         solutions = calculate(chapters, episodes, duration_min, duration_max)
+        logging.debug(
+            'Found %d chapter mapping solution(s)' % len(solutions))
         if not solutions:
             raise NoSolutionsError('No chapter mappings found')
         elif len(solutions) == 1:
-            solution = solutions[0]
+            solution = EpisodeMap(zip(episodes, partition_ends(chapters, solutions[0])))
         elif len(solutions) > 1:
             if not choose_mapping:
                 raise MultipleSolutionsError(
@@ -205,6 +206,5 @@ class EpisodeMap(dict):
                 EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
                 for solution in solutions
                 ])
-        self.clear()
         self.update(solution)
 

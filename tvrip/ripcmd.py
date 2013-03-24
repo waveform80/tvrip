@@ -1173,12 +1173,19 @@ class RipCmd(Cmd):
 
         The 'unmap' command is used to remove a title to episode mapping. For
         example, if the auto-mapping when scanning a disc makes an error, you
-        can use the 'map' and 'unmap' commands to fix it. For example:
+        can use the 'map' and 'unmap' commands to fix it. You can also specify
+        '*' to clear the mapping list completely. For example:
 
         (tvrip) unmap 3
         (tvrip) unmap 7
+        (tvrip) unmap *
         """
-        for episode in self.parse_episode_list(arg):
+        episodes = arg
+        if episodes == '*':
+            episodes = self.episode_map.keys()
+        else:
+            episodes = self.parse_episode_list(episodes)
+        for episode in episodes:
             self.pprint(
                 'Removing mapping for episode {episode.number}, '
                 '{episode.name}'.format(episode=episode))

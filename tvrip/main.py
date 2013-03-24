@@ -72,7 +72,7 @@ a text-based form like SubRip.""")
     if args is None:
         args = sys.argv[1:]
     (options, args) = parser.parse_args(args)
-    CONSOLE.setLevel(options.loglevel)
+    CONSOLE.setLevel(logging.DEBUG)
     if options.logfile:
         logfile = logging.FileHandler(options.logfile)
         logfile.setFormatter(
@@ -82,7 +82,7 @@ a text-based form like SubRip.""")
     if options.debug:
         logging.getLogger().setLevel(logging.DEBUG)
     else:
-        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger().setLevel(options.loglevel)
     # Check a device has been specified
     if len(args) != 0:
         parser.error('you may not specify any filenames')
