@@ -116,6 +116,9 @@ def calculate(chapters, episodes, duration_min, duration_max,
 class MapError(Exception):
     "Base class for mapping errors"
 
+class NoEpisodesError(MapError):
+    "Exception raised when no episodes are available for mapping"
+
 class NoMappingError(MapError):
     "Exception raised when no title mapping is found"
 
@@ -157,6 +160,8 @@ class EpisodeMap(dict):
     def automap(self, titles, episodes, duration_min, duration_max,
             choose_mapping=None):
         "Automatically map unmapped titles to unripped episodes"
+        if not episodes:
+            raise NoEpisodesError('No episodes available for mapping (new season?)')
         try:
             self._automap_titles(
                 titles, episodes, duration_min, duration_max)

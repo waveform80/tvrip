@@ -274,11 +274,11 @@ class Disc(object):
             '-i', config.source,
             '-t', unicode(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'mp4',           # output an MP4 container
-            '-O',                  # optimize for streaming
-            '-m',                  # include chapter markers
-            '-e', 'x264',          # use x264 for encoding
-            '-q', '23',            # quality 23
+            '-f', 'mp4',    # output an MP4 container
+            '-O',           # optimize for streaming
+            '-m',           # include chapter markers
+            '-e', 'x264',   # use x264 for encoding
+            '-q', '23',     # quality 23
             # disable cropping (otherwise vobsub subtitles screw up) but don't
             # sacrifice cropping for aligned storage
             '--crop', '0:0:0:0',
@@ -288,7 +288,7 @@ class Disc(object):
             '--loose-anamorphic',
             '--modulus', '16',
             # advanced encoding options (mostly defaults from High Profile)
-            '-x', 'b-adapt=2:rc-lookahead=50:psy-rd=1|0.15:me=umh',
+            '-x', 'level=4.1:deblock=-1,-1:psy-rd=1|0.15:vbv-bufsize=78125:vbv-maxrate=62500:me=umh:b-adapt=2',
             '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
             '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
             '-A', ','.join(name         for (_, _, name) in audio_defs),
