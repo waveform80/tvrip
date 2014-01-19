@@ -369,7 +369,7 @@ class RipCmd(Cmd):
                 ).outerjoin(Season).outerjoin(Episode).\
                 group_by(Program.name).order_by(Program.name):
             table.append((program, seasons, episodes,
-                '{:.1f}%'.format(ripped * 100 / episodes)))
+                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
         self.pprint_table(table)
 
     def pprint_seasons(self, program=None):
@@ -390,7 +390,7 @@ class RipCmd(Cmd):
                 group_by(Season.number).\
                 order_by(Season.number):
             table.append((season, episodes,
-                '{:.1f}%'.format(ripped * 100 / episodes)))
+                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
         self.pprint_table(table)
 
     def pprint_episodes(self, season=None):
@@ -668,9 +668,10 @@ class RipCmd(Cmd):
         specified episode or, if two arguments are given, will redefine the
         name of the specified episode.
         """
-        if not arg:
+        try:
+            (number, name) = arg.split(' ', 1)
+        except (TypeError, ValueError):
             raise CmdSyntaxError('You must specify an episode number and name')
-        (number, name) = arg.split(' ', 1)
         episode = self.parse_episode(number, must_exist=False)
         if episode is None:
             episode = Episode(self.config.season, number, name)
