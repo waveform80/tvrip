@@ -129,9 +129,11 @@ class Disc(object):
 
         cmdline = [
             config.get_path('handbrake'),
-            '-i', config.source, # specify the input device
-            '-t', str(title),    # select the specified title
-            '--scan',            # scan only
+            '-i', config.source,     # specify the input device
+            '-t', str(title),        # select the specified title
+            '--min-duration', '300', # only scan titles >5 minutes
+            '--previews', '5:0',     # only generate 5 preview images
+            '--scan',                # scan only
             ]
         process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
         output = process.communicate()[0]
