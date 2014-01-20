@@ -1190,7 +1190,12 @@ class RipCmd(Cmd):
             self.pprint(
                 'Removing mapping for episode {episode.number}, '
                 '{episode.name}'.format(episode=episode))
-            del self.episode_map[episode]
+            try:
+                del self.episode_map[episode]
+            except KeyError:
+                self.pprint(
+                    'Episode {episode.number}, {episode.name} was not in the '
+                    'map'.format(episode=episode))
 
     def do_rip(self, arg=''):
         """Starts the ripping and transcoding process.
