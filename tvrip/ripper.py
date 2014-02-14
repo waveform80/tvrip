@@ -276,7 +276,7 @@ class Disc(object):
             '-i', config.source,
             '-t', unicode(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'mp4',    # output an MP4 container
+            '-f', 'mp4v2',  # output an MP4 container
             '-O',           # optimize for streaming
             '-m',           # include chapter markers
             '-e', 'x264',   # use x264 for encoding
