@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -20,13 +20,15 @@
 
 from __future__ import (
     unicode_literals,
-    print_function,
     absolute_import,
+    print_function,
     division,
     )
+str = type('')
 
 import os
 import tempfile
+
 from sqlalchemy import (
     Column, ForeignKeyConstraint, ForeignKey,
     CheckConstraint, create_engine
@@ -35,6 +37,7 @@ from sqlalchemy.types import Unicode, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, synonym, sessionmaker
 from datetime import timedelta
+
 from tvrip.const import DATADIR
 
 

@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -19,7 +19,12 @@
 """Contains suite-level constants defined as globals"""
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    absolute_import,
+    print_function,
+    division,
+    )
+str = type('')
 
 import os
 

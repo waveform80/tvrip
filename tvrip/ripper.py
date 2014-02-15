@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,14 +16,15 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Implements the disc scanner and ripper"""
+"Implements the disc scanner and ripper"
 
 from __future__ import (
     unicode_literals,
-    print_function,
     absolute_import,
+    print_function,
     division,
     )
+str = type('')
 
 import sys
 import os

@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,7 +16,8 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""A custom mapping class for episodes and disc-titles.
+"""
+A custom mapping class for episodes and disc-titles.
 
 The EpisodeMap class defined in this module is a simple dict variant which
 includes some additional methods for automatically calculating a mapping that
@@ -25,10 +26,11 @@ meets certain criteria (duration-based).
 
 from __future__ import (
     unicode_literals,
-    print_function,
     absolute_import,
+    print_function,
     division,
     )
+str = type('')
 
 import logging
 from datetime import timedelta
@@ -93,8 +95,8 @@ def calculate(chapters, episodes, duration_min, duration_max,
     for count, chapter in enumerate(chapters[sum(mapping):]):
         duration += chapter.duration
         if duration > duration_max:
-            # If we've exceeded the maximum duration, stop. We break here as all
-            # further solutions down this branch would be invalid
+            # If we've exceeded the maximum duration, stop. We break here as
+            # all further solutions down this branch would be invalid
             break
         elif duration >= duration_min:
             new_map = mapping + [count + 1]

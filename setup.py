@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -18,13 +18,34 @@
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    absolute_import,
+    print_function,
+    division,
+    )
+str = type('')
 
 import os
+import sys
 from setuptools import setup, find_packages
-from utils import description, get_version, require_python
+from setuptools.command.test import test as TestCommand
+
+if sys.version_info[0] == 2:
+    if not sys.version_info >= (2, 7):
+        raise ValueError('This package requires Python 2.7 or newer')
+elif sys.version_info[0] == 3:
+    if not sys.version_info >= (3, 2):
+        raise ValueError('This package requires Python 3.2 or newer')
+else:
+    raise ValueError('Unrecognized major version of Python')
 
 HERE = os.path.abspath(os.path.dirname(__file__))
+
+# Workaround <http://www.eby-sarna.com/pipermail/peak/2010-May/003357.html>
+try:
+    import multiprocessing
+except ImportError:
+    pass
 
 # Workaround <http://bugs.python.org/issue10945>
 import codecs
@@ -35,52 +56,61 @@ except LookupError:
     func = lambda name, enc=ascii: {True: enc}.get(name=='mbcs')
     codecs.register(func)
 
-require_python(0x020600f0)
+# All meta-data is defined as global variables in the package root so that
+# other modules can query it easily without having to wade through distutils
+# nonsense
+import tvrip as app
 
-REQUIRES = ['sqlalchemy']
+# Add a py.test based "test" command
+class PyTest(TestCommand):
+    def finalize_options(self):
+        TestCommand.finalize_options(self)
+        self.test_args = [
+            '--verbose',
+            '--cov', __project__,
+            '--cov-report', 'term-missing',
+            '--cov-report', 'html',
+            '--cov-config', 'coverage.cfg',
+            'tests',
+            ]
+        self.test_suite = True
 
-EXTRA_REQUIRES = {}
+    def run_tests(self):
+        import pytest
+        errno = pytest.main(self.test_args)
+        sys.exit(errno)
 
-CLASSIFIERS = [
-    'Development Status :: 4 - Beta',
-    'Environment :: Console',
-    'Intended Audience :: Developers',
-    'Intended Audience :: End Users/Desktop',
-    'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
-    'Operating System :: POSIX',
-    'Operating System :: Unix',
-    'Programming Language :: Python :: 2.6',
-    'Programming Language :: Python :: 2.7',
-    'Programming Language :: SQL',
-    'Topic :: Multimedia :: Video :: Conversion',
-    'Topic :: Database',
-    ]
-
-ENTRY_POINTS = {
-    'console_scripts': [
-        'tvrip = tvrip.main:main',
-        ]
-    }
 
 def main():
-    setup(
-        name                 = 'tvrip',
-        version              = get_version(os.path.join(HERE, 'tvrip/main.py')),
-        description          = 'Command line TV series ripper',
-        long_description     = description(os.path.join(HERE, 'README.rst')),
-        classifiers          = CLASSIFIERS,
-        author               = 'Dave Hughes',
-        author_email         = 'dave@waveform.org.uk',
-        url                  = 'http://www.waveform.org.uk/trac/tvrip/',
-        keywords             = 'tv ripper',
-        packages             = find_packages(exclude=['distribute_setup', 'utils']),
-        install_requires     = REQUIRES,
-        extras_require       = EXTRA_REQUIRES,
-        include_package_data = True,
-        platforms            = 'ALL',
-        zip_safe             = False,
-        entry_points         = ENTRY_POINTS,
-        )
+    import io
+    with io.open(os.path.join(HERE, 'README.rst'), 'r') as readme:
+        setup(
+            name                 = app.__project__,
+            version              = app.__version__,
+            description          = app.__doc__,
+            long_description     = readme.read(),
+            classifiers          = app.__classifiers__,
+            author               = app.__author__,
+            author_email         = app.__author_email__,
+            url                  = app.__url__,
+            license              = [
+                c.rsplit('::', 1)[1].strip()
+                for c in app.__classifiers__
+                if c.startswith('License ::')
+                ][0],
+            keywords             = ' '.join(app.__keywords__),
+            packages             = find_packages(),
+            package_data         = {},
+            include_package_data = True,
+            platforms            = app.__platforms__,
+            install_requires     = app.__requires__,
+            extras_require       = app.__extra_requires__,
+            zip_safe             = False,
+            entry_points         = app.__entry_points__,
+            tests_require        = ['pytest-cov', 'pytest', 'mock'],
+            cmdclass             = {'test': PyTest},
+            )
+
 
 if __name__ == '__main__':
     main()

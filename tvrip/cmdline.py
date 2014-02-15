@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,7 +16,8 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Enhanced version of the standard Python Cmd command line interpreter.
+"""
+Enhanced version of the standard Python Cmd command line interpreter.
 
 This module defines an enhanced version of the standard Python Cmd command line
 base class. The extra facilities provided are:
@@ -36,7 +37,12 @@ base class. The extra facilities provided are:
 """
 
 from __future__ import (
-    unicode_literals, print_function, absolute_import, division)
+    unicode_literals,
+    absolute_import,
+    print_function,
+    division,
+    )
+str = type('')
 
 import os
 import re
@@ -58,7 +64,11 @@ COLOR_WHITE   = '\033[37m'
 COLOR_RESET   = '\033[0m'
 ENCODING = locale.getdefaultlocale()[1]
 
-__all__ = ['CmdError', 'CmdSyntaxError', 'Cmd']
+__all__ = [
+    'CmdError',
+    'CmdSyntaxError',
+    'Cmd',
+    ]
 
 
 class CmdError(Exception):
@@ -80,7 +90,8 @@ class Cmd(cmd.Cmd):
         self.base_prompt = self.prompt
 
     def parse_bool(self, value, default=None):
-        """Parse a string containing a boolean value.
+        """
+        Parse a string containing a boolean value.
 
         Given a string representing a boolean value, this method returns True
         or False, or raises a ValueError if the conversion cannot be performed.
@@ -97,7 +108,8 @@ class Cmd(cmd.Cmd):
                 'Invalid boolean expression {}'.format(value))
 
     def parse_number_range(self, s):
-        """Parse a dash-separated number range.
+        """
+        Parse a dash-separated number range.
 
         Given a string containing two dash-separated numbers, returns the integer
         value of the start and end of the range.
@@ -112,7 +124,8 @@ class Cmd(cmd.Cmd):
         return start, finish
 
     def parse_number_list(self, s):
-        """Parse a comma-separated list of dash-separated number ranges.
+        """
+        Parse a comma-separated list of dash-separated number ranges.
 
         Given a string containing comma-separated numbers or ranges of numbers,
         returns a sequence of all specified numbers (ranges of numbers are expanded
@@ -131,8 +144,8 @@ class Cmd(cmd.Cmd):
         return result
 
     def parse_docstring(self, docstring):
-        """Utility method for converting docstrings into help-text"""
-        lines = [line.strip() for line in docstring.splitlines()]
+        "Utility method for converting docstrings into help-text"
+        lines = [line.strip() for line in docstring.strip().splitlines()]
         result = ['']
         for line in lines:
             if result:
@@ -154,7 +167,7 @@ class Cmd(cmd.Cmd):
         return result
 
     def complete_path(self, text, line, start, finish):
-        """Utility routine used by path completion methods"""
+        "Utility routine used by path completion methods"
         path, _ = os.path.split(line)
         return [
             item
@@ -203,7 +216,7 @@ class Cmd(cmd.Cmd):
     whitespace_re = re.compile(r'\s+$')
     def wrap(self, s, newline=True, wrap=True, initial_indent='',
             subsequent_indent=''):
-        """Utility method for wrapping a paragraph of text to the terminal"""
+        "Wraps a paragraph of text to the terminal"
         suffix = ''
         if newline:
             suffix = '\n'
@@ -219,7 +232,7 @@ class Cmd(cmd.Cmd):
         return s + suffix
 
     def input(self, prompt=''):
-        """Utility method for prompting and reading input from the user"""
+        "Prompts and reads input from the user"
         lines = self.wrap(prompt, newline=False).split('\n')
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
@@ -230,14 +243,14 @@ class Cmd(cmd.Cmd):
 
     def pprint(self, s, newline=True, wrap=True,
             initial_indent='', subsequent_indent=''):
-        """Utility method for pretty-printing text to the terminal"""
+        "Pretty-prints text to the terminal"
         s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
         if isinstance(s, unicode):
             s = s.encode(ENCODING)
         self.stdout.write(s)
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
-        """Utility method for pretty-printing a table of data"""
+        "Pretty-prints a table of data"
         # Calculate the maximum length of each column. Note that zip(*data) is
         # a quick trick for transposing a list of lists, assuming each row in
         # data is of equal length
@@ -261,7 +274,8 @@ class Cmd(cmd.Cmd):
             ) + '\n')
 
     def do_help(self, arg):
-        """Displays the available commands or help on a specified command.
+        """
+        Displays the available commands or help on a specified command.
 
         The 'help' command is used to display the help text for a command or,
         if no command is specified, it presents a list of all available
@@ -307,9 +321,10 @@ class Cmd(cmd.Cmd):
                         subsequent_indent=indent)
 
     def do_exit(self, arg):
-        """Exits from the application.
+        """
+        Exits from the application.
 
-        Syntax: exit
+        Syntax: exit|quit
 
         The 'exit' command is used to terminate the application. You can also
         use the standard UNIX Ctrl+D end of file sequence to quit.
@@ -318,6 +333,8 @@ class Cmd(cmd.Cmd):
             raise CmdSyntaxError('Unknown argument %s' % arg)
         self.pprint('')
         return True
+
+    do_quit = do_exit
 
     do_EOF = do_exit
 

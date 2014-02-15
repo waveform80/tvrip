@@ -7,8 +7,8 @@ tvrip
 tvrip is a small command line script that brings together several other
 utilities (Handbrake, Atomic Parsley, GOCR, etc.) with the aim of making it
 relatively simple to rip whole seasons or series of TV episodes from DVD to
-high quality MP4s, along with optional subtitles (either ripped straight as
-images into VOBSUB or tranlsated into text SubRip).
+high quality MP4s, along with optional subtitles, alternate languages and
+director's commentaries.
 
 This package is also available in .deb form from ppa://waveform/ppa
 
@@ -18,21 +18,14 @@ Pre-requisites
 
 tvrip depends primarily on the following applications:
 
- * `Handbrake <http://handbrake.fr/>`_
+ * `Handbrake`_
 
- * `Atomic Parsley <http://atomicparsley.sourceforge.net>`_
+ * `Atomic Parsley`_
 
-If you wish to use OCR to convert DVD (picture-based) subtitles into SubRip
-(text-based) subtitles you will also need:
+As tvrip is written in the `Python`_ language, you will need a copy of this
+installed along with the following Python packages:
 
- * `GOCR <http://jocr.sourceforge.net>`_
-
- * `Transcode Utilities <http://tcforge.berlios.de>`_
-
-As tvrip is written in the `Python <http://www.python.org/>`_ language, you
-will need a copy of this installed along with the following Python packages:
-
- * `sqlalchemy <http://www.sqlalchemy.org>`_
+ * `sqlalchemy`_
 
 
 License
@@ -51,4 +44,10 @@ A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
 tvrip.  If not, see <http://www.gnu.org/licenses/>.
+
+
+.. _Python: http://www.python.org/
+.. _HandBrake: http://handbrake.fr/
+.. _AtomicParsley: http://atomicparsley.sourceforge.net/
+.. _sqlalchemy: http://www.sqlalchemy.org/
 

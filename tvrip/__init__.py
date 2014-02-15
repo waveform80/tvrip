@@ -1,4 +1,4 @@
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -14,4 +14,52 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"Main package for the tvrip application"
+"An application for extracting and transcoding DVDs of TV series"
+
+from __future__ import (
+    unicode_literals,
+    absolute_import,
+    print_function,
+    division,
+    )
+str = type('')
+
+__project__      = 'tvrip'
+__version__      = '0.8'
+__author__       = 'Dave Jones'
+__author_email__ = 'dave@waveform.org.uk'
+__url__          = 'https://github.com/waveform80/tvrip'
+__platforms__    = ['ALL']
+
+__classifiers__ = [
+    'Development Status :: 5 - Production/Stable',
+    'Environment :: Console',
+    'Intended Audience :: End Users/Desktop',
+    'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
+    'Operating System :: POSIX :: Linux',
+    'Operating System :: MacOS :: MacOS X',
+    'Programming Language :: Python :: 2.7',
+    'Programming Language :: Python :: 3.2',
+    'Programming Language :: Python :: 3.3',
+    'Topic :: Multimedia :: Video :: Conversion',
+    ]
+
+__keywords__ = [
+    'handbrake',
+    'tv',
+    'rip',
+    ]
+
+__requires__ = [
+    'sqlalchemy<1.0dev',
+    ]
+
+__extra_requires__ = {
+    }
+
+__entry_points__ = {
+    'console_scripts': [
+        'tvrip = tvrip.main:main',
+        ],
+    }
+

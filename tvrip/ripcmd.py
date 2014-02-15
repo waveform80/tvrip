@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,14 +16,15 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Implements the command line processor for the tvrip application"""
+"Implements the command line processor for the tvrip application"
 
 from __future__ import (
     unicode_literals,
-    print_function,
     absolute_import,
+    print_function,
     division,
     )
+str = type('')
 
 import os
 import re
@@ -102,12 +103,13 @@ class RipCmd(Cmd):
             raise CmdSyntaxError('You must not specify any arguments')
 
     def parse_episode(self, episode, must_exist=True):
-        """Parse a string containing an episode number.
+        """
+        Parse a string containing an episode number.
 
         Given a string representing an episode number, this method returns the
         Episode object from the current program's season with the corresponding
-        number, or throws an error if no such episode exists unless the optional
-        must_exist flag is set to False.
+        number, or throws an error if no such episode exists unless the
+        optional must_exist flag is set to False.
         """
         if not self.config.program:
             raise CmdError('No program has been set')
@@ -121,23 +123,23 @@ class RipCmd(Cmd):
         if episode < 1:
             raise CmdError(
                 'Episode number {} is less than one'.format(episode))
-        try:
-            return self.session.query(Episode).\
-                filter(Episode.season==self.config.season).\
-                filter(Episode.number==episode).one()
-        except sa.orm.exc.NoResultFound:
-            if must_exist:
-                raise CmdError(
-                    'There is no episode {episode} in '
-                    'season {season} of {program}'.format(
-                        episode=episode,
-                        season=self.config.season.number,
-                        program=self.config.program.name))
-            else:
-                return None
+        result = self.session.query(Episode).get((
+            self.config.program_name,
+            self.config.season_number,
+            episode,
+            ))
+        if result is None and must_exist:
+            raise CmdError(
+                'There is no episode {episode} in '
+                'season {season} of {program}'.format(
+                    episode=episode,
+                    season=self.config.season.number,
+                    program=self.config.program.name))
+        return result
 
     def parse_episode_range(self, episodes, must_exist=True):
-        """Parse a string containing an episode range.
+        """
+        Parse a string containing an episode range.
 
         Given a string representing a range of episodes as two dash-separated
         numbers, this method returns the Episode objects at the start and end
@@ -153,7 +155,8 @@ class RipCmd(Cmd):
         return start, finish
 
     def parse_episode_list(self, episodes, must_exist=True):
-        """Parse a string containing an episode list.
+        """
+        Parse a string containing an episode list.
 
         Given a string representing a list of episodes as a comma-separated
         list of numbers and number-ranges, this method returns a sequence of
@@ -167,7 +170,8 @@ class RipCmd(Cmd):
             ]
 
     def parse_title(self, title):
-        """Parse a string containing a title number.
+        """
+        Parse a string containing a title number.
 
         Given a string representing a title number, this method returns the
         Title object from the current disc with the corresponding number, or
@@ -192,7 +196,8 @@ class RipCmd(Cmd):
                 'There is no title {} on the scanned disc'.format(title))
 
     def parse_title_range(self, titles):
-        """Parse a string containing a title range.
+        """
+        Parse a string containing a title range.
 
         Given a string representing a range of titles as two dash-separated
         numbers, this method returns the Title objects at the start and end
@@ -204,7 +209,8 @@ class RipCmd(Cmd):
         return start, finish
 
     def parse_title_list(self, titles):
-        """Parse a string containing a title list.
+        """
+        Parse a string containing a title list.
 
         Given a string representing a list of titles as a comma-separated
         list of numbers and number-ranges, this method returns a sequence of
@@ -214,7 +220,8 @@ class RipCmd(Cmd):
         return [self.parse_title(i) for i in self.parse_number_list(titles)]
 
     def parse_chapter(self, title, chapter):
-        """Parse a string containing a chapter number.
+        """
+        Parse a string containing a chapter number.
 
         Given a string representing a chapter number, and the Title object that
         the chapter is presumed to exist within, this method returns the
@@ -235,7 +242,8 @@ class RipCmd(Cmd):
                     title=title.number))
 
     def parse_chapter_range(self, title, chapters):
-        """Parse a string containing a chapter range.
+        """
+        Parse a string containing a chapter range.
 
         Given a string representing a range of chapters as two dash-separated
         numbers, this method returns the Chapter objects at the start and end
@@ -250,7 +258,8 @@ class RipCmd(Cmd):
         return start, finish
 
     def parse_title_or_chapter(self, s):
-        """Parse a string containing a title or a title.chapter specification.
+        """
+        Parse a string containing a title or a title.chapter specification.
 
         Given a string representing a title, or a string with a dot-separated
         title and chapter, this method returns the Title or Chapter object that
@@ -263,7 +272,8 @@ class RipCmd(Cmd):
             return self.parse_title(s)
 
     def parse_title_or_chapter_range(self, s):
-        """Parse a string containing a title or a chapter-range specification.
+        """
+        Parse a string containing a title or a chapter-range specification.
 
         Given a string representing a title, or a title.start-end chapter
         range, this method returns a Title object or the (Chapter, Chapter)
@@ -279,16 +289,22 @@ class RipCmd(Cmd):
         "Removes all seasons from the specified program"
         if program is None:
             program = self.config.program
-        for season in self.session.query(Season).\
-                filter(Season.program==program):
+        for season in self.session.query(
+                Season
+            ).filter(
+                (Season.program == program)
+            ):
             self.session.delete(season)
 
     def clear_episodes(self, season=None):
         "Removes all episodes from the specified season"
         if season is None:
             season = self.config.season
-        for episode in self.session.query(Episode).\
-                filter(Episode.season==season):
+        for episode in self.session.query(
+                Episode
+            ).filter(
+                (Episode.season == season)
+            ):
             self.session.delete(episode)
 
     def pprint_disc(self):
@@ -366,8 +382,15 @@ class RipCmd(Cmd):
                     sa.func.count(Season.number.distinct()),
                     sa.func.count(Episode.number),
                     sa.func.count(Episode.disc_id)
-                ).outerjoin(Season).outerjoin(Episode).\
-                group_by(Program.name).order_by(Program.name):
+                ).outerjoin(
+                    Season
+                ).outerjoin(
+                    Episode
+                ).group_by(
+                    Program.name
+                ).order_by(
+                    Program.name
+                ):
             table.append((program, seasons, episodes,
                 '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
         self.pprint_table(table)
@@ -385,10 +408,15 @@ class RipCmd(Cmd):
                     Season.number,
                     sa.func.count(Episode.number),
                     sa.func.count(Episode.disc_id)
-                ).filter(Season.program==program).\
-                outerjoin(Episode).\
-                group_by(Season.number).\
-                order_by(Season.number):
+                ).filter(
+                    (Season.program == program)
+                ).outerjoin(
+                    Episode
+                ).group_by(
+                    Season.number
+                ).order_by(
+                    Season.number
+                ):
             table.append((season, episodes,
                 '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
         self.pprint_table(table)
@@ -404,8 +432,11 @@ class RipCmd(Cmd):
                 season=season.number, program=season.program.name))
         self.pprint('')
         table = [('Num', 'Title', 'Ripped')]
-        for episode in self.session.query(Episode).\
-                filter(Episode.season==season):
+        for episode in self.session.query(
+                Episode
+            ).filter(
+                (Episode.season == season)
+            ):
             table.append((
                 episode.number,
                 episode.name,
@@ -414,7 +445,8 @@ class RipCmd(Cmd):
         self.pprint_table(table)
 
     def do_config(self, arg=''):
-        """Shows the current set of configuration options.
+        """
+        Shows the current set of configuration options.
 
         Syntax: config
 
@@ -457,7 +489,8 @@ class RipCmd(Cmd):
             ' '.join(l.lang for l in self.config.subtitle_langs)))
 
     def do_path(self, arg):
-        """Sets a path to an external utility.
+        """
+        Sets a path to an external utility.
 
         Syntax: path <name> <value>
 
@@ -482,7 +515,8 @@ class RipCmd(Cmd):
                 'for valid options'.format(name))
 
     def do_audio_langs(self, arg):
-        """Sets the list of audio languages to rip.
+        """
+        Sets the list of audio languages to rip.
 
         Syntax: audio_langs <lang>...
 
@@ -504,7 +538,8 @@ class RipCmd(Cmd):
             self.session.add(AudioLanguage(self.config, lang=lang))
 
     def do_audio_mix(self, arg):
-        """Sets the audio mixdown
+        """
+        Sets the audio mixdown
 
         Syntax: audio_mix <mix-value>
 
@@ -534,7 +569,8 @@ class RipCmd(Cmd):
         self.config.audio_mix = arg
 
     def do_audio_all(self, arg):
-        """Sets whether to extract all language-matched audio tracks
+        """
+        Sets whether to extract all language-matched audio tracks
 
         Syntax: audio_all <off|on>
 
@@ -548,7 +584,8 @@ class RipCmd(Cmd):
         self.config.audio_all = self.parse_bool(arg)
 
     def do_subtitle_langs(self, arg):
-        """Sets the list of subtitle languages to rip.
+        """
+        Sets the list of subtitle languages to rip.
 
         Syntax: subtitle_langs <lang>...
 
@@ -571,7 +608,8 @@ class RipCmd(Cmd):
             self.session.add(SubtitleLanguage(self.config, lang=lang))
 
     def do_subtitle_format(self, arg):
-        """Sets the subtitle extraction mode
+        """
+        Sets the subtitle extraction mode
 
         Syntax: subtitle_format <format>
 
@@ -607,7 +645,8 @@ class RipCmd(Cmd):
         self.config.subtitle_format = arg
 
     def do_subtitle_all(self, arg):
-        """Sets whether to extract all language-matched subtitles
+        """
+        Sets whether to extract all language-matched subtitles
 
         Syntax: subtitle_all <off|on>
 
@@ -622,7 +661,8 @@ class RipCmd(Cmd):
         self.config.subtitle_all = self.parse_bool(arg)
 
     def do_decomb(self, arg):
-        """Sets the decomb option for video conversion.
+        """
+        Sets the decomb option for video conversion.
 
         Syntax: decomb <option>
 
@@ -641,7 +681,8 @@ class RipCmd(Cmd):
                 raise
 
     def do_duration(self, arg):
-        """Sets range of episode duration.
+        """
+        Sets range of episode duration.
 
         Syntax: duration <min>-<max>
 
@@ -660,7 +701,8 @@ class RipCmd(Cmd):
             )
 
     def do_episode(self, arg):
-        """Sets the name of a single episode.
+        """
+        Sets the name of a single episode.
 
         Syntax: episode <number> <name>
 
@@ -707,7 +749,8 @@ class RipCmd(Cmd):
             self.session.add(episode)
 
     def do_episodes(self, arg):
-        """Gets or sets the episodes for the current season.
+        """
+        Gets or sets the episodes for the current season.
 
         Syntax: episodes [number]
 
@@ -741,7 +784,8 @@ class RipCmd(Cmd):
             self.pprint_episodes()
 
     def do_season(self, arg):
-        """Sets which season of the program the disc contains.
+        """
+        Sets which season of the program the disc contains.
 
         Syntax: season <number>
 
@@ -765,20 +809,22 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(
                 'A season number must be 1 or higher '
                 '({} specified)'.format(arg))
-        try:
-            self.config.season = self.session.query(Season).\
-                filter(Season.program==self.config.program).\
-                filter(Season.number==arg).one()
-        except sa.orm.exc.NoResultFound:
+        self.config.season = self.session.query(
+                Season
+            ).get((
+                self.config.program.name,
+                arg
+            ))
+        if self.config.season is None:
             self.config.season = Season(self.config.program, arg)
-            self.session.add(self.config.season)
+            self.session.add(season)
             try:
                 count = int(self.input(
                     'Season {season} of program {program} is new. Please '
                     'enter the number of episodes in this season (enter 0 if '
                     'you do not wish to define episodes at this time) '
                     '[0-n] '.format(
-                        season=self.config.season.number,
+                        season=season.number,
                         program=self.config.program.name)))
             except ValueError:
                 while True:
@@ -798,14 +844,20 @@ class RipCmd(Cmd):
         "Auto-completer for season command"
         return [
             unicode(season.number) for season in
-            self.session.query(Season).\
-            filter(Season.program==self.config.program).\
-            filter("SUBSTR(CAST(season AS TEXT), 1, :length) = :season").\
-            params(length=len(text), season=text)
+            self.session.query(
+                    Season
+                ).filter(
+                    (Season.program==self.config.program) &
+                    ("SUBSTR(CAST(season AS TEXT), 1, :length) = :season")
+                ).params(
+                    length=len(text),
+                    season=text
+                )
             ]
 
     def do_seasons(self, arg=''):
-        """Shows the defined seasons of the current program.
+        """
+        Shows the defined seasons of the current program.
 
         Syntax: seasons
 
@@ -817,7 +869,8 @@ class RipCmd(Cmd):
         self.pprint_seasons()
 
     def do_program(self, arg):
-        """Sets the name of the program.
+        """
+        Sets the name of the program.
 
         Syntax: program <name>
 
@@ -830,18 +883,20 @@ class RipCmd(Cmd):
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
-        try:
-            self.config.program = self.session.query(Program).\
-                filter(Program.name==arg).one()
-        except sa.orm.exc.NoResultFound:
+        self.config.program = self.session.query(
+                    Program
+                ).get((
+                    arg,
+                ))
+        if self.config.program is None:
             self.config.program = Program(name=arg)
-            self.session.add(self.config.program)
+            self.session.add(program)
             try:
                 count = int(self.input(
                     'Program {} is new. How many seasons exist (enter '
                     '0 if you do not wish to define seasons and episodes '
                     'at this time)? [0-n] '.format(
-                        self.config.program.name)))
+                        program.name)))
             except ValueError:
                 while True:
                     try:
@@ -854,9 +909,13 @@ class RipCmd(Cmd):
             self.config.season = None
             for number in range(1, count + 1):
                 self.do_season(number)
-        self.config.season = self.session.query(Season).\
-            filter(Season.program==self.config.program).\
-            order_by(Season.number).first()
+        self.config.season = self.session.query(
+                Season
+            ).filter(
+                (Season.program==self.config.program)
+            ).order_by(
+                Season.number
+            ).first()
         self.episode_map.clear()
         self.map_ripped()
 
@@ -871,7 +930,8 @@ class RipCmd(Cmd):
             ]
 
     def do_programs(self, arg=''):
-        """Shows the defined programs.
+        """
+        Shows the defined programs.
 
         Syntax: programs
 
@@ -883,7 +943,8 @@ class RipCmd(Cmd):
         self.pprint_programs()
 
     def do_disc(self, arg=''):
-        """Displays information about the last scanned disc.
+        """
+        Displays information about the last scanned disc.
 
         Syntax: disc
 
@@ -896,7 +957,8 @@ class RipCmd(Cmd):
         self.pprint_disc()
 
     def do_title(self, arg):
-        """Displays information about the specified title(s).
+        """
+        Displays information about the specified title(s).
 
         Syntax: title <titles>
 
@@ -910,7 +972,8 @@ class RipCmd(Cmd):
             self.pprint_title(title)
 
     def do_play(self, arg):
-        """Plays the specified episode.
+        """
+        Plays the specified episode.
 
         Syntax: play <title[.chapter]>
 
@@ -924,7 +987,8 @@ class RipCmd(Cmd):
         self.parse_title_or_chapter(arg).play(self.config)
 
     def do_scan(self, arg):
-        """Scans the source device for episodes.
+        """
+        Scans the source device for episodes.
 
         Syntax: scan [titles]
 
@@ -961,20 +1025,21 @@ class RipCmd(Cmd):
         # was used but was found to be insufficient (manufacturers sometimes
         # repeat serial numbers or simply leave them blank), so a new mechanism
         # involving a hash of disc details was introduced.
-        for episode in self.session.query(Episode).\
-                filter(Episode.season==self.config.season).\
-                filter(
-                    sa.or_(
-                        sa.and_(
-                            Episode.disc_id.startswith('$H1$'),
-                            Episode.disc_id==self.disc.ident
-                        ),
-                        sa.and_(
-                            ~Episode.disc_id.startswith('$H1$'),
-                            Episode.disc_id==self.disc.serial
-                        )
+        for episode in self.session.query(
+                Episode
+            ).filter(
+                (Episode.season == self.config.season) &
+                (
+                    (
+                        (Episode.disc_id.startswith('$H1$')) &
+                        (Episode.disc_id == self.disc.ident)
+                    ) |
+                    (
+                        (~Episode.disc_id.startswith('$H1$')) &
+                        (Episode.disc_id == self.disc.serial)
                     )
-                ):
+                )
+            ):
             try:
                 title = [
                     t for t in self.disc.titles
@@ -996,7 +1061,8 @@ class RipCmd(Cmd):
                         )
 
     def do_automap(self, arg):
-        """Maps episodes to titles or chapter ranges automatically.
+        """
+        Maps episodes to titles or chapter ranges automatically.
 
         Syntax: automap [episodes [titles]]
 
@@ -1025,10 +1091,14 @@ class RipCmd(Cmd):
         else:
             episodes = titles = '*'
         if episodes == '*':
-            episodes = self.session.query(Episode).\
-                filter(Episode.season==self.config.season).\
-                filter(Episode.disc_id==None).\
-                order_by(Episode.number).all()
+            episodes = self.session.query(
+                    Episode
+                ).filter(
+                    (Episode.season == self.config.season) &
+                    (Episode.disc_id == None)
+                ).order_by(
+                    Episode.number
+                ).all()
         else:
             episodes = self.parse_episode_list(episodes)
         if titles == '*':
@@ -1086,7 +1156,8 @@ class RipCmd(Cmd):
         return mappings[0]
 
     def do_map(self, arg=''):
-        """Maps episodes to titles or chapter ranges.
+        """
+        Maps episodes to titles or chapter ranges.
 
         Syntax: map [episode title[.start-end]]
 
@@ -1168,7 +1239,8 @@ class RipCmd(Cmd):
                 self.pprint('Episode map is currently empty')
 
     def do_unmap(self, arg):
-        """Removes an episode mapping.
+        """
+        Removes an episode mapping.
 
         Syntax: unmap <episodes>
 
@@ -1198,7 +1270,8 @@ class RipCmd(Cmd):
                     'map'.format(episode=episode))
 
     def do_rip(self, arg=''):
-        """Starts the ripping and transcoding process.
+        """
+        Starts the ripping and transcoding process.
 
         Syntax: rip
 
@@ -1256,13 +1329,15 @@ class RipCmd(Cmd):
                         episode.end_chapter = None
 
     def do_unrip(self, arg):
-        """Changes the status of the specified episode to unripped.
+        """
+        Changes the status of the specified episode to unripped.
 
         Syntax: unrip <episodes>
 
         The 'unrip' command is used to set the status of an episode or episodes
         to unripped. Episodes may be specified as a range (1-5) or as a comma
-        separated list (4,2,1) or some combination (1,3-5).
+        separated list (4,2,1) or some combination (1,3-5), or '*' to indicate
+        all episodes in the currently selected season.
 
         Episodes are automatically set to ripped during the operation of the
         'rip' command.  Episodes marked as ripped will be automatically mapped
@@ -1272,7 +1347,17 @@ class RipCmd(Cmd):
         (tvrip) unrip 3
         (tvrip) unrip 7
         """
-        for episode in self.parse_episode_list(arg, must_exist=False):
+        episodes = arg
+        if episodes == '*':
+            episodes = self.session.query(
+                    Episode
+                ).filter(
+                    (Episode.season == self.config.season) &
+                    (Episode.disc_id != None)
+                )
+        else:
+            episodes = self.parse_episode_list(episodes, must_exist=False)
+        for episode in episodes:
             if episode:
                 episode.disc_id = None
                 episode.disc_title = None
@@ -1280,7 +1365,8 @@ class RipCmd(Cmd):
                 episode.end_chapter = None
 
     def do_source(self, arg):
-        """Sets the source device.
+        """
+        Sets the source device.
 
         Syntax: source <device>
 
@@ -1302,7 +1388,8 @@ class RipCmd(Cmd):
                 start, finish)
 
     def do_target(self, arg):
-        """Sets the target path.
+        """
+        Sets the target path.
 
         Syntax: target <path>
 
@@ -1324,7 +1411,8 @@ class RipCmd(Cmd):
                 start, finish)
 
     def do_temp(self, arg):
-        """Sets the temporary files path.
+        """
+        Sets the temporary files path.
 
         Syntax: temp <path>
 
@@ -1349,7 +1437,8 @@ class RipCmd(Cmd):
                 start, finish)
 
     def do_template(self, arg):
-        """Sets the template used for filenames.
+        """
+        Sets the template used for filenames.
 
         Syntax: template <string>
 

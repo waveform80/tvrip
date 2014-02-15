@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012 Dave Hughes.
+# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,14 +16,15 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Contains a cross-platform terminal size querying routine"""
+"Provides a cross-platform terminal size querying routine"
 
 from __future__ import (
     unicode_literals,
-    print_function,
     absolute_import,
+    print_function,
     division,
     )
+str = type('')
 
 import sys
 import struct
@@ -46,7 +47,7 @@ if sys.platform.startswith('win'):
                 if ctypes.windll.kernel32.GetConsoleScreenBufferInfo(
                         handle, buf):
                     (left, top, right, bottom) = struct.unpack(
-                        str('hhhhHhhhhhh'), buf.raw)[5:9]
+                        b'hhhhHhhhhhh', buf.raw)[5:9]
                     return (right - left + 1, bottom - top + 1)
             return None
 
@@ -74,7 +75,7 @@ else:
             "Subroutine for querying terminal size from std handle"
             try:
                 buf = fcntl.ioctl(handle, termios.TIOCGWINSZ, '12345678')
-                row, col = struct.unpack(str('hhhh'), buf)[0:2]
+                row, col = struct.unpack(b'hhhh', buf)[0:2]
                 return (col, row)
             except IOError:
                 return None
