@@ -32,13 +32,6 @@ tvrip depends primarily on the following applications:
 
  * `Atomic Parsley <http://atomicparsley.sourceforge.net>`_
 
-If you wish to use OCR to convert DVD (picture-based) subtitles into SubRip
-(text-based) subtitles you will also need:
-
- * `GOCR <http://jocr.sourceforge.net>`_
-
- * `Transcode Utilities <http://tcforge.berlios.de>`_
-
 As tvrip is written in the `Python <http://www.python.org/>`_ language, you
 will need a copy of this installed along with the following Python packages:
 
@@ -73,12 +66,6 @@ following command lines::
    $ svn co http://www.waveform.org.uk/svn/tvrip/trunk tvrip
    $ cd tvrip
    $ make develop
-
-
-Microsoft Windows
-=================
-
-XXX To be written
 
 
 Apple Mac OS X
