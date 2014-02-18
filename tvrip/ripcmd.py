@@ -817,14 +817,14 @@ class RipCmd(Cmd):
             ))
         if self.config.season is None:
             self.config.season = Season(self.config.program, arg)
-            self.session.add(season)
+            self.session.add(self.config.season)
             try:
                 count = int(self.input(
                     'Season {season} of program {program} is new. Please '
                     'enter the number of episodes in this season (enter 0 if '
                     'you do not wish to define episodes at this time) '
                     '[0-n] '.format(
-                        season=season.number,
+                        season=self.config.season.number,
                         program=self.config.program.name)))
             except ValueError:
                 while True:
@@ -890,13 +890,13 @@ class RipCmd(Cmd):
                 ))
         if self.config.program is None:
             self.config.program = Program(name=arg)
-            self.session.add(program)
+            self.session.add(self.config.program)
             try:
                 count = int(self.input(
                     'Program {} is new. How many seasons exist (enter '
                     '0 if you do not wish to define seasons and episodes '
                     'at this time)? [0-n] '.format(
-                        program.name)))
+                        self.config.program.name)))
             except ValueError:
                 while True:
                     try:
