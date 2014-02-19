@@ -1102,9 +1102,13 @@ class RipCmd(Cmd):
         else:
             episodes = self.parse_episode_list(episodes)
         if titles == '*':
-            titles = list(self.disc.titles)
+            titles = [
+                    title for title in self.disc.titles
+                    if title not in self.episode_map.values()
+                    ]
         else:
             titles = self.parse_title_list(titles)
+        self.map_ripped()
         try:
             self.episode_map.automap(
                 titles, episodes, self.config.duration_min,

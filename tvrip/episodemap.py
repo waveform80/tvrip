@@ -146,10 +146,14 @@ class EpisodeMap(dict):
             assert isinstance(finish, Chapter)
         except (TypeError, ValueError):
             assert isinstance(value, Title)
+        assert (value not in self.values()) or (self[key] == value)
         super(EpisodeMap, self).__setitem__(key, value)
 
     def keys(self):
         return [k for k in self]
+
+    def values(self):
+        return [self[k] for k in self]
 
     def iterkeys(self):
         for k in self:
