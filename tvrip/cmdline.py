@@ -116,7 +116,7 @@ class Cmd(cmd.Cmd):
         """
         try:
             start, finish = (int(i) for i in s.split('-', 1))
-        except ValueError, exc:
+        except ValueError as exc:
             raise CmdSyntaxError(exc)
         if finish < start:
             raise CmdSyntaxError(
@@ -139,7 +139,7 @@ class Cmd(cmd.Cmd):
             else:
                 try:
                     result.append(int(i))
-                except ValueError, exc:
+                except ValueError as exc:
                     raise CmdSyntaxError(exc)
         return result
 
@@ -210,7 +210,7 @@ class Cmd(cmd.Cmd):
         # of them
         try:
             return cmd.Cmd.onecmd(self, line)
-        except CmdError, exc:
+        except CmdError as exc:
             self.pprint(unicode(exc) + '\n')
 
     whitespace_re = re.compile(r'\s+$')

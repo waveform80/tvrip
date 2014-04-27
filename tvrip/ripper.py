@@ -37,7 +37,14 @@ from operator import attrgetter
 from itertools import groupby
 from subprocess import Popen, PIPE, STDOUT
 
-AUDIO_MIX_ORDER = ['5.1 ch', '5.0 ch', 'Dolby Surround', '2.0 ch', '1.0 ch']
+AUDIO_MIX_ORDER = [
+    '5.1 ch',
+    '5.0 ch',
+    'Dolby Surround',
+    '3.1 ch',
+    '2.0 ch',
+    '1.0 ch',
+    ]
 AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 
 
@@ -111,7 +118,8 @@ class Disc(object):
     audio_track_re = re.compile(
         r'^    \+ (?P<number>\d+), '
         r'(?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? '
-        r'\((?P<channel_mix>[^)]*)\) \(iso639-2: (?P<language>[a-z]{2,3})\), '
+        r'\((?P<channel_mix>\d+\.\d+ ch)\)( \(Dolby [^)]*\))? '
+        r'\(iso639-2: (?P<language>[a-z]{2,3})\), '
         r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$', re.UNICODE)
     subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$', re.UNICODE)
     subtitle_track_re = re.compile(
