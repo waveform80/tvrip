@@ -1055,10 +1055,27 @@ class RipCmd(Cmd):
                 if episode.start_chapter is None:
                     self.episode_map[episode] = title
                 else:
-                    self.episode_map[episode] = (
-                        title.chapters[episode.start_chapter],
-                        title.chapters[episode.end_chapter]
-                        )
+                    try:
+                        start_chapter = [
+                            c for c in title.chapters
+                            if c.number == episode.start_chapter
+                            ][0]
+                        end_chapter = [
+                            c for c in title.chapters
+                            if c.number == episode.end_chapter
+                            ][0]
+                    except IndexError:
+                        self.pprint(
+                            'Warning: previously ripped chapters '
+                            '{start_chapter}, {end_chapter} not '
+                            'found in title {title} on the scanned disc '
+                            '(id {id})'.format(
+                                start_chapter=episode.start_chapter,
+                                end_chapter=episode.end_chapter,
+                                title=title.number,
+                                id=episode.disc_id))
+                    else:
+                        self.episode_map[episode] = (start_chapter, end_chapter)
 
     def do_automap(self, arg):
         """
