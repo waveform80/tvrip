@@ -702,29 +702,64 @@ class RipCmd(Cmd):
 
     def do_episode(self, arg):
         """
-        Sets the name of a single episode.
+        Modifies a single episode in the current season.
 
-        Syntax: episode <number> <name>
+        Syntax: episode <insert|update|delete> <number> [name]
 
-        The 'episode' command can be used to display the name of the
-        specified episode or, if two arguments are given, will redefine the
-        name of the specified episode.
+        The 'episode' command is used to modify the details of a single episode
+        in the current season. If the first parameter is "insert", then the
+        episode will be inserted at the specified position, shifting any
+        existing, and all subsequent episodes up (numerically). If the first
+        parameter is "update", then the numbered episode is renamed. Finally,
+        if the first parameter is "delete", then the numbered episode is
+        removed, shifting all subsequent episodes down (numerically). In this
+        case, name does not need to be specified.
         """
+        if not self.config.season:
+            raise CmdError('No season has been set')
+        season = self.config.season
         try:
-            (number, name) = arg.split(' ', 1)
+            (op, number) = arg.split(' ', 1)
         except (TypeError, ValueError):
-            raise CmdSyntaxError('You must specify an episode number and name')
-        episode = self.parse_episode(number, must_exist=False)
-        if episode is None:
-            episode = Episode(self.config.season, number, name)
+            raise CmdSyntaxError(
+                'You must specify an operation and an episode number')
+        op = op.strip().lower()[:3]
+        if op in ('ins', 'upd'):
+            try:
+                (_, number, name) = arg.split(' ', 2)
+            except (TypeError, ValueError):
+                raise CmdSyntaxError(
+                    'You must specify an episode number and name for insert/update')
+        elif op != 'del':
+            raise CmdSyntaxError(
+                'Episode operation must be one of insert/update/delete')
+        try:
+            number = int(number)
+        except ValueError:
+            raise CmdSyntaxError(
+                '{} is not a valid episode number'.format(number))
+
+        if op == 'ins':
+            # Shift all later episodes along 1
+            for episode in self.session.query(
+                    Episode
+                ).filter(
+                    (Episode.season == season) &
+                    (Epsiode.number >= number)
+                ).order_by(
+                    Episode.number.desc()
+                ):
+                episode.number += 1
+            episode = Episode(season, number, name)
             self.session.add(episode)
             self.pprint(
-                'Added episode {episode} to season {season} '
+                'Inserted episode {episode} to season {season} '
                 'of {program}'.format(
                     episode=episode.number,
                     season=episode.season.number,
                     program=episode.season.program.name))
-        else:
+        elif op == 'upd':
+            episode = self.parse_episode(number)
             episode.name = name
             self.pprint(
                 'Renamed episode {episode} of season {season} '
@@ -732,6 +767,27 @@ class RipCmd(Cmd):
                     episode=episode.number,
                     season=episode.season.number,
                     program=episode.season.program.name))
+        elif op == 'del':
+            # Shift all later episodes down 1
+            episode = self.parse_episode(number)
+            self.session.delete(episode)
+            for episode in self.session.query(
+                    Episode
+                ).filter(
+                    (Episode.season == season) &
+                    (Episode.number > number)
+                ).order_by(
+                    Episode.number
+                ):
+                episode.number -= 1
+            self.pprint(
+                'Deleted episode {episode} to season {season} '
+                'of {program}'.format(
+                    episode=number,
+                    season=season.number,
+                    program=season.program.name))
+        else:
+            assert False
 
     def create_episodes(self, count, season=None):
         "Creates the specified number of episodes in the current season"
