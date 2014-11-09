@@ -25,7 +25,7 @@ from __future__ import (
 str = type('')
 
 __project__      = 'tvrip'
-__version__      = '0.8'
+__version__      = '0.9'
 __author__       = 'Dave Jones'
 __author_email__ = 'dave@waveform.org.uk'
 __url__          = 'https://github.com/waveform80/tvrip'

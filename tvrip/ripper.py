@@ -143,6 +143,8 @@ class Disc(object):
             '--min-duration', '300', # only scan titles >5 minutes
             '--scan',                # scan only
             ]
+        if not config.dvdnav:
+            cmdline.append('--no-dvdnav')
         process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
         output = process.communicate()[0]
         state = set(['disc'])
@@ -303,6 +305,8 @@ class Disc(object):
             '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
             '-A', ','.join(name         for (_, _, name) in audio_defs),
             ]
+        if not config.dvdnav:
+            cmdline.append('--no-dvdnav')
         if start_chapter:
             cmdline.append('-c')
             if end_chapter:

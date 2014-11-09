@@ -217,6 +217,7 @@ class Configuration(DeclarativeBase):
     audio_langs = relationship('AudioLanguage', backref='config')
     subtitle_all = Column(Boolean, nullable=False, default=False)
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
+    dvdnav = Column(Boolean, nullable=False, default=True)
     paths = relationship('ConfigPath', backref='config')
 
     def _get_duration_min(self):

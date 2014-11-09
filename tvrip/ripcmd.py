@@ -487,6 +487,24 @@ class RipCmd(Cmd):
             ['off', 'on'][self.config.subtitle_all]))
         self.pprint('subtitle_langs   = {}'.format(
             ' '.join(l.lang for l in self.config.subtitle_langs)))
+        self.pprint('dvdnav           = {}'.format(
+            ['no', 'yes'][self.config.dvdnav]))
+
+    def do_dvdnav(self, arg):
+        """
+        Sets whether libdvdnav or libdvdread are used by HandBrake.
+
+        Syntax: dvdnav <off|on>
+
+        The 'dvdnav' command is used to configure the library HandBrake will
+        use for reading DVDs. The default is 'on' meaning that libdvdnav will
+        be used; if 'off' is specified, libdvdread will be used instead. For
+        example:
+
+        (tvrip) dvdnav off
+        (tvrip) dvdnav on
+        """
+        self.config.dvdnav = self.parse_bool(arg)
 
     def do_path(self, arg):
         """
