@@ -84,7 +84,8 @@ class Disc(object):
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
         h = sha1()
-        h.update(self.serial)
+        if self.serial:
+            h.update(self.serial)
         h.update(str(len(self.titles)))
         for title in self.titles:
             h.update(str(title.duration))
