@@ -1200,6 +1200,16 @@ class RipCmd(Cmd):
         else:
             titles = self.parse_title_list(titles)
         self.map_ripped()
+        # Re-filter episode and title list to exclude titles that map_ripped()
+        # has dealt with
+        episodes = [
+            episode for episode in episodes
+            if episode not in self.episode_map
+            ]
+        titles = [
+            title for title in titles
+            if title not in self.episode_map.values()
+            ]
         try:
             self.episode_map.automap(
                 titles, episodes, self.config.duration_min,
@@ -1348,9 +1358,12 @@ class RipCmd(Cmd):
         (tvrip) unmap 7
         (tvrip) unmap *
         """
+        if not arg:
+            raise CmdSyntaxError(
+                'You must specify a list of episodes to remove from the mapping')
         episodes = arg
         if episodes == '*':
-            episodes = self.episode_map.keys()
+            episodes = list(self.episode_map.keys())
         else:
             episodes = self.parse_episode_list(episodes)
         for episode in episodes:
@@ -1442,6 +1455,9 @@ class RipCmd(Cmd):
         (tvrip) unrip 3
         (tvrip) unrip 7
         """
+        if not arg:
+            raise CmdSyntaxError(
+                'You must specify a list of episodes to mark as unripped')
         episodes = arg
         if episodes == '*':
             episodes = self.session.query(
