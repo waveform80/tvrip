@@ -763,7 +763,7 @@ class RipCmd(Cmd):
                     Episode
                 ).filter(
                     (Episode.season == season) &
-                    (Epsiode.number >= number)
+                    (Episode.number >= number)
                 ).order_by(
                     Episode.number.desc()
                 ):
