@@ -31,8 +31,9 @@ import tempfile
 
 from sqlalchemy import (
     Column, ForeignKeyConstraint, ForeignKey,
-    CheckConstraint, create_engine
+    CheckConstraint, create_engine, event
 )
+from sqlalchemy.engine import Engine
 from sqlalchemy.types import Unicode, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, synonym, sessionmaker
@@ -43,6 +44,13 @@ from tvrip.const import DATADIR
 
 Session = sessionmaker()
 DeclarativeBase = declarative_base()
+
+# Enable foreign keys in SQLite
+@event.listens_for(Engine, 'connect')
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 class Episode(DeclarativeBase):
@@ -97,7 +105,6 @@ class Season(DeclarativeBase):
     number = Column(Integer, CheckConstraint('number >= 1'), primary_key=True)
     episodes = relationship('Episode', backref='season',
         order_by=[Episode.number])
-    selected = relationship('Configuration', backref='season', uselist=False)
 
     def __init__(self, program, number):
         self.program = program
@@ -114,7 +121,6 @@ class Program(DeclarativeBase):
 
     name = Column(Unicode(200), primary_key=True)
     seasons = relationship('Season', backref='program', order_by=[Season.number])
-    selected = relationship('Configuration', backref='program', uselist=False)
 
     def __init__(self, name):
         self.name = name
@@ -219,6 +225,10 @@ class Configuration(DeclarativeBase):
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
     dvdnav = Column(Boolean, nullable=False, default=True)
     paths = relationship('ConfigPath', backref='config')
+    program = relationship('Program')
+    season = relationship('Season', primaryjoin=
+            'and_(Season.program_name == Configuration.program_name, '
+            'Season.number == foreign(Configuration.season_number))')
 
     def _get_duration_min(self):
         return timedelta(minutes=self._duration_min)

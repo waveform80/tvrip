@@ -51,7 +51,7 @@ __keywords__ = [
     ]
 
 __requires__ = [
-    'sqlalchemy<1.0dev',
+    'sqlalchemy<2.0dev',
     ]
 
 __extra_requires__ = {
