@@ -126,7 +126,7 @@ class Disc():
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
         output = proc.check_output(cmdline, stderr=proc.STDOUT, universal_newlines=True)
-        state = set(['disc'])
+        state = {'disc'}
         title = None
         # Parse the output into child objects
         for line in output.splitlines():
@@ -147,29 +147,29 @@ class Disc():
                         title.audio_tracks, key=attrgetter('number'))
                     title.subtitle_tracks = sorted(
                         title.subtitle_tracks, key=attrgetter('number'))
-                state = set(['disc', 'title'])
+                state = {'disc', 'title'}
                 title = Title(self)
                 title.number = int(self.match.group('number'))
             elif 'title' in state and _match(self.duration_re, line):
-                state = set(['disc', 'title'])
+                state = {'disc', 'title'}
                 hours, minutes, seconds = (
                     int(i) for i in self.match.group('duration').split(':'))
                 title.duration = dt.timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
             elif 'title' in state and _match(self.stats_re, line):
-                state = set(['disc', 'title'])
+                state = {'disc', 'title'}
                 title.size = (
                     int(i) for i in self.match.group('size').split('x'))
                 title.aspect_ratio = float(self.match.group('aspect_ratio'))
                 title.frame_rate = float(self.match.group('frame_rate'))
             elif 'title' in state and _match(self.crop_re, line):
-                state = set(['disc', 'title'])
+                state = {'disc', 'title'}
                 title.crop = (
                     int(i) for i in self.match.group('crop').split('/'))
             elif 'title' in state and _match(self.comb_re, line):
                 title.interlaced = True
             elif 'title' in state and _match(self.chapters_re, line):
-                state = set(['disc', 'title', 'chapter'])
+                state = {'disc', 'title', 'chapter'}
             elif 'chapter' in state and _match(self.chapter_re, line):
                 chapter = Chapter(title)
                 chapter.number = int(self.match.group('number'))
@@ -178,7 +178,7 @@ class Disc():
                 chapter.duration = dt.timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
             elif 'title' in state and _match(self.audio_tracks_re, line):
-                state = set(['disc', 'title', 'audio'])
+                state = {'disc', 'title', 'audio'}
             elif 'audio' in state and _match(self.audio_track_re, line):
                 track = AudioTrack(title)
                 track.number = int(self.match.group('number'))
@@ -193,11 +193,9 @@ class Disc():
                 track.channel_mix = str(self.match.group('channel_mix'))
                 track.sample_rate = int(self.match.group('sample_rate'))
                 track.bit_rate = int(self.match.group('bit_rate'))
-            elif 'title' in state and _match(
-                    self.subtitle_tracks_re, line):
-                state = set(['disc', 'title', 'subtitle'])
-            elif 'subtitle' in state and _match(
-                    self.subtitle_track_re, line):
+            elif 'title' in state and _match(self.subtitle_tracks_re, line):
+                state = {'disc', 'title', 'subtitle'}
+            elif 'subtitle' in state and _match(self.subtitle_track_re, line):
                 track = SubtitleTrack(title)
                 track.number = int(self.match.group('number'))
                 track.name = str(self.match.group('name'))

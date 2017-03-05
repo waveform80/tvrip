@@ -454,11 +454,9 @@ class RipCmd(Cmd):
             self.pprint('{name:<16} = {value}'.format(
                 name=path.name, value=path.path))
         self.pprint('')
-        self.pprint('Ripping Configuration:')
+        self.pprint('Scanning Configuration:')
         self.pprint('')
         self.pprint('source           = {}'.format(self.config.source))
-        self.pprint('target           = {}'.format(self.config.target))
-        self.pprint('temp             = {}'.format(self.config.temp))
         self.pprint('duration         = {min}-{max} (mins)'.format(
             min=self.config.duration_min.seconds / 60,
             max=self.config.duration_max.seconds / 60))
@@ -468,6 +466,11 @@ class RipCmd(Cmd):
         self.pprint('season           = {}'.format(
             self.config.season.number if self.config.season else '<none set>'
         ))
+        self.pprint('')
+        self.pprint('Ripping Configuration:')
+        self.pprint('')
+        self.pprint('target           = {}'.format(self.config.target))
+        self.pprint('temp             = {}'.format(self.config.temp))
         self.pprint('template         = {}'.format(self.config.template))
         self.pprint('decomb           = {}'.format(self.config.decomb))
         self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
