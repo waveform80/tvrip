@@ -355,6 +355,36 @@ class Title():
         return '<Title({})>'.format(self.number)
 
     @property
+    def duplicate(self):
+        """
+        Returns a string indicating the duplicate state of this title: 'no' if
+        the title isn't a duplicate, 'first' if it's the first in a set of
+        duplicates, 'last' if it's the last in a set of duplicates, and 'yes'
+        otherwise (the title is in the middle of 3 or more duplicates).
+        """
+        if self.previous is None:
+            if self.next is not None and self.next.duration == self.duration:
+                return 'first'
+            else:
+                return 'no'
+        elif self.next is None:
+            if self.previous is not None and self.previous.duration == self.duration:
+                return 'last'
+            else:
+                return 'no'
+        else:
+            if self.next.duration == self.duration:
+                if self.previous.duration == self.duration:
+                    return 'yes'
+                else:
+                    return 'first'
+            else:
+                if self.previous.duration == self.duration:
+                    return 'last'
+                else:
+                    return 'no'
+
+    @property
     def previous(self):
         "Returns the prior chapter within the disc or None"
         i = self.disc.titles.index(self)

@@ -310,12 +310,13 @@ class RipCmd(Cmd):
         self.pprint('Disc name: {}'.format(self.disc.name))
         self.pprint('Disc has {} titles'.format(len(self.disc.titles)))
         self.pprint('')
-        table = [('Title', 'Chapters', 'Duration', 'Audio')]
+        table = [('Title', 'Chapters', 'Duration', 'Dup', 'Audio')]
         for title in self.disc.titles:
             table.append((
                 title.number,
                 len(title.chapters),
                 title.duration,
+                {'first': ' ┐', 'yes': ' │', 'last': ' ┘', 'no': ''}[title.duplicate],
                 ' '.join(track.language for track in title.audio_tracks)
                 ))
         self.pprint_table(table)
@@ -326,8 +327,10 @@ class RipCmd(Cmd):
             raise CmdError('No disc has been scanned yet')
         elif not self.disc.titles:
             raise CmdError('No titles found on the scanned disc')
-        self.pprint('Title {title} (duration: {duration})'.format(
-            title=title.number, duration=title.duration))
+        self.pprint(
+            'Title {title}, duration: {duration}, duplicate: {duplicate}'.format(
+            title=title.number, duration=title.duration,
+            duplicate=title.duplicate))
         self.pprint('')
         table = [('Chapter', 'Start', 'Finish', 'Duration')]
         for chapter in title.chapters:
@@ -460,6 +463,7 @@ class RipCmd(Cmd):
         self.pprint('duration         = {min}-{max} (mins)'.format(
             min=self.config.duration_min.seconds / 60,
             max=self.config.duration_max.seconds / 60))
+        self.pprint('duplicates       = {}'.format(self.config.duplicates))
         self.pprint('program          = {}'.format(
             self.config.program.name if self.config.program else '<none set>'
         ))
@@ -502,6 +506,34 @@ class RipCmd(Cmd):
         (tvrip) dvdnav on
         """
         self.config.dvdnav = self.parse_bool(arg)
+
+    def do_duplicates(self, arg):
+        """
+        Sets how duplicate titles on a disc are handled.
+
+        Syntax: duplicates <all|first|last>
+
+        The 'duplicates' command is used to configure how tvrip should handle
+        duplicate titles on a disc. Duplicate titles are defined as consecutive
+        titles with precisely the same length (these are commonly found in some
+        collections, e.g. where separate titles have been defined simply for
+        audio commentaries).
+
+        The default is 'all' which means duplicate titles should be treated
+        normally and included along with all other titles for auto-mapping.
+        When set to 'first', only the first title of a duplicate set will be
+        considered for auto-mapping. Likewise, 'last' includes only the last
+        title of a duplicate set on the disc. Duplicates can still be manually
+        mapped and ripped; this option only affects auto-mapping. Examples:
+
+        (tvrip) duplicates first
+        (tvrip) duplicates all
+        """
+        arg = arg.strip().lower()
+        if arg not in ('all', 'first', 'last'):
+            raise CmdSyntaxError(
+                '"{}" is not a valid option for duplicates'.format(arg))
+        self.config.duplicates = arg
 
     def do_path(self, arg):
         """
@@ -679,7 +711,7 @@ class RipCmd(Cmd):
         """
         Sets the decomb option for video conversion.
 
-        Syntax: decomb <option>
+        Syntax: decomb <off|on|auto>
 
         The 'decomb' command sets the decomb setting for the video converter.
         Valid settings are currently 'off', 'on', and 'auto'. For example:
@@ -1211,6 +1243,13 @@ class RipCmd(Cmd):
         titles = [
             title for title in titles
             if title not in self.episode_map.values()
+            ]
+        # Filter out duplicate titles on the disc
+        titles = [
+            title for title in titles
+            if title.duplicate == 'no'
+            or self.config.duplicates == 'all'
+            or self.config.duplicates == title.duplicate
             ]
         try:
             self.episode_map.automap(

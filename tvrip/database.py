@@ -216,6 +216,9 @@ class Configuration(DeclarativeBase):
     subtitle_all = Column(Boolean, nullable=False, default=False)
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
     dvdnav = Column(Boolean, nullable=False, default=True)
+    duplicates = Column(Unicode(5),
+        CheckConstraint("duplicates in ('all', 'first', 'last')"),
+        nullable=False, default='all')
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
     season = relationship('Season', primaryjoin=
