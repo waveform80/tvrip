@@ -36,9 +36,9 @@ class TVRipApplication(TerminalApplication):
     This command line interface simplifies the extraction and transcoding of a
     DVD containing a TV series (or a season of a TV series) via HandBrake.
     """
-    def main(self, options, args):
+    def main(self, args):
         # Start the interpreter
-        cmd = RipCmd()
+        cmd = RipCmd(debug=args.debug)
         cmd.pprint('TVRip %s' % __version__)
         cmd.pprint('Type "help" for more information.')
         cmd.cmdloop()

@@ -23,11 +23,11 @@ import os
 import re
 import shutil
 import tempfile
+import datetime as dt
+import subprocess as proc
 from hashlib import sha1
-from datetime import datetime, date, timedelta, MINYEAR
 from operator import attrgetter
 from itertools import groupby
-from subprocess import Popen, PIPE, STDOUT
 
 AUDIO_MIX_ORDER = [
     '5.1 ch',
@@ -40,20 +40,7 @@ AUDIO_MIX_ORDER = [
 AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 
 
-class Error(Exception):
-    "Base class for ripper errors"
-
-class ProcessError(Error):
-    "Class for errors returned by external processes"
-
-class RipperError(ProcessError):
-    "Class for errors returned by HandBrake"
-
-class TaggerError(ProcessError):
-    "Class for errors returned by AtomicParsley"
-
-
-class Disc(object):
+class Disc():
     "Represents a DVD disc"
 
     def __init__(self):
@@ -78,13 +65,13 @@ class Disc(object):
         h = sha1()
         if self.serial:
             h.update(self.serial)
-        h.update(str(len(self.titles)))
+        h.update(str(len(self.titles)).encode())
         for title in self.titles:
-            h.update(str(title.duration))
-            h.update(str(len(title.chapters)))
+            h.update(str(title.duration).encode())
+            h.update(str(len(title.chapters)).encode())
             for chapter in title.chapters:
-                h.update(str(chapter.start))
-                h.update(str(chapter.duration))
+                h.update(str(chapter.start).encode())
+                h.update(str(chapter.duration).encode())
         self.ident = '$H1$' + h.hexdigest()
 
     error1_re = re.compile(
@@ -138,8 +125,7 @@ class Disc(object):
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
-        process = Popen(cmdline, stdout=PIPE, stderr=STDOUT)
-        output = process.communicate()[0]
+        output = proc.check_output(cmdline, stderr=proc.STDOUT, universal_newlines=True)
         state = set(['disc'])
         title = None
         # Parse the output into child objects
@@ -152,7 +138,7 @@ class Disc(object):
             if 'disc' in state and _match(self.disc_name_re, line):
                 self.name = self.match.group('name')
             elif 'disc' in state and _match(self.disc_serial_re, line):
-                self.serial = unicode(self.match.group('serial'))
+                self.serial = str(self.match.group('serial'))
             elif 'disc' in state and _match(self.title_re, line):
                 if title:
                     title.chapters = sorted(
@@ -168,7 +154,7 @@ class Disc(object):
                 state = set(['disc', 'title'])
                 hours, minutes, seconds = (
                     int(i) for i in self.match.group('duration').split(':'))
-                title.duration = timedelta(
+                title.duration = dt.timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
             elif 'title' in state and _match(self.stats_re, line):
                 state = set(['disc', 'title'])
@@ -189,7 +175,7 @@ class Disc(object):
                 chapter.number = int(self.match.group('number'))
                 hours, minutes, seconds = (
                     int(i) for i in self.match.group('duration').split(':'))
-                chapter.duration = timedelta(
+                chapter.duration = dt.timedelta(
                     seconds=seconds, minutes=minutes, hours=hours)
             elif 'title' in state and _match(self.audio_tracks_re, line):
                 state = set(['disc', 'title', 'audio'])
@@ -202,9 +188,9 @@ class Disc(object):
                         label=self.match.group('label'))
                 else:
                     track.name = self.match.group('name')
-                track.language = unicode(self.match.group('language'))
-                track.encoding = unicode(self.match.group('encoding'))
-                track.channel_mix = unicode(self.match.group('channel_mix'))
+                track.language = str(self.match.group('language'))
+                track.encoding = str(self.match.group('encoding'))
+                track.channel_mix = str(self.match.group('channel_mix'))
                 track.sample_rate = int(self.match.group('sample_rate'))
                 track.bit_rate = int(self.match.group('bit_rate'))
             elif 'title' in state and _match(
@@ -214,8 +200,8 @@ class Disc(object):
                     self.subtitle_track_re, line):
                 track = SubtitleTrack(title)
                 track.number = int(self.match.group('number'))
-                track.name = unicode(self.match.group('name'))
-                track.language = unicode(self.match.group('language'))
+                track.name = str(self.match.group('name'))
+                track.language = str(self.match.group('language'))
                 track.format = self.match.group('format').lower()
         self.titles = sorted(self.titles, key=attrgetter('number'))
         # Determine the best audio and subtitle tracks
@@ -248,10 +234,7 @@ class Disc(object):
                 title=title_or_chapter.title.number,
                 chapter=title_or_chapter.number)
         cmdline = [config.get_path('vlc'), '--quiet', mrl]
-        process = Popen(cmdline, stdout=open('/dev/null', 'w'), stderr=STDOUT)
-        process.communicate()
-        if process.returncode != 0:
-            print('VLC exited with return code {}'.format(process.returncode))
+        proc.check_call(cmdline, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
     def rip(self, config, episode, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
@@ -261,7 +244,7 @@ class Disc(object):
             season=config.season.number,
             episode=episode.number,
             name=episode.name,
-            now=datetime.now(),
+            now=dt.datetime.now(),
             )
         # Replace invalid characters in the filename with -
         filename = re.sub(r'[\/:]', '-', filename)
@@ -277,7 +260,7 @@ class Disc(object):
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,
-            '-t', unicode(title.number),
+            '-t', str(title.number),
             '-o', os.path.join(config.target, filename),
             '-f', 'av_mp4', # output an MP4 container
             '-O',           # optimize for streaming
@@ -300,11 +283,11 @@ class Disc(object):
             # audio encoding options (use 160kbps AAC with the decent FDK
             # encoder, plus whatever downmix the user selected for the
             # specified tracks)
-            '-a', ','.join(unicode(num) for (num, _, _)  in audio_defs),
-            '-E', ','.join('fdk_aac'    for ad           in audio_defs),
-            '-B', ','.join('160'        for ad           in audio_defs),
-            '-6', ','.join(mix          for (_, mix, _)  in audio_defs),
-            '-A', ','.join(name         for (_, _, name) in audio_defs),
+            '-a', ','.join(str(num)  for (num, _, _)  in audio_defs),
+            '-E', ','.join('fdk_aac' for ad           in audio_defs),
+            '-B', ','.join('160'     for ad           in audio_defs),
+            '-6', ','.join(mix       for (_, mix, _)  in audio_defs),
+            '-A', ','.join(name      for (_, _, name) in audio_defs),
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
@@ -315,21 +298,16 @@ class Disc(object):
                     '{start}-{end}'.format(
                         start=start_chapter.number, end=end_chapter.number))
             else:
-                cmdline.append(unicode(start_chapter.number))
+                cmdline.append(str(start_chapter.number))
         if config.subtitle_format == 'vobsub':
             cmdline.append('-s')
-            cmdline.append(','.join(unicode(num) for (num, _) in subtitle_defs))
+            cmdline.append(','.join(str(num) for (num, _) in subtitle_defs))
         if config.decomb == 'on':
             cmdline.append('-d')
             cmdline.append('slow')
         elif config.decomb == 'auto':
             cmdline.append('-5')
-        process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-        process.communicate()
-        if process.returncode != 0:
-            raise RipperError(
-                'Handbrake exited with non-zero return code {}'.format(
-                    process.returncode))
+        proc.check_call(cmdline)
         # Tag the resulting file
         tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
         try:
@@ -340,21 +318,16 @@ class Disc(object):
                 '--stik', 'TV Show',
                 # set tags for TV shows
                 '--TVShowName',   episode.season.program.name,
-                '--TVSeasonNum',  unicode(episode.season.number),
-                '--TVEpisodeNum', unicode(episode.number),
+                '--TVSeasonNum',  str(episode.season.number),
+                '--TVEpisodeNum', str(episode.number),
                 '--TVEpisode',    episode.name,
                 # also set tags for music files as these have wider support
                 '--artist',       episode.season.program.name,
                 '--album',        'Season {}'.format(episode.season.number),
-                '--tracknum',     unicode(episode.number),
-                '--title',        episode.name
+                '--tracknum',     str(episode.number),
+                '--title',        episode.name,
                 ]
-            process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
-            process.communicate()
-            if process.returncode != 0:
-                raise TaggerError(
-                    'AtomicParsley exited with non-zero return code {}'.format(
-                        process.returncode))
+            proc.check_call(cmdline)
             os.chmod(
                 tmpfile,
                 os.stat(os.path.join(config.target, filename)).st_mode)
@@ -362,7 +335,7 @@ class Disc(object):
         finally:
             os.close(tmphandle)
 
-class Title(object):
+class Title():
     "Represents a title on a DVD"
 
     def __init__(self, disc):
@@ -370,7 +343,7 @@ class Title(object):
         disc.titles.append(self)
         self.disc = disc
         self.number = 0
-        self.duration = timedelta()
+        self.duration = dt.timedelta()
         self.size = (0, 0)
         self.aspect_ratio = 0
         self.frame_rate = 0
@@ -405,7 +378,7 @@ class Title(object):
         self.disc.play(config, self)
 
 
-class Chapter(object):
+class Chapter():
     "Represents a chapter marker within a Title object"
 
     def __init__(self, title):
@@ -413,12 +386,12 @@ class Chapter(object):
         title.chapters.append(self)
         self.title = title
         self.number = 0
-        self.duration = timedelta(0)
+        self.duration = dt.timedelta(0)
 
     @property
     def start(self):
         "Returns the start time of the chapter"
-        result = datetime(MINYEAR, 1, 1)
+        result = dt.datetime(dt.MINYEAR, 1, 1)
         for chapter in self.title.chapters:
             if chapter.number >= self.number:
                 break
@@ -428,7 +401,7 @@ class Chapter(object):
     @property
     def finish(self):
         "Returns the finish time of the chapter"
-        result = datetime.combine(date(MINYEAR, 1, 1), self.start)
+        result = dt.datetime.combine(dt.date(dt.MINYEAR, 1, 1), self.start)
         return (result + self.duration).time()
 
     @property
@@ -457,7 +430,7 @@ class Chapter(object):
         self.title.disc.play(config, self)
 
 
-class AudioTrack(object):
+class AudioTrack():
     "Represents an audio track within a Title object"
 
     def __init__(self, title):
@@ -478,7 +451,7 @@ class AudioTrack(object):
             number=self.number, name=self.name)
 
 
-class SubtitleTrack(object):
+class SubtitleTrack():
     "Represents a subtitle track within a Title object"
 
     def __init__(self, title):

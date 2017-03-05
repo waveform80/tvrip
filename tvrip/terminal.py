@@ -26,111 +26,33 @@ globbing, response file handling, and common logging configuration and options.
 
 import sys
 import os
-import optparse
+import argparse
 import textwrap
 import logging
 import locale
 import traceback
-import glob
-from itertools import chain
+import configparser
 
 try:
-    # Optionally import optcomplete (for auto-completion) if it's installed
-    import optcomplete
+    # Optionally import argcomplete (for auto-completion) if it's installed
+    import argcomplete
 except ImportError:
-    optcomplete = None
+    argcomplete = None
 
 
 # Use the user's default locale instead of C
 locale.setlocale(locale.LC_ALL, '')
 
 # Set up a console logging handler which just prints messages without any other
-# adornments
+# adornments. This will be used for logging messages sent before we "properly"
+# configure logging according to the user's preferences
 _CONSOLE = logging.StreamHandler(sys.stderr)
 _CONSOLE.setFormatter(logging.Formatter('%(message)s'))
 _CONSOLE.setLevel(logging.DEBUG)
 logging.getLogger().addHandler(_CONSOLE)
 
 
-def normalize_path(path):
-    """
-    Eliminates symlinks, makes path absolute and normalizes case
-    """
-    return os.path.normcase(os.path.realpath(os.path.abspath(
-        os.path.expanduser(path)
-    )))
-
-
-def glob_arg(arg):
-    """
-    Perform shell-style globbing of arguments
-    """
-    if set('*?[') & set(arg):
-        args = glob.glob(normalize_path(arg))
-        if args:
-            return args
-    # Return the original parameter in the case where the parameter contains no
-    # wildcards or globbing returns no results
-    return [arg]
-
-
-def flatten(arg):
-    """
-    Flatten one level of nesting
-    """
-    return chain.from_iterable(arg)
-
-
-def expand_args(args):
-    """
-    Expands @response files and wildcards in the command line
-    """
-    windows = sys.platform.startswith('win')
-    result = []
-    for arg in args:
-        if arg.startswith('@') and len(arg) > 1:
-            arg = normalize_path(arg[1:])
-            try:
-                with open(arg, 'rU') as resp_file:
-                    for resp_arg in resp_file:
-                        # Only strip the line break (whitespace is
-                        # significant)
-                        resp_arg = resp_arg.rstrip('\n')
-                        # Only perform globbing on response file values for
-                        # UNIX
-                        if windows:
-                            result.append(resp_arg)
-                        else:
-                            result.extend(glob_arg(resp_arg))
-            except IOError as exc:
-                raise optparse.OptionValueError(str(exc))
-        else:
-            result.append(arg)
-    # Perform globbing on everything for Windows
-    if windows:
-        result = list(flatten(glob_arg(f) for f in result))
-    return result
-
-
-class HelpFormatter(optparse.IndentedHelpFormatter):
-    """
-    Customize the width of help output
-    """
-    def __init__(self):
-        width = 75
-        optparse.IndentedHelpFormatter.__init__(
-                self, max_help_position=width // 3, width=width)
-
-
-class OptionParser(optparse.OptionParser):
-    """
-    Customized OptionParser which raises an exception but doesn't terminate
-    """
-    def error(self, msg):
-        raise optparse.OptParseError(msg)
-
-
-class TerminalApplication(object):
+class TerminalApplication():
     """
     Base class for command line applications.
 
@@ -146,98 +68,140 @@ class TerminalApplication(object):
     # utility classes defined. It provides some basic facilities like an option
     # parser, console pretty-printing, logging and exception handling
 
-    def __init__(self, version, usage=None, description=None):
-        super().__init__()
-        self.wrapper = textwrap.TextWrapper()
-        self.wrapper.width = 75
-        if usage is None:
-            usage = self.__doc__.strip().split('\n')[0]
+    def __init__(
+            self, version, description=None, config_files=None,
+            config_section=None, config_bools=None):
+        super(TerminalApplication, self).__init__()
         if description is None:
-            description = self.wrapper.fill('\n'.join(
-                line.lstrip()
-                for line in self.__doc__.strip().split('\n')[1:]
-                if line.lstrip()
-                ))
-        self.parser = OptionParser(
-            usage=usage,
-            version=version,
+            description = self.__doc__
+        self.parser = argparse.ArgumentParser(
             description=description,
-            formatter=HelpFormatter()
-            )
-        self.parser.set_defaults(
-            debug=False,
-            logfile='',
-            loglevel=logging.WARNING
-            )
-        self.parser.add_option(
-            '-q', '--quiet', dest='loglevel', action='store_const',
+            fromfile_prefix_chars='@')
+        self.parser.add_argument(
+            '--version', action='version', version=version)
+        if config_files:
+            self.config = configparser.ConfigParser(interpolation=None)
+            self.config_files = config_files
+            self.config_section = config_section
+            self.config_bools = config_bools
+            self.parser.add_argument(
+                '-c', '--config', metavar='FILE',
+                help='specify the configuration file to load')
+        else:
+            self.config = None
+        self.parser.set_defaults(log_level=logging.WARNING)
+        self.parser.add_argument(
+            '-q', '--quiet', dest='log_level', action='store_const',
             const=logging.ERROR, help='produce less console output')
-        self.parser.add_option(
-            '-v', '--verbose', dest='loglevel', action='store_const',
+        self.parser.add_argument(
+            '-v', '--verbose', dest='log_level', action='store_const',
             const=logging.INFO, help='produce more console output')
-        self.parser.add_option(
-            '-l', '--log-file', dest='logfile',
+        arg = self.parser.add_argument(
+            '-l', '--log-file', metavar='FILE',
             help='log messages to the specified file')
-        if optcomplete:
-            opt.completer = optcomplete.RegexCompleter(['.*\.log', '.*\.txt'])
-        self.parser.add_option(
-            '-P', '--pdb', dest='debug', action='store_true',
+        if argcomplete:
+            arg.completer = argcomplete.FilesCompleter(['*.log', '*.txt'])
+        self.parser.add_argument(
+            '-P', '--pdb', dest='debug', action='store_true', default=False,
             help='run under PDB (debug mode)')
-        self.arg_completer = None
 
     def __call__(self, args=None):
-        sys.excepthook = self.handle
         if args is None:
             args = sys.argv[1:]
-        if optcomplete:
-            optcomplete.autocomplete(self.parser, self.arg_completer)
+        if argcomplete:
+            argcomplete.autocomplete(self.parser, exclude=['-P'])
         elif 'COMP_LINE' in os.environ:
             return 0
-        (options, args) = self.parser.parse_args(expand_args(args))
-        _CONSOLE.setLevel(options.loglevel)
-        if options.logfile:
-            logfile = logging.FileHandler(options.logfile)
-            logfile.setFormatter(
+        sys.excepthook = self.handle
+        args = self.read_configuration(args)
+        args = self.parser.parse_args(args)
+        self.configure_logging(args)
+        if args.debug:
+            try:
+                import pudb
+            except ImportError:
+                pudb = None
+                import pdb
+            return (pudb or pdb).runcall(self.main, args)
+        else:
+            return self.main(args) or 0
+
+    def read_configuration(self, args):
+        if not self.config:
+            return args
+        # Parse the --config argument only
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument('-c', '--config', dest='config', action='store')
+        conf_args, args = parser.parse_known_args(args)
+        if conf_args.config:
+            self.config_files.append(conf_args.config)
+        logging.info(
+            'Reading configuration from %s', ', '.join(self.config_files))
+        conf_read = self.config.read(self.config_files)
+        if conf_args.config and conf_args.config not in conf_read:
+            self.parser.error('unable to read %s' % conf_args.config)
+        if conf_read:
+            if self.config_bools is None:
+                self.config_bools = ['pdb']
+            else:
+                self.config_bools = ['pdb'] + self.config_bools
+            if not self.config_section:
+                self.config_section = self.config.sections()[0]
+            if not self.config_section in self.config.sections():
+                self.parser.error(
+                    'unable to locate [%s] section in configuration' % self.config_section)
+            self.parser.set_defaults(**{
+                key:
+                self.config.getboolean(self.config_section, key)
+                if key in self.config_bools else
+                self.config.get(self.config_section, key)
+                for key in self.config.options(self.config_section)
+                })
+        return args
+
+    def configure_logging(self, args):
+        _CONSOLE.setLevel(args.log_level)
+        if args.log_file:
+            log_file = logging.FileHandler(args.log_file)
+            log_file.setFormatter(
                 logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
-            logfile.setLevel(logging.DEBUG)
-            logging.getLogger().addHandler(logfile)
-        if options.debug:
+            log_file.setLevel(logging.DEBUG)
+            logging.getLogger().addHandler(log_file)
+        if args.debug:
             logging.getLogger().setLevel(logging.DEBUG)
         else:
             logging.getLogger().setLevel(logging.INFO)
-        if options.debug:
-            import pdb
-            return pdb.runcall(self.main, options, args)
-        else:
-            return self.main(options, args) or 0
 
     def handle(self, exc_type, exc_value, exc_trace):
         "Global application exception handler"
-        if issubclass(exc_type, (SystemExit, KeyboardInterrupt)):
-            # Just ignore system exit and keyboard interrupt errors (after all,
-            # they're user generated)
-            return 130
-        elif issubclass(exc_type, (ValueError, IOError)):
-            # For simple errors like IOError just output the message which
-            # should be sufficient for the end user (no need to confuse them
-            # with a full stack trace)
-            logging.critical(str(exc_value))
-            return 1
-        elif issubclass(exc_type, (optparse.OptParseError,)):
+        if issubclass(exc_type, (SystemExit,)):
+            # Exit with 0 ("success") for system exit (as it was intentional)
+            return 0
+        elif issubclass(exc_type, (KeyboardInterrupt,)):
+            # Exit with 2 if the user deliberately terminates with Ctrl+C
+            return 2
+        elif issubclass(exc_type, (argparse.ArgumentError,)):
             # For option parser errors output the error along with a message
             # indicating how the help page can be displayed
             logging.critical(str(exc_value))
             logging.critical('Try the --help option for more information.')
             return 2
+        elif issubclass(exc_type, (IOError,)):
+            # For simple errors like IOError just output the message which
+            # should be sufficient for the end user (no need to confuse them
+            # with a full stack trace)
+            logging.critical(str(exc_value))
+            return 1
         else:
             # Otherwise, log the stack trace and the exception into the log
             # file for debugging purposes
             for line in traceback.format_exception(exc_type, exc_value, exc_trace):
                 for msg in line.rstrip().split('\n'):
-                    logging.critical(msg)
+                    logging.critical(msg.replace('%', '%%'))
             return 1
 
-    def main(self, options, args):
+    def main(self, args):
         "Called as the main body of the utility"
         raise NotImplementedError
+
 

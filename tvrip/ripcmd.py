@@ -20,11 +20,12 @@
 
 import os
 import re
+import subprocess as proc
 from datetime import timedelta, datetime
 
 import sqlalchemy as sa
 
-from tvrip.ripper import Disc, Title, RipperError, TaggerError
+from tvrip.ripper import Disc, Title
 from tvrip.database import (
     init_session, Configuration, Program, Season, Episode,
     AudioLanguage, SubtitleLanguage, ConfigPath
@@ -68,11 +69,12 @@ class RipCmd(Cmd):
         # exception
         try:
             result = super().onecmd(line)
-            self.session.commit()
-            return result
         except:
             self.session.rollback()
             raise
+        else:
+            self.session.commit()
+            return result
 
     def _get_disc(self):
         "Returns the Disc object for the current source"
@@ -1052,7 +1054,10 @@ class RipCmd(Cmd):
         """
         if not arg:
             raise CmdSyntaxError('You must specify something to play')
-        self.parse_title_or_chapter(arg).play(self.config)
+        try:
+            self.parse_title_or_chapter(arg).play(self.config)
+        except proc.CalledProcessError as e:
+            raise CmdError('VLC exited with code {}'.format(e.returncode))
 
     def do_scan(self, arg):
         """
@@ -1418,8 +1423,8 @@ class RipCmd(Cmd):
                 try:
                     self.disc.rip(self.config, episode, title, audio_tracks,
                         subtitle_tracks, chapter_start, chapter_end)
-                except (RipperError, TaggerError) as exc:
-                    raise CmdError(str(exc))
+                except proc.CalledProcessError as e:
+                    raise CmdError('process failed with code {}'.format(e.returncode))
                 else:
                     episode.disc_id = self.disc.ident
                     episode.disc_title = title.number

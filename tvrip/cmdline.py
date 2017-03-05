@@ -54,7 +54,6 @@ COLOR_MAGENTA = '\033[35m'
 COLOR_CYAN    = '\033[36m'
 COLOR_WHITE   = '\033[37m'
 COLOR_RESET   = '\033[0m'
-ENCODING = locale.getdefaultlocale()[1]
 
 __all__ = [
     'CmdError',
@@ -189,7 +188,8 @@ class Cmd(cmd.Cmd):
     def postcmd(self, stop, line):
         # Set the prompt back to its colored variant, if required
         if self.color_prompt:
-            self.prompt = COLOR_BOLD + COLOR_GREEN + self.prompt + COLOR_RESET
+            self.base_prompt = self.prompt
+            self.prompt = COLOR_BOLD + COLOR_GREEN + self.base_prompt + COLOR_RESET
         return stop
 
     def postloop(self):
@@ -228,7 +228,7 @@ class Cmd(cmd.Cmd):
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
         self.stdout.write(s)
-        return raw_input(prompt).decode(ENCODING).strip()
+        return input(prompt).strip()
 
     def pprint(self, s, newline=True, wrap=True,
             initial_indent='', subsequent_indent=''):
