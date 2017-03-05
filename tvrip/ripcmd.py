@@ -768,6 +768,7 @@ class RipCmd(Cmd):
                     Episode.number.desc()
                 ):
                 episode.number += 1
+                self.session.flush()
             episode = Episode(season, number, name)
             self.session.add(episode)
             self.pprint(
@@ -798,6 +799,7 @@ class RipCmd(Cmd):
                     Episode.number
                 ):
                 episode.number -= 1
+                self.session.flush()
             self.pprint(
                 'Deleted episode {episode} to season {season} '
                 'of {program}'.format(
