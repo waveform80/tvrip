@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -17,14 +17,6 @@
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 "Implements the disc scanner and ripper"
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import sys
 import os
@@ -65,7 +57,7 @@ class Disc(object):
     "Represents a DVD disc"
 
     def __init__(self):
-        super(Disc, self).__init__()
+        super().__init__()
         self.match = None
         self.titles = []
         self.name = ''
@@ -374,7 +366,7 @@ class Title(object):
     "Represents a title on a DVD"
 
     def __init__(self, disc):
-        super(Title, self).__init__()
+        super().__init__()
         disc.titles.append(self)
         self.disc = disc
         self.number = 0
@@ -417,7 +409,7 @@ class Chapter(object):
     "Represents a chapter marker within a Title object"
 
     def __init__(self, title):
-        super(Chapter, self).__init__()
+        super().__init__()
         title.chapters.append(self)
         self.title = title
         self.number = 0
@@ -469,7 +461,7 @@ class AudioTrack(object):
     "Represents an audio track within a Title object"
 
     def __init__(self, title):
-        super(AudioTrack, self).__init__()
+        super().__init__()
         title.audio_tracks.append(self)
         self.title = title
         self.name = ''
@@ -490,7 +482,7 @@ class SubtitleTrack(object):
     "Represents a subtitle track within a Title object"
 
     def __init__(self, title):
-        super(SubtitleTrack, self).__init__()
+        super().__init__()
         title.subtitle_tracks.append(self)
         self.title = title
         self.number = 0

@@ -1,4 +1,4 @@
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -16,16 +16,8 @@
 
 "An application for extracting and transcoding DVDs of TV series"
 
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
-
 __project__      = 'tvrip'
-__version__      = '0.9'
+__version__      = '1.0'
 __author__       = 'Dave Jones'
 __author_email__ = 'dave@waveform.org.uk'
 __url__          = 'https://github.com/waveform80/tvrip'
@@ -38,9 +30,7 @@ __classifiers__ = [
     'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
     'Operating System :: POSIX :: Linux',
     'Operating System :: MacOS :: MacOS X',
-    'Programming Language :: Python :: 2.7',
-    'Programming Language :: Python :: 3.2',
-    'Programming Language :: Python :: 3.3',
+    'Programming Language :: Python :: 3',
     'Topic :: Multimedia :: Video :: Conversion',
     ]
 
@@ -55,6 +45,8 @@ __requires__ = [
     ]
 
 __extra_requires__ = {
+    'doc':   ['sphinx'],
+    'test':  ['coverage', 'pytest'],
     }
 
 __entry_points__ = {

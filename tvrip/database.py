@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -17,14 +17,6 @@
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 """Implements the data model for the tvrip application's database"""
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import os
 import tempfile
@@ -203,7 +195,7 @@ class Configuration(DeclarativeBase):
     target = Column(Unicode(300), nullable=False,
         default=os.path.expanduser('~/Videos'))
     temp = Column(Unicode(300), nullable=False,
-        default=unicode(tempfile.gettempdir()))
+        default=tempfile.gettempdir())
     template = Column(Unicode(300), nullable=False,
         default='{program} - {season}x{episode:02d} - {name}.mp4')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)

@@ -2,6 +2,9 @@
 
 # External utilities
 PYTHON=python
+PIP=pip
+PYTEST=py.test
+COVERAGE=coverage
 PYFLAGS=
 DEST_DIR=/
 
@@ -14,20 +17,44 @@ SETUPTOOLS:=$(shell wget https://bitbucket.org/pypa/setuptools/raw/bootstrap/ez_
 endif
 
 # Calculate the base names of the distribution, the location of all source,
-# documentation and executable script files
+# documentation, packaging, icon, and executable script files
 NAME:=$(shell $(PYTHON) $(PYFLAGS) setup.py --name)
 VER:=$(shell $(PYTHON) $(PYFLAGS) setup.py --version)
-PYVER:=$(shell $(PYTHON) $(PYFLAGS) -c "import sys; print 'py%d.%d' % sys.version_info[:2]")
+ifeq ($(shell lsb_release -si),Ubuntu)
+DEB_SUFFIX:=ubuntu1
+else
+DEB_SUFFIX:=
+endif
+DEB_ARCH:=$(shell dpkg --print-architecture)
+PYVER:=$(shell $(PYTHON) $(PYFLAGS) -c "import sys; print('py%d.%d' % sys.version_info[:2])")
 PY_SOURCES:=$(shell \
 	$(PYTHON) $(PYFLAGS) setup.py egg_info >/dev/null 2>&1 && \
-	cat $(NAME).egg-info/SOURCES.txt)
-DOC_SOURCES:=$(wildcard docs/*.rst)
+	grep -v "\.egg-info" $(NAME).egg-info/SOURCES.txt)
+DEB_SOURCES:=debian/changelog \
+	debian/control \
+	debian/copyright \
+	debian/rules \
+	debian/docs \
+	$(wildcard debian/*.init) \
+	$(wildcard debian/*.default) \
+	$(wildcard debian/*.manpages) \
+	$(wildcard debian/*.docs) \
+	$(wildcard debian/*.doc-base) \
+	$(wildcard debian/*.desktop)
+DOC_SOURCES:=docs/conf.py \
+	$(wildcard docs/*.png) \
+	$(wildcard docs/*.svg) \
+	$(wildcard docs/*.dot) \
+	$(wildcard docs/*.mscgen) \
+	$(wildcard docs/*.gpi) \
+	$(wildcard docs/*.rst) \
+	$(wildcard docs/*.pdf)
+SUBDIRS:=
 
 # Calculate the name of all outputs
 DIST_EGG=dist/$(NAME)-$(VER)-$(PYVER).egg
-DIST_EXE=dist/$(NAME)-$(VER).win32.exe
-DIST_RPM=dist/$(NAME)-$(VER)-1.src.rpm
 DIST_TAR=dist/$(NAME)-$(VER).tar.gz
+DIST_ZIP=dist/$(NAME)-$(VER).zip
 DIST_DEB=dist/$(NAME)_$(VER)-1~ppa1_all.deb
 MAN_DIR=build/sphinx/man
 MAN_PAGES=$(MAN_DIR)/tvrip.1
@@ -40,92 +67,112 @@ all:
 	@echo "make doc - Generate HTML and PDF documentation"
 	@echo "make source - Create source package"
 	@echo "make egg - Generate a PyPI egg package"
-	@echo "make rpm - Generate an RedHat package"
-	@echo "make deb - Generate a Debian package"
+	@echo "make zip - Generate a source zip package"
+	@echo "make tar - Generate a source tar package"
+	@echo "make deb - Generate Debian packages"
 	@echo "make dist - Generate all packages"
 	@echo "make clean - Get rid of all generated files"
-	@echo "make release - Create, tag, and upload a new release"
+	@echo "make release - Create and tag a new release"
 	@echo "make upload - Upload the new release to repositories"
 
-install:
+install: $(SUBDIRS)
 	$(PYTHON) $(PYFLAGS) setup.py install --root $(DEST_DIR)
 
 doc: $(DOC_SOURCES)
-	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b html
-	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
-	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b latex
-	$(MAKE) -C build/sphinx/latex all-pdf
+	$(MAKE) -C docs clean
+	$(MAKE) -C docs html
+	$(MAKE) -C docs man
+	$(MAKE) -C docs epub
+	$(MAKE) -C docs latexpdf
 
 source: $(DIST_TAR) $(DIST_ZIP)
 
 egg: $(DIST_EGG)
 
-rpm: $(DIST_RPM)
+zip: $(DIST_ZIP)
+
+tar: $(DIST_TAR)
 
 deb: $(DIST_DEB)
 
-dist: $(DIST_EGG) $(DIST_RPM) $(DIST_DEB) $(DIST_TAR) $(DIST_ZIP)
+dist: $(DIST_EGG) $(DIST_DEB) $(DIST_TAR) $(DIST_ZIP)
 
 develop: tags
-	$(PYTHON) $(PYFLAGS) setup.py develop
+	$(PIP) install -U setuptools
+	$(PIP) install -U pip
+	$(PIP) install -e .[doc,test]
 
 test:
-	$(PYTHON) $(PYFLAGS) setup.py test
+	$(COVERAGE) run --rcfile coverage.cfg -m $(PYTEST) tests -v
+	$(COVERAGE) report --rcfile coverage.cfg
 
 clean:
 	$(PYTHON) $(PYFLAGS) setup.py clean
 	$(MAKE) -f $(CURDIR)/debian/rules clean
+	$(MAKE) -C docs clean
 	rm -fr build/ dist/ $(NAME).egg-info/ tags
+	for dir in $(SUBDIRS); do \
+		$(MAKE) -C $$dir clean; \
+	done
 	find $(CURDIR) -name "*.pyc" -delete
 
 tags: $(PY_SOURCES)
 	ctags -R --exclude="build/*" --exclude="debian/*" --exclude="docs/*" --languages="Python"
 
+$(SUBDIRS):
+	$(MAKE) -C $@
+
 $(MAN_PAGES): $(DOC_SOURCES)
 	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
+	mkdir -p man/
+	cp build/sphinx/man/*.[0-9] man/
 
-$(DIST_TAR): $(PY_SOURCES)
+$(DIST_TAR): $(PY_SOURCES) $(SUBDIRS)
 	$(PYTHON) $(PYFLAGS) setup.py sdist --formats gztar
 
-$(DIST_ZIP): $(PY_SOURCES)
+$(DIST_ZIP): $(PY_SOURCES) $(SUBDIRS)
 	$(PYTHON) $(PYFLAGS) setup.py sdist --formats zip
 
-$(DIST_EGG): $(PY_SOURCES)
+$(DIST_EGG): $(PY_SOURCES) $(SUBDIRS)
 	$(PYTHON) $(PYFLAGS) setup.py bdist_egg
 
-$(DIST_RPM): $(PY_SOURCES) $(MAN_PAGES)
-	$(PYTHON) $(PYFLAGS) setup.py bdist_rpm \
-		--source-only \
-		--doc-files README.rst,LICENSE.txt \
-		--requires python,python-sqlalchemy
-	# XXX Add man-pages to RPMs ... how?
+$(DIST_DEB): $(PY_SOURCES) $(SUBDIRS) $(DEB_SOURCES) $(MAN_PAGES)
+	# build the binary package in the parent directory then rename it to
+	# project_version.orig.tar.gz
+	$(PYTHON) $(PYFLAGS) setup.py sdist --dist-dir=../
+	rename -f 's/$(NAME)-(.*)\.tar\.gz/$(NAME)_$$1\.orig\.tar\.gz/' ../*
+	debuild -b -i -I -Idist -Ibuild -Idocs/_build -Icoverage -I__pycache__ -I.coverage -Itags -I*.pyc -I*.vim -I*.xcf -rfakeroot
+	mkdir -p dist/
+	for f in $(DIST_DEB); do cp ../$${f##*/} dist/; done
 
-$(DIST_DEB): $(PY_SOURCES) $(MAN_PAGES)
+$(DIST_DSC): $(PY_SOURCES) $(SUBDIRS) $(DEB_SOURCES) $(MAN_PAGES)
 	# build the source package in the parent directory then rename it to
 	# project_version.orig.tar.gz
 	$(PYTHON) $(PYFLAGS) setup.py sdist --dist-dir=../
 	rename -f 's/$(NAME)-(.*)\.tar\.gz/$(NAME)_$$1\.orig\.tar\.gz/' ../*
-	debuild -b -i -I -Idist -Idocs -Ibuild/sphinx/doctrees -rfakeroot
+	debuild -S -i -I -Idist -Ibuild -Idocs/_build -Icoverage -I__pycache__ -I.coverage -Itags -I*.pyc -I*.vim -I*.xcf -rfakeroot
 	mkdir -p dist/
-	cp ../$(NAME)_$(VER)-1~ppa1_all.deb dist/
+	for f in $(DIST_DSC); do cp ../$${f##*/} dist/; done
 
-release: $(PY_SOURCES) $(DOC_SOURCES)
+release: $(PY_SOURCES) $(DOC_SOURCES) $(DEB_SOURCES)
 	$(MAKE) clean
 	# ensure there are no current uncommitted changes
 	test -z "$(shell git status --porcelain)"
-	# update the changelog with new release information
-	dch --newversion $(VER)-1~ppa1 --controlmaint
+	# update the debian changelog with new release information
+	dch --newversion $(VER)$(DEB_SUFFIX) --controlmaint
 	# commit the changes and add a new tag
 	git commit debian/changelog -m "Updated changelog for release $(VER)"
 	git tag -s release-$(VER) -m "Release $(VER)"
+	# update the package's registration on PyPI (in case any metadata's changed)
+	$(PYTHON) $(PYFLAGS) setup.py register -r https://pypi.python.org/pypi
 
-upload: $(PY_SOURCES) $(DOC_SOURCES)
+upload: $(PY_SOURCES) $(DOC_SOURCES) $(DIST_DEB) $(DIST_DSC)
 	# build a source archive and upload to PyPI
-	$(PYTHON) $(PYFLAGS) setup.py sdist upload
-	# build the deb source archive
-	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
-	$(PYTHON) $(PYFLAGS) setup.py sdist --dist-dir=../
-	rename -f 's/$(NAME)-(.*)\.tar\.gz/$(NAME)_$$1\.orig\.tar\.gz/' ../*
-	debuild -S -i -I -Idist -Idocs -Ibuild/sphinx/doctrees -rfakeroot
-	dput waveform-ppa ../$(NAME)_$(VER)-1~ppa1_source.changes
+	$(PYTHON) $(PYFLAGS) setup.py sdist upload -r https://pypi.python.org/pypi
+	# build the deb source archive and upload to Raspbian
+	dput waveform-ppa dist/$(NAME)_$(VER)$(DEB_SUFFIX)_source.changes
+	git push --tags
 
+.PHONY: all install develop test doc source egg zip tar deb dist clean tags release upload $(SUBDIRS)
+
+.PHONY: all install develop test doc source egg zip tar deb dist clean tags release upload $(SUBDIRS)

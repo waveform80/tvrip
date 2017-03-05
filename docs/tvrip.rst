@@ -3,9 +3,12 @@ tvrip
 =====
 
 This is the currently the only application in the tvrip package. The command
-line interface includes all the usual readline trimmings: history (not yet
-persistent), editing and tab-completion. Use the *exit* command or Ctrl+D to
-terminate the application.
+line interface includes all the usual readline trimmings: history, editing and
+tab-completion. Use the *exit* command or Ctrl+D to terminate the application.
+
+
+Synopsis
+========
 
 
 Commands

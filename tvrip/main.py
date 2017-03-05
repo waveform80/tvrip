@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -18,14 +18,6 @@
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 "Implements the main loop and option parser for the tvrip application"
-
-from __future__ import (
-    unicode_literals,
-    print_function,
-    absolute_import,
-    division
-    )
-str = type('')
 
 import sys
 import logging

@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -23,14 +23,6 @@ The EpisodeMap class defined in this module is a simple dict variant which
 includes some additional methods for automatically calculating a mapping that
 meets certain criteria (duration-based).
 """
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import logging
 from datetime import timedelta
@@ -135,7 +127,7 @@ class EpisodeMap(dict):
 
     def __iter__(self):
         for episode in sorted(
-                super(EpisodeMap, self).__iter__(), key=attrgetter('number')):
+                super().__iter__(), key=attrgetter('number')):
             yield episode
 
     def __setitem__(self, key, value):
@@ -147,7 +139,7 @@ class EpisodeMap(dict):
         except (TypeError, ValueError):
             assert isinstance(value, Title)
         assert (value not in self.values()) or (self[key] == value)
-        super(EpisodeMap, self).__setitem__(key, value)
+        super().__setitem__(key, value)
 
     def keys(self):
         return [k for k in self]

@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -17,14 +17,6 @@
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 "Implements the command line processor for the tvrip application"
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import os
 import re
@@ -48,7 +40,7 @@ class RipCmd(Cmd):
     prompt = '(tvrip) '
 
     def __init__(self, debug=False):
-        Cmd.__init__(self)
+        super().__init__()
         self.discs = {}
         self.episode_map = EpisodeMap()
         self.session = init_session(debug=debug)
@@ -75,7 +67,7 @@ class RipCmd(Cmd):
         # that everything the command did is rolled back in the case of an
         # exception
         try:
-            result = Cmd.onecmd(self, line)
+            result = super().onecmd(line)
             self.session.commit()
             return result
         except:
@@ -919,7 +911,7 @@ class RipCmd(Cmd):
     def complete_season(self, text, line, start, finish):
         "Auto-completer for season command"
         return [
-            unicode(season.number) for season in
+            str(season.number) for season in
             self.session.query(
                     Season
                 ).filter(
@@ -995,11 +987,11 @@ class RipCmd(Cmd):
         self.episode_map.clear()
         self.map_ripped()
 
-    program_re = re.compile(ur'^program\s+')
+    program_re = re.compile(r'^program\s+')
     def complete_program(self, text, line, start, finish):
         "Auto-completer for program command"
         match = self.program_re.match(line)
-        name = unicode(line[match.end():])
+        name = str(line[match.end():])
         return [
             program.name[start - match.end():] for program in
             self.session.query(Program).filter(Program.name.startswith(name))
@@ -1232,7 +1224,7 @@ class RipCmd(Cmd):
                     episode=episode.number,
                     count=len(chapters),
                     chapters=','.join(
-                        unicode(chapter.number) for chapter in chapters)))
+                        str(chapter.number) for chapter in chapters)))
             while len(chapters) > 1:
                 chapter = chapters.pop()
                 while True:
@@ -1518,7 +1510,7 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a directory'.format(arg))
         self.config.target = arg
 
-    target_re = re.compile(ur'^target\s+')
+    target_re = re.compile(r'^target\s+')
     def complete_target(self, text, line, start, finish):
         return self.complete_path(text, self.target_re.sub('', line),
                 start, finish)
@@ -1544,7 +1536,7 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a directory'.format(arg))
         self.config.temp = arg
 
-    temp_re = re.compile(ur'^temp\s+')
+    temp_re = re.compile(r'^temp\s+')
     def complete_temp(self, text, line, start, finish):
         return self.complete_path(text, self.temp_re.sub('', line),
                 start, finish)

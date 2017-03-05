@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -23,14 +23,6 @@ This module defines a TerminalApplication class which provides common
 facilities to command line applications: a help screen, universal file
 globbing, response file handling, and common logging configuration and options.
 """
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import sys
 import os
@@ -155,7 +147,7 @@ class TerminalApplication(object):
     # parser, console pretty-printing, logging and exception handling
 
     def __init__(self, version, usage=None, description=None):
-        super(TerminalApplication, self).__init__()
+        super().__init__()
         self.wrapper = textwrap.TextWrapper()
         self.wrapper.width = 75
         if usage is None:

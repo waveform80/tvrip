@@ -1,6 +1,6 @@
 # vim: set et sw=4 sts=4:
 
-# Copyright 2012-2014 Dave Hughes <dave@waveform.org.uk>.
+# Copyright 2012-2017 Dave Jones <dave@waveform.org.uk>.
 #
 # This file is part of tvrip.
 #
@@ -35,14 +35,6 @@ base class. The extra facilities provided are:
  * An enhanced do_help method which extracts documentation from do_ docstrings
 
 """
-
-from __future__ import (
-    unicode_literals,
-    absolute_import,
-    print_function,
-    division,
-    )
-str = type('')
 
 import os
 import re
@@ -84,7 +76,7 @@ class Cmd(cmd.Cmd):
     history_size = 1000 # <0 implies infinite history
 
     def __init__(self, color_prompt=True):
-        cmd.Cmd.__init__(self)
+        super().__init__()
         self._wrapper = TextWrapper()
         self.color_prompt = color_prompt
         self.base_prompt = self.prompt
@@ -192,8 +184,7 @@ class Cmd(cmd.Cmd):
         # Reset the prompt to its uncolored variant for the benefit of any
         # command handlers that don't expect ANSI color sequences in it
         self.prompt = self.base_prompt
-        # Ensure input is given as unicode
-        return line.decode(ENCODING)
+        return line
 
     def postcmd(self, stop, line):
         # Set the prompt back to its colored variant, if required
@@ -211,7 +202,7 @@ class Cmd(cmd.Cmd):
         try:
             return cmd.Cmd.onecmd(self, line)
         except CmdError as exc:
-            self.pprint(unicode(exc) + '\n')
+            self.pprint(str(exc) + '\n')
 
     whitespace_re = re.compile(r'\s+$')
     def wrap(self, s, newline=True, wrap=True, initial_indent='',
@@ -236,8 +227,6 @@ class Cmd(cmd.Cmd):
         lines = self.wrap(prompt, newline=False).split('\n')
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
-        if isinstance(s, unicode):
-            s = s.encode(ENCODING)
         self.stdout.write(s)
         return raw_input(prompt).decode(ENCODING).strip()
 
@@ -245,8 +234,6 @@ class Cmd(cmd.Cmd):
             initial_indent='', subsequent_indent=''):
         "Pretty-prints text to the terminal"
         s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
-        if isinstance(s, unicode):
-            s = s.encode(ENCODING)
         self.stdout.write(s)
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
@@ -255,7 +242,7 @@ class Cmd(cmd.Cmd):
         # a quick trick for transposing a list of lists, assuming each row in
         # data is of equal length
         lengths = [
-            max(len(unicode(item)) for item in row)
+            max(len(str(item)) for item in row)
             for row in zip(*data)
         ]
         # Take a copy of data that we can insert header and footer lines into
