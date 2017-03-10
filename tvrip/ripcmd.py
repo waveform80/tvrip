@@ -117,11 +117,8 @@ class RipCmd(Cmd):
         if episode < 1:
             raise CmdError(
                 'Episode number {} is less than one'.format(episode))
-        result = self.session.query(Episode).get((
-            self.config.program_name,
-            self.config.season_number,
-            episode,
-            ))
+        result = self.session.query(Episode).get(
+            (self.config.program_name, self.config.season_number, episode))
         if result is None and must_exist:
             raise CmdError(
                 'There is no episode {episode} in '
@@ -968,12 +965,8 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(
                 'A season number must be 1 or higher '
                 '({} specified)'.format(arg))
-        self.config.season = self.session.query(
-                Season
-            ).get((
-                self.config.program.name,
-                arg
-            ))
+        self.config.season = self.session.query(Season).get(
+            (self.config.program.name, arg))
         if self.config.season is None:
             self.config.season = Season(self.config.program, arg)
             self.session.add(self.config.season)
@@ -1042,11 +1035,7 @@ class RipCmd(Cmd):
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
-        self.config.program = self.session.query(
-                    Program
-                ).get((
-                    arg,
-                ))
+        self.config.program = self.session.query(Program).get((arg,))
         if self.config.program is None:
             self.config.program = Program(name=arg)
             self.session.add(self.config.program)
@@ -1316,7 +1305,7 @@ class RipCmd(Cmd):
         self.pprint('{} possible chapter-based mappings found'.format(len(mappings)))
         # Iterate over the episodes and ask the user in each case whether the
         # first chapter is accurate by playing a clip with vlc
-        for episode in mappings[0].iterkeys():
+        for episode in mappings[0].keys():
             chapters = set(mapping[episode][0] for mapping in mappings)
             self.pprint(
                 'Episode {episode} has {count} potential starting '
@@ -1409,7 +1398,7 @@ class RipCmd(Cmd):
             self.pprint('Episode Mapping (* indicates ripped):')
             self.pprint('')
             if self.episode_map:
-                for episode, mapping in self.episode_map.iteritems():
+                for episode, mapping in self.episode_map.items():
                     if isinstance(mapping, Title):
                         index = '{:2d}'.format(mapping.number)
                         duration = str(mapping.duration)
@@ -1475,19 +1464,34 @@ class RipCmd(Cmd):
         """
         Starts the ripping and transcoding process.
 
-        Syntax: rip
+        Syntax: rip [episodes]
 
         The 'rip' command begins ripping the mapped titles from the current
         source device, converting them according to the current preferences,
         and storing the results in the target path. Only previously unripped
         episodes will be ripped. If you wish to re-rip an episode, use the
         'unrip' command to set it to unripped first.
+
+        You can specify a list of episodes to rip only a subset of the map.
+        This is useful to adjust ripping configurations between episodes. Note
+        that already ripped episodes will not be re-ripped even if manually
+        specified. Use 'unrip' first.
+
+        If no episodes are specified, all unripped episodes in the map will be
+        ripped. Examples:
+
+        (tvrip) rip
+        (tvrip) rip 8,11-15
         """
-        self.no_args(arg)
         if not self.episode_map:
             raise CmdError('No titles have been mapped to episodes')
-        for episode, mapping in sorted(self.episode_map.iteritems(),
-                key=lambda t: t[0].number):
+        arg = arg.strip()
+        if arg:
+            episodes = self.parse_episode_list(arg, must_exist=False)
+        else:
+            episodes = self.episode_map.keys()
+        for episode in episodes:
+            mapping = self.episode_map[episode]
             if not episode.ripped:
                 if isinstance(mapping, Title):
                     chapter_start = chapter_end = None

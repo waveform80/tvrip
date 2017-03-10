@@ -27,6 +27,8 @@ meets certain criteria (duration-based).
 import logging
 from datetime import timedelta
 from operator import attrgetter
+from collections.abc import KeysView, ValuesView, ItemsView
+
 from tvrip.database import Episode
 from tvrip.ripper import Title, Chapter
 
@@ -126,11 +128,15 @@ class EpisodeMap(dict):
     "Represents a mapping of episodes to titles/chapters"
 
     def __iter__(self):
+        # Ensures that iterating the map returns episodes in ascending order
         for episode in sorted(
                 super().__iter__(), key=attrgetter('number')):
             yield episode
 
     def __setitem__(self, key, value):
+        # Ensures values are either a Title or a (Chapter, Chapter) tuple.
+        # Also ensures that titles and chapters are not duplicated in the
+        # mapping
         assert isinstance(key, Episode)
         try:
             start, finish = value
@@ -142,18 +148,13 @@ class EpisodeMap(dict):
         super().__setitem__(key, value)
 
     def keys(self):
-        return [k for k in self]
+        return EpisodeKeys(self)
 
     def values(self):
-        return [self[k] for k in self]
+        return EpisodeValues(self)
 
-    def iterkeys(self):
-        for k in self:
-            yield k
-
-    def iteritems(self):
-        for k in self:
-            yield (k, self[k])
+    def items(self):
+        return EpisodeItems(self)
 
     def automap(self, titles, episodes, duration_min, duration_max,
             choose_mapping=None):
@@ -210,4 +211,22 @@ class EpisodeMap(dict):
                 for solution in solutions
                 ])
         self.update(solution)
+
+
+class EpisodeKeys(KeysView):
+    def __iter__(self):
+        for key in self._mapping:
+            yield key
+
+
+class EpisodeValues(ValuesView):
+    def __iter__(self):
+        for key in self._mapping:
+            yield self._mapping[key]
+
+
+class EpisodeItems(ItemsView):
+    def __iter__(self):
+        for key in self._mapping:
+            yield key, self._mapping[key]
 
