@@ -28,6 +28,7 @@ import subprocess as proc
 from hashlib import sha1
 from operator import attrgetter
 from itertools import groupby
+from weakref import proxy
 
 AUDIO_MIX_ORDER = [
     '5.1 ch',
@@ -43,19 +44,13 @@ AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 class Disc():
     "Represents a DVD disc"
 
-    def __init__(self):
+    def __init__(self, config, titles=None):
         super().__init__()
         self.match = None
         self.titles = []
         self.name = ''
         self.serial = None
         self.ident = None
-
-    def __repr__(self):
-        return '<Disc()>'
-
-    def scan(self, config, titles=None):
-        "Scan the disc specified by config for rippable titles"
         if titles is None:
             titles = [0]
         for title in titles:
@@ -66,6 +61,7 @@ class Disc():
         if self.serial:
             h.update(self.serial)
         h.update(str(len(self.titles)).encode())
+        previous = None
         for title in self.titles:
             h.update(str(title.duration).encode())
             h.update(str(len(title.chapters)).encode())
@@ -73,6 +69,22 @@ class Disc():
                 h.update(str(chapter.start).encode())
                 h.update(str(chapter.duration).encode())
         self.ident = '$H1$' + h.hexdigest()
+        # Mark duplicate titles
+        for title in self.titles:
+            if previous is not None:
+                if previous.duration == title.duration:
+                    if previous.duplicate == 'no':
+                        previous.duplicate = 'first'
+                    title.duplicate = 'yes'
+                else:
+                    if previous.duplicate == 'yes':
+                        previous.duplicate = 'last'
+            previous = title
+        if title.duplicate == 'yes':
+            title.duplicate = 'last'
+
+    def __repr__(self):
+        return '<Disc()>'
 
     error1_re = re.compile(
         r"libdvdread: Can't open .* for reading", re.UNICODE)
@@ -201,24 +213,6 @@ class Disc():
                 track.name = str(self.match.group('name'))
                 track.language = str(self.match.group('language'))
                 track.format = self.match.group('format').lower()
-        self.titles = sorted(self.titles, key=attrgetter('number'))
-        # Determine the best audio and subtitle tracks
-        for title in self.titles:
-            for _, group in groupby(
-                    sorted(title.audio_tracks, key=attrgetter('name')),
-                    key=attrgetter('name')):
-                group = sorted(group, key=lambda track: (
-                    AUDIO_MIX_ORDER.index(track.channel_mix),
-                    AUDIO_ENCODING_ORDER.index(track.encoding)
-                    ))
-                if group:
-                    group[0].best = True
-            for _, group in groupby(
-                    sorted(title.subtitle_tracks, key=attrgetter('name')),
-                    key=attrgetter('name')):
-                group = list(group)
-                if group:
-                    group[0].best = True
 
     def play(self, config, title_or_chapter):
         "Play the specified title or chapter"
@@ -333,13 +327,14 @@ class Disc():
         finally:
             os.close(tmphandle)
 
+
 class Title():
     "Represents a title on a DVD"
 
     def __init__(self, disc):
         super().__init__()
         disc.titles.append(self)
-        self.disc = disc
+        self.disc = proxy(disc)
         self.number = 0
         self.duration = dt.timedelta()
         self.size = (0, 0)
@@ -350,39 +345,10 @@ class Title():
         self.audio_tracks = []
         self.subtitle_tracks = []
         self.interlaced = False
+        self.duplicate = 'no'
 
     def __repr__(self):
         return '<Title({})>'.format(self.number)
-
-    @property
-    def duplicate(self):
-        """
-        Returns a string indicating the duplicate state of this title: 'no' if
-        the title isn't a duplicate, 'first' if it's the first in a set of
-        duplicates, 'last' if it's the last in a set of duplicates, and 'yes'
-        otherwise (the title is in the middle of 3 or more duplicates).
-        """
-        if self.previous is None:
-            if self.next is not None and self.next.duration == self.duration:
-                return 'first'
-            else:
-                return 'no'
-        elif self.next is None:
-            if self.previous is not None and self.previous.duration == self.duration:
-                return 'last'
-            else:
-                return 'no'
-        else:
-            if self.next.duration == self.duration:
-                if self.previous.duration == self.duration:
-                    return 'yes'
-                else:
-                    return 'first'
-            else:
-                if self.previous.duration == self.duration:
-                    return 'last'
-                else:
-                    return 'no'
 
     @property
     def previous(self):
@@ -412,7 +378,7 @@ class Chapter():
     def __init__(self, title):
         super().__init__()
         title.chapters.append(self)
-        self.title = title
+        self.title = proxy(title)
         self.number = 0
         self.duration = dt.timedelta(0)
 
@@ -464,7 +430,7 @@ class AudioTrack():
     def __init__(self, title):
         super().__init__()
         title.audio_tracks.append(self)
-        self.title = title
+        self.title = proxy(title)
         self.name = ''
         self.number = 0
         self.language = ''
@@ -485,7 +451,7 @@ class SubtitleTrack():
     def __init__(self, title):
         super().__init__()
         title.subtitle_tracks.append(self)
-        self.title = title
+        self.title = proxy(title)
         self.number = 0
         self.name = ''
         self.language = ''

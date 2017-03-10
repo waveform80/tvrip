@@ -507,6 +507,60 @@ class RipCmd(Cmd):
         """
         self.config.dvdnav = self.parse_bool(arg)
 
+    def do_duplicate(self, arg):
+        """
+        Manually specifies duplicated titles on a disc.
+
+        Syntax: duplicate <title>[-<title>]
+
+        The 'duplicate' command is used to override the duplicate setting on
+        disc titles. Usually duplicate titles are automatically detected during
+        'scan' based on identical title lengths. However, some discs have
+        duplicate titles with different lengths. In this case, it is necessary
+        to manually specify such duplicates.
+
+        If a single title number is given, that title is marked as not being a
+        duplicate. If a range of title numbers is given, then all titles in
+        that range will be marked as being duplicates of each other (and titles
+        immediately adjacent to the range which were formally marked as
+        duplicates will be marked as not duplicating titles within the range).
+        Examples:
+
+        (tvrip) duplicate 5
+        (tvrip) duplicate 1-3
+        """
+        arg = arg.strip()
+        try:
+            start, finish = self.parse_title_range(arg)
+        except CmdError as e:
+            start = finish = self.parse_title(arg)
+        if start == finish:
+            start.duplicate = 'no'
+        else:
+            start.duplicate = 'first'
+            title = start.next
+            while title != finish:
+                title.duplicate = 'yes'
+                title = title.next
+            finish.duplicate = 'last'
+        # Adjust adjacent tracks, if required
+        if start.previous is not None:
+            try:
+                start.previous.duplicate = {
+                    'yes':   'last',
+                    'first': 'no',
+                    }[start.previous.duplicate]
+            except KeyError:
+                pass
+        if finish.next is not None:
+            try:
+                finish.next.duplicate = {
+                    'yes':  'first',
+                    'last': 'no',
+                    }[finish.next.duplicate]
+            except KeyError:
+                pass
+
     def do_duplicates(self, arg):
         """
         Sets how duplicate titles on a disc are handled.
@@ -1115,9 +1169,8 @@ class RipCmd(Cmd):
             titles = None
         self.pprint('Scanning disc in {}'.format(self.config.source))
         self.episode_map.clear()
-        self.disc = Disc()
         try:
-            self.disc.scan(self.config, titles)
+            self.disc = Disc(self.config, titles)
         except IOError as exc:
             self.disc = None
             raise CmdError(exc)
