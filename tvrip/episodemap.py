@@ -62,6 +62,12 @@ def valid(mapping, chapters, episodes, duration_min, duration_max):
         (len(mapping) == len(episodes)) and
         # Check the mapping covers all available chapters precisely
         (sum(mapping) == len(chapters)) and
+        # Check the title of each start+end chapter is equal (episodes don't
+        # cross titles)
+        all(
+            start.title.number == end.title.number
+            for (start, end) in partition_ends(chapters, mapping)
+        ) and
         # Check each grouping of chapters has a valid duration
         all(
             duration_min <= sum(
@@ -124,6 +130,7 @@ class NoSolutionsError(MapError):
 class MultipleSolutionsError(MapError):
     "Exception raised when multiple solutions are found with no selection"
 
+
 class EpisodeMap(dict):
     "Represents a mapping of episodes to titles/chapters"
 
@@ -162,11 +169,18 @@ class EpisodeMap(dict):
         if not episodes:
             raise NoEpisodesError('No episodes available for mapping (new season?)')
         try:
+            logging.debug('Trying title-based algorithm')
             self._automap_titles(
                 titles, episodes, duration_min, duration_max)
         except NoMappingError:
-            self._automap_chapters(
-                titles, episodes, duration_min, duration_max, choose_mapping)
+            try:
+                logging.debug('Trying chapter-based algorithm with longest title')
+                self._automap_chapters_longest(
+                    titles, episodes, duration_min, duration_max, choose_mapping)
+            except NoSolutionsError:
+                logging.debug('Trying chapter-based algorithm with all titles')
+                self._automap_chapters_all(
+                    titles, episodes, duration_min, duration_max, choose_mapping)
 
     def _automap_titles(self, titles, episodes, duration_min, duration_max):
         "Auto-mapping using a title-based algorithm"
@@ -184,16 +198,32 @@ class EpisodeMap(dict):
             raise NoMappingError('No mapping for any titles found')
         self.update(result)
 
-    def _automap_chapters(self, titles, episodes, duration_min, duration_max,
+    def _automap_chapters_longest(
+            self, titles, episodes, duration_min, duration_max,
             choose_mapping=None):
-        "Auto-mapping with a chapter-based algorithm"
+        "Auto-mapping with chapters from the longest title in the selecteion"
         longest_title = sorted(titles, key=attrgetter('duration'))[-1]
         logging.debug(
             'Longest title is %d (duration: %s), containing '
             '%d chapters',
             longest_title.number, longest_title.duration,
             len(longest_title.chapters))
-        chapters = longest_title.chapters
+        self._automap_chapters(
+            longest_title.chapters, episodes, duration_min, duration_max,
+            choose_mapping)
+
+    def _automap_chapters_all(
+            self, titles, episodes, duration_min, duration_max,
+            choose_mapping=None):
+        "Auto-mapping with chapters from all titles in the selection"
+        self._automap_chapters(
+            [chapter for title in titles for chapter in title.chapters],
+            episodes, duration_min, duration_max, choose_mapping)
+
+    def _automap_chapters(
+            self, chapters, episodes, duration_min, duration_max,
+            choose_mapping=None):
+        "Auto-mapping with a chapter-based algorithm"
         # XXX Remove trailing empty chapters
         solutions = calculate(chapters, episodes, duration_min, duration_max)
         logging.debug(

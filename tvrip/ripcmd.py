@@ -266,13 +266,22 @@ class RipCmd(Cmd):
         """
         Parse a string containing a title or a chapter-range specification.
 
-        Given a string representing a title, or a title.start-end chapter
-        range, this method returns a Title object or the (Chapter, Chapter)
-        tuple that the string represents.
+        Given a string representing a title, a title.start-end chapter range,
+        or a title.start-title.end range, this method returns a Title object or
+        the (Chapter, Chapter) tuple that the string represents.
         """
         if '.' in s:
             title, chapters = s.split('.', 1)
-            return self.parse_chapter_range(self.parse_title(title), chapters)
+            if '.' in chapters:
+                start_title = title
+                start_chapter, end_chapter = chapters.split('-', 1)
+                end_title, end_chapter = end_chapter.split('.', 1)
+                return (
+                    self.parse_chapter(self.parse_title(start_title), start_chapter),
+                    self.parse_chapter(self.parse_title(end_title), end_chapter)
+                    )
+            else:
+                return self.parse_chapter_range(self.parse_title(title), chapters)
         else:
             return self.parse_title(s)
 
@@ -1305,7 +1314,7 @@ class RipCmd(Cmd):
         self.pprint('{} possible chapter-based mappings found'.format(len(mappings)))
         # Iterate over the episodes and ask the user in each case whether the
         # first chapter is accurate by playing a clip with vlc
-        for episode in mappings[0].keys():
+        for episode in list(mappings[0].keys()):
             chapters = set(mapping[episode][0] for mapping in mappings)
             self.pprint(
                 'Episode {episode} has {count} potential starting '
@@ -1313,15 +1322,18 @@ class RipCmd(Cmd):
                     episode=episode.number,
                     count=len(chapters),
                     chapters=','.join(
-                        str(chapter.number) for chapter in chapters)))
+                        '{title}.{chapter:02d}'.format(
+                            title=chapter.title.number, chapter=chapter.number)
+                        for chapter in chapters)))
             while len(chapters) > 1:
                 chapter = chapters.pop()
                 while True:
                     chapter.play(self.config)
                     while True:
                         response = self.input(
-                            'Is chapter {chapter} the start of episode '
+                            'Is chapter {title}.{chapter:02d} the start of episode '
                             '{episode}? [y/n/r] '.format(
+                                title=chapter.title.number,
                                 chapter=chapter.number,
                                 episode=episode.number))
                         response = response.lower()[:1]
@@ -1330,7 +1342,7 @@ class RipCmd(Cmd):
                         else:
                             self.pprint('Invalid response')
                     if response == 'y':
-                        chapters = [chapter]
+                        chapters = {chapter}
                         break
                     elif response == 'n':
                         break
@@ -1361,70 +1373,103 @@ class RipCmd(Cmd):
         displayed.
         """
         if arg:
-            try:
-                episode, target = arg.split(' ')
-            except ValueError:
-                raise CmdSyntaxError('You must specify two arguments')
-            episode = self.parse_episode(episode)
-            target = self.parse_title_or_chapter_range(target)
-            if isinstance(target, Title):
-                title = target
-                self.pprint(
-                    'Mapping title {title} (duration {duration}) to episode '
-                    '{episode_num}, "{episode_title}"'.format(
-                        title=title.number,
-                        duration=title.duration,
-                        episode_num=episode.number,
-                        episode_title=episode.name))
-                self.episode_map[episode] = title
-            else:
-                start, end = target
-                title = start.title
-                self.pprint(
-                    'Mapping chapters {start}-{end} (duration '
-                    '{duration}) of title {title} to episode {episode_num}, '
-                    '"{episode_title}"'.format(
-                        start=start.number,
-                        end=end.number,
-                        duration=sum(
-                            [chapter.duration for chapter in title.chapters
-                            if start.number <= chapter.number <= end.number
-                            ], timedelta()),
-                        title=title.number,
-                        episode_num=episode.number,
-                        episode_title=episode.name))
-                self.episode_map[episode] = (start, end)
+            self.set_map(arg)
         else:
-            self.pprint('Episode Mapping (* indicates ripped):')
-            self.pprint('')
-            if self.episode_map:
-                for episode, mapping in self.episode_map.items():
-                    if isinstance(mapping, Title):
-                        index = '{:2d}'.format(mapping.number)
-                        duration = str(mapping.duration)
-                    else:
-                        start, end = mapping
+            self.get_map()
+
+    def set_map(self, arg):
+        try:
+            episode, target = arg.split(' ')
+        except ValueError:
+            raise CmdSyntaxError('You must specify two arguments')
+        episode = self.parse_episode(episode)
+        target = self.parse_title_or_chapter_range(target)
+        if isinstance(target, Title):
+            title = target
+            self.pprint(
+                'Mapping title {title} (duration {duration}) to episode '
+                '{episode_num}, "{episode_title}"'.format(
+                    title=title.number,
+                    duration=title.duration,
+                    episode_num=episode.number,
+                    episode_title=episode.name))
+            self.episode_map[episode] = title
+        else:
+            start, end = target
+            if start.title == end.title:
+                index = (
+                    '{title}.{start:02d}-{end:02d}'.format(
+                    title=start.title.number,
+                    start=start.number,
+                    end=end.number))
+            else:
+                index = (
+                    '{st}.{sc:02d}-{et}.{ec:02d}'.format(
+                    st=start.title.number,
+                    sc=start.number,
+                    et=end.title.number,
+                    ec=end.number))
+            self.pprint(
+                'Mapping chapters {index} (duration {duration}) '
+                'to episode {episode_num}, "{episode_title}"'.format(
+                    index=index,
+                    duration=sum((
+                        chapter.duration
+                        for title in start.title.disc.titles
+                        for chapter in title.chapters
+                        if (
+                            (start.title.number, start.number) <=
+                            (title.number, chapter.number) <=
+                            (end.title.number, end.number))
+                        ), timedelta()),
+                    episode_num=episode.number,
+                    episode_title=episode.name))
+            self.episode_map[episode] = (start, end)
+
+    def get_map(self):
+        self.pprint('Episode Mapping (* indicates ripped):')
+        self.pprint('')
+        if self.episode_map:
+            for episode, mapping in self.episode_map.items():
+                if isinstance(mapping, Title):
+                    index = '{}'.format(mapping.number)
+                    duration = str(mapping.duration)
+                else:
+                    start, end = mapping
+                    if start.title == end.title:
                         index = (
-                            '{title:2d}.{start:02d}-{end:02d}'.format(
+                            '{title}.{start:02d}-{end:02d}'.format(
                             title=start.title.number,
                             start=start.number,
                             end=end.number))
-                        duration = '%s' % sum(
-                            (chapter.duration for chapter in start.title.chapters
-                            if start.number <= chapter.number <= end.number
-                            ), timedelta())
-                    self.pprint(
-                        '{ripped:2s}title {title} ({duration}) = '
-                        'episode {episode_num:2d}, '
-                        '"{episode_title}"'.format(
-                            ripped='*' if episode.ripped else ' ',
-                            title=index,
-                            duration=duration,
-                            episode_num=episode.number,
-                            episode_title=episode.name
-                            ))
-            else:
-                self.pprint('Episode map is currently empty')
+                    else:
+                        index = (
+                            '{st}.{sc:02d}-{et}.{ec:02d}'.format(
+                            st=start.title.number,
+                            sc=start.number,
+                            et=end.title.number,
+                            ec=end.number))
+                    duration = sum((
+                        chapter.duration
+                        for title in start.title.disc.titles
+                        for chapter in title.chapters
+                        if (
+                            (start.title.number, start.number) <=
+                            (title.number, chapter.number) <=
+                            (end.title.number, end.number))
+                        ), timedelta())
+                self.pprint(
+                    '{ripped:2s}title {title:<11s} ({duration}) = '
+                    'episode {episode_num:2d}, '
+                    '"{episode_title}"'.format(
+                        ripped='*' if episode.ripped else ' ',
+                        title=index,
+                        duration=duration,
+                        episode_num=episode.number,
+                        episode_title=episode.name
+                        ))
+        else:
+            self.pprint('Episode map is currently empty')
 
     def do_unmap(self, arg):
         """
