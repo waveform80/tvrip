@@ -228,7 +228,11 @@ class Cmd(cmd.Cmd):
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
         self.stdout.write(s)
-        return input(prompt).strip()
+        result = input(prompt).strip()
+        # Strip the history from readline (we only want commands in the
+        # history)
+        readline.remove_history_item(readline.get_current_history_length() - 1)
+        return result
 
     def pprint(self, s, newline=True, wrap=True,
             initial_indent='', subsequent_indent=''):
