@@ -1266,7 +1266,10 @@ class RipCmd(Cmd):
             titles = '*'
         else:
             episodes = titles = '*'
-        if episodes == '*':
+        strict_mapping = episodes != '*'
+        if strict_mapping:
+            episodes = self.parse_episode_list(episodes)
+        else:
             episodes = self.session.query(
                     Episode
                 ).filter(
@@ -1275,8 +1278,6 @@ class RipCmd(Cmd):
                 ).order_by(
                     Episode.number
                 ).all()
-        else:
-            episodes = self.parse_episode_list(episodes)
         if titles == '*':
             titles = [
                     title for title in self.disc.titles
@@ -1305,7 +1306,7 @@ class RipCmd(Cmd):
         try:
             self.episode_map.automap(
                 titles, episodes, self.config.duration_min,
-                self.config.duration_max, self.choose_mapping)
+                self.config.duration_max, strict_mapping, self.choose_mapping)
         except MapError as exc:
             raise CmdError(str(exc))
         self.do_map()

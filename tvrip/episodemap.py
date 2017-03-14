@@ -78,7 +78,8 @@ def valid(mapping, chapters, episodes, duration_min, duration_max):
         )
     )
 
-def calculate(chapters, episodes, duration_min, duration_max,
+def calculate(
+        chapters, episodes, duration_min, duration_max,
         mapping=None, solutions=None):
     "Recursive function for calculating mapping solutions"
     if mapping is None:
@@ -164,27 +165,31 @@ class EpisodeMap(dict):
         return EpisodeItems(self)
 
     def automap(self, titles, episodes, duration_min, duration_max,
-            choose_mapping=None):
+            strict_mapping=False, choose_mapping=None):
         "Automatically map unmapped titles to unripped episodes"
         if not episodes:
             raise NoEpisodesError('No episodes available for mapping (new season?)')
         try:
-            logging.debug('Trying title-based algorithm')
-            self._automap_titles(
-                titles, episodes, duration_min, duration_max)
+            logging.debug('Trying title-based mapping')
+            result = self._automap_titles(
+                titles, episodes, duration_min, duration_max, strict_mapping)
         except NoMappingError:
             try:
                 logging.debug('Trying chapter-based algorithm with longest title')
-                self._automap_chapters_longest(
+                result = self._automap_chapters_longest(
                     titles, episodes, duration_min, duration_max, choose_mapping)
             except NoSolutionsError:
                 logging.debug('Trying chapter-based algorithm with all titles')
-                self._automap_chapters_all(
+                result = self._automap_chapters_all(
                     titles, episodes, duration_min, duration_max, choose_mapping)
+        self.update(result)
 
-    def _automap_titles(self, titles, episodes, duration_min, duration_max):
+    def _automap_titles(
+            self, titles, episodes, duration_min, duration_max,
+            strict_mapping=False):
         "Auto-mapping using a title-based algorithm"
         result = {}
+        episodes = list(episodes)
         for title in titles:
             if duration_min <= title.duration <= duration_max:
                 result[episodes.pop(0)] = title
@@ -196,7 +201,9 @@ class EpisodeMap(dict):
                     title.number, title.duration)
         if not result:
             raise NoMappingError('No mapping for any titles found')
-        self.update(result)
+        elif strict_mapping and len(result) != len(episodes):
+            raise NoMappingError("Mapping doesn't cover all episodes")
+        return result
 
     def _automap_chapters_longest(
             self, titles, episodes, duration_min, duration_max,
@@ -208,7 +215,7 @@ class EpisodeMap(dict):
             '%d chapters',
             longest_title.number, longest_title.duration,
             len(longest_title.chapters))
-        self._automap_chapters(
+        return self._automap_chapters(
             longest_title.chapters, episodes, duration_min, duration_max,
             choose_mapping)
 
@@ -216,7 +223,7 @@ class EpisodeMap(dict):
             self, titles, episodes, duration_min, duration_max,
             choose_mapping=None):
         "Auto-mapping with chapters from all titles in the selection"
-        self._automap_chapters(
+        return self._automap_chapters(
             [chapter for title in titles for chapter in title.chapters],
             episodes, duration_min, duration_max, choose_mapping)
 
@@ -240,7 +247,7 @@ class EpisodeMap(dict):
                 EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
                 for solution in solutions
                 ])
-        self.update(solution)
+        return solution
 
 
 class EpisodeKeys(KeysView):
