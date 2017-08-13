@@ -82,6 +82,23 @@ class Disc():
             previous = title
         if title.duplicate == 'yes':
             title.duplicate = 'last'
+        # Mark "best" audio and subtitle tracks for each language
+        for title in self.titles:
+            for _, group in groupby(
+                    sorted(title.audio_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = sorted(group, key=lambda track: (
+                    AUDIO_MIX_ORDER.index(track.channel_mix),
+                    AUDIO_ENCODING_ORDER.index(track.encoding)
+                ))
+                if group:
+                    group[0].best = True
+            for _, group in groupby(
+                    sorted(title.subtitle_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = list(group)
+                if group:
+                    group[0].best = True
 
     def __repr__(self):
         return '<Disc()>'
