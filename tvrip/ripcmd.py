@@ -1044,16 +1044,16 @@ class RipCmd(Cmd):
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
-        self.config.program = self.session.query(Program).get((arg,))
-        if self.config.program is None:
-            self.config.program = Program(name=arg)
-            self.session.add(self.config.program)
+        new_program = self.session.query(Program).get((arg,))
+        if new_program is None:
+            new_program = Program(name=arg)
+            self.session.add(new_program)
             try:
                 count = int(self.input(
                     'Program {} is new. How many seasons exist (enter '
                     '0 if you do not wish to define seasons and episodes '
                     'at this time)? [0-n] '.format(
-                        self.config.program.name)))
+                        new_program.name)))
             except ValueError:
                 while True:
                     try:
@@ -1063,16 +1063,18 @@ class RipCmd(Cmd):
                         pass
                     else:
                         break
+            self.config.program = new_program
             self.config.season = None
             for number in range(1, count + 1):
                 self.do_season(number)
         self.config.season = self.session.query(
                 Season
             ).filter(
-                (Season.program==self.config.program)
+                (Season.program==new_program)
             ).order_by(
                 Season.number
             ).first()
+        self.config.program = new_program
         self.episode_map.clear()
         self.map_ripped()
 
