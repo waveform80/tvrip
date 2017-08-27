@@ -482,6 +482,7 @@ class RipCmd(Cmd):
         self.pprint('target           = {}'.format(self.config.target))
         self.pprint('temp             = {}'.format(self.config.temp))
         self.pprint('template         = {}'.format(self.config.template))
+        self.pprint('id_template      = {}'.format(self.config.id_template))
         self.pprint('decomb           = {}'.format(self.config.decomb))
         self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
         self.pprint('audio_all        = {}'.format(

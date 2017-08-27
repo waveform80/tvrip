@@ -250,8 +250,10 @@ class Disc():
         "Rip the specified title"
         filename = config.template.format(
             program=config.program.name,
-            season=config.season.number,
-            episode=episode.number,
+            id=config.id_template.format(
+                season=config.season.number,
+                episode=episode.number,
+            ),
             name=episode.name,
             now=dt.datetime.now(),
             )
