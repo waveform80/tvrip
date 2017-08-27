@@ -197,7 +197,9 @@ class Configuration(DeclarativeBase):
     temp = Column(Unicode(300), nullable=False,
         default=tempfile.gettempdir())
     template = Column(Unicode(300), nullable=False,
-        default='{program} - {season}x{episode:02d} - {name}.mp4')
+        default='{program} - {id} - {name}.mp4')
+    id_template = Column(Unicode(100), nullable=False,
+                         default='{season}x{episode:02d}')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)
     _duration_max = Column('duration_max', Integer, nullable=False, default=50)
     program_name = Column(Unicode(200))

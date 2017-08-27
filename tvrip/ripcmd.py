@@ -1703,17 +1703,18 @@ class RipCmd(Cmd):
 
         The 'template' command sets the new filename template. The template is
         specified as a Python format string including named subsitution markers
-        (program, season, episode, and name). The format-string is specified
+        (program, id, and name). The format-string is specified
         without quotation marks. For example:
 
-        (tvrip) template {program} - {season}x{episode:02d} - {name}.mp4
-        (tvrip) template S{season:02d}E{episode02d}_{name}.mp4
+        (tvrip) template {program} - {id} - {name}.mp4
+        (tvrip) template {id}_{name}.mp4
+
+        See also: id_template
         """
         try:
             arg.format(
                 program='Program Name',
-                season=1,
-                episode=10,
+                id='1x01',
                 name='Foo Bar',
                 now=datetime.now(),
                 )
@@ -1726,3 +1727,33 @@ class RipCmd(Cmd):
                 'The new template contains an error: {}'.format(exc))
         self.config.template = arg
 
+    def do_id_template(self, arg):
+        """
+        Sets the template used for the {id} component of filenames.
+
+        Syntax: id_template <string>
+
+        The 'id_template' command sets the new template used to form the {id}
+        component in the filename template. The template is specified as a
+        Python format string include named substitution markers (season, and
+        episode). The format-string is specified without quotation marks. For
+        example:
+
+        (tvrip) id_template {season}x{episode:02d}
+        (tvrip) id_template S{season:02d}E{episode02d}
+
+        See also: template
+        """
+        try:
+            arg.format(
+                season=1,
+                episode=10,
+                )
+        except KeyError as exc:
+            raise CmdError(
+                'The new id_template contains an '
+                'invalid substitution key: {}'.format(exc))
+        except ValueError as exc:
+            raise CmdError(
+                'The new id_template contains an error: {}'.format(exc))
+        self.config.id_template = arg
