@@ -1308,7 +1308,9 @@ class RipCmd(Cmd):
         try:
             self.episode_map.automap(
                 titles, episodes, self.config.duration_min,
-                self.config.duration_max, strict_mapping, self.choose_mapping)
+                self.config.duration_max,
+                strict_mapping=strict_mapping,
+                choose_mapping=self.choose_mapping)
         except MapError as exc:
             raise CmdError(str(exc))
         self.do_map()
