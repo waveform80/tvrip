@@ -821,6 +821,8 @@ class RipCmd(Cmd):
         if the first parameter is "delete", then the numbered episode is
         removed, shifting all subsequent episodes down (numerically). In this
         case, name does not need to be specified.
+
+        See also: season, episodes
         """
         if not self.config.season:
             raise CmdError('No season has been set')
@@ -926,6 +928,8 @@ class RipCmd(Cmd):
 
         If you simply wish to change the name of a single episode, see the
         'episode' command instead.
+
+        See also: season, episode
         """
         if not self.config.season:
             raise CmdError('No season has been set')
@@ -961,6 +965,8 @@ class RipCmd(Cmd):
         This command is also used to expand the episode database. If the number
         given does not exist, it will be entered into the database under the
         current program and you will be prompted for episode names.
+
+        See also: program, seasons
         """
         if not self.config.program:
             raise CmdError('You must specify a program first')
@@ -1025,6 +1031,8 @@ class RipCmd(Cmd):
         The 'seasons' command outputs the list of seasons defined for the
         current program, along with a summary of how many episodes are defined
         for each season.
+
+        See also: programs, season
         """
         self.no_args(arg)
         self.pprint_seasons()
@@ -1041,6 +1049,8 @@ class RipCmd(Cmd):
         This command is also used to expand the episode database. If the name
         given does not exist, it will be entered into the database and you will
         be prompted for season and episode information.
+
+        See also: episodes, programs
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
@@ -1097,6 +1107,8 @@ class RipCmd(Cmd):
         The 'programs' command outputs the list of programs defined in the
         database, along with a summary of how many seasons and episodes are
         defined for each.
+
+        See also: program
         """
         self.no_args(arg)
         self.pprint_programs()
@@ -1111,6 +1123,8 @@ class RipCmd(Cmd):
         discovered during the last 'scan' command. It shows the disc's
         identifier and serial number, along with a summary of title
         information.
+
+        See also: scan, title
         """
         self.no_args(arg)
         self.pprint_disc()
@@ -1124,6 +1138,8 @@ class RipCmd(Cmd):
         The 'title' command displays detailed information about the specified
         titles including chapter starts and durations, audio tracks, and
         subtitle tracks.
+
+        See also: scan, disc
         """
         if not arg:
             raise CmdSyntaxError('You must specify a title')
@@ -1140,6 +1156,8 @@ class RipCmd(Cmd):
         of the currently scanned disc. Note that a disc must be scanned before
         this command can be used. VLC will be started at the specified location
         and must be quit before the command prompt will return.
+
+        See also: scan, disc
         """
         if not arg:
             raise CmdSyntaxError('You must specify something to play')
@@ -1158,6 +1176,8 @@ class RipCmd(Cmd):
         titles, audio tracks, and subtitle tracks exist on the disc in the
         source device. Please note that scanning a disc erases the current
         episode mapping.
+
+        See also: automap, rip
         """
         if not self.config.source:
             raise CmdError('No source has been specified')
@@ -1257,6 +1277,8 @@ class RipCmd(Cmd):
 
         The current episode mapping can be viewed in the output of the 'map'
         command.
+
+        See also: map, unmap
         """
         self.pprint('Performing auto-mapping')
         # Generate the list of titles, either specified or implied in the
@@ -1376,6 +1398,8 @@ class RipCmd(Cmd):
 
         If no arguments are specified, the current episode map will be
         displayed.
+
+        See also: automap, unmap
         """
         if arg:
             self.set_map(arg)
@@ -1490,6 +1514,8 @@ class RipCmd(Cmd):
         (tvrip) unmap 3
         (tvrip) unmap 7
         (tvrip) unmap *
+
+        See also: map, automap
         """
         if not arg:
             raise CmdSyntaxError(
@@ -1532,6 +1558,8 @@ class RipCmd(Cmd):
 
         (tvrip) rip
         (tvrip) rip 8,11-15
+
+        See also: unrip, map, automap
         """
         if not self.episode_map:
             raise CmdError('No titles have been mapped to episodes')
@@ -1602,6 +1630,8 @@ class RipCmd(Cmd):
 
         (tvrip) unrip 3
         (tvrip) unrip 7
+
+        See also: rip, map
         """
         if not arg:
             raise CmdSyntaxError(
@@ -1634,6 +1664,8 @@ class RipCmd(Cmd):
 
         (tvrip) source /dev/dvd
         (tvrip) source /dev/sr0
+
+        See also: target, temp
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
@@ -1656,6 +1688,8 @@ class RipCmd(Cmd):
         shorthand (~) may be used in the specified path. For example:
 
         (tvrip) target ~/Videos
+
+        See also: source, temp
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
@@ -1682,6 +1716,8 @@ class RipCmd(Cmd):
 
         (tvrip) temp ~/tmp
         (tvrip) temp /var/tmp
+
+        See also: source, target
         """
         arg = os.path.expanduser(arg)
         if not os.path.exists(arg):
