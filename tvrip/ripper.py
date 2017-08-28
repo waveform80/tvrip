@@ -30,6 +30,9 @@ from operator import attrgetter
 from itertools import groupby
 from weakref import proxy
 
+from . import multipart
+
+
 AUDIO_MIX_ORDER = [
     '5.1 ch',
     '5.0 ch',
@@ -39,19 +42,6 @@ AUDIO_MIX_ORDER = [
     '1.0 ch',
     ]
 AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
-
-
-def multipart_name(episodes):
-    if len(episodes) == 1:
-        return episodes[0].name
-    elif all(e.name == '"' for e in episodes[1:]):
-        return episodes[0].name
-    elif episodes[0].name.endswith('(1)'):
-        return episodes[0].name[:-3].rstrip(' -,:')
-    elif episodes[0].name.endswith('Part 1'):
-        return episodes[0].name[:-6].rstrip(' -,:')
-    else:
-        raise ValueError('unable to extract multipart episode name')
 
 
 class Disc():
@@ -271,7 +261,7 @@ class Disc():
         filename = config.template.format(
             program=config.program.name,
             id=file_id,
-            name=multipart_name(episodes),
+            name=multipart.name(episodes),
             now=dt.datetime.now(),
             )
         # Replace invalid characters in the filename with -

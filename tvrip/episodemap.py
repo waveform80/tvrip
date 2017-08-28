@@ -31,6 +31,7 @@ from collections.abc import KeysView, ValuesView, ItemsView
 
 from tvrip.database import Episode
 from tvrip.ripper import Title, Chapter
+from . import multipart
 
 __all__ = [
     'EpisodeMap',
@@ -116,24 +117,6 @@ def calculate(
         return solutions
 
 
-def multipart_prefix(episodes):
-    "Finds the number of multipart episodes at the start of *episodes*"
-    # A crude heuristic based on episode titles ending in " - Part n", "(n)",
-    # the subsequent episode titles being simply '"'
-    first_name = episodes[0].name
-    for n, e in enumerate(episodes[1:], start=2):
-        if e.name == '"':
-            continue
-        elif e.name.endswith('Part %d' % n):
-            if e.name[:-6] == first_name[:-6]:
-                continue
-        elif e.name.endswith('(%d)' % n):
-            if e.name[:-3] == first_name[:-3]:
-                continue
-        break
-    return n - 1
-
-
 class MapError(Exception):
     "Base class for mapping errors"
 
@@ -191,6 +174,7 @@ class EpisodeMap(dict):
             logging.debug('Trying title-based mapping')
             result = self._automap_titles(
                 titles, episodes, duration_min, duration_max,
+                permit_multipart=permit_multipart,
                 strict_mapping=strict_mapping)
         except NoMappingError:
             try:
@@ -217,7 +201,7 @@ class EpisodeMap(dict):
                 if not episodes:
                     break
             elif title.duration > duration_max and permit_multipart:
-                n = multipart_prefix(episodes)
+                n = multipart.prefix(episodes)
                 if n > 1 and (duration_min * n <= title.duration <= duration_max * n):
                     while n:
                         result[episodes.pop(0)] = title

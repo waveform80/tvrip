@@ -33,6 +33,7 @@ from tvrip.database import (
 from tvrip.episodemap import EpisodeMap, MapError
 from tvrip.cmdline import Cmd, CmdError, CmdSyntaxError
 from tvrip.const import DATADIR
+from . import multipart
 
 
 class RipCmd(Cmd):
@@ -1608,7 +1609,7 @@ class RipCmd(Cmd):
             self.pprint(
                 'Ripping episodes {numbers}, {title}'.format(
                     numbers=' '.join(str(e.number) for e in episodes),
-                    title=episodes[0].name))
+                    title=multipart.name(episodes)))
         try:
             self.disc.rip(self.config, episodes, title, audio_tracks,
                 subtitle_tracks, chapter_start, chapter_end)
