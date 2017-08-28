@@ -41,6 +41,19 @@ AUDIO_MIX_ORDER = [
 AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 
 
+def multipart_name(episodes):
+    if len(episodes) == 1:
+        return episodes[0].name
+    elif all(e.name == '"' for e in episodes[1:]):
+        return episodes[0].name
+    elif episodes[0].name.endswith('(1)'):
+        return episodes[0].name[:-3].rstrip(' -,:')
+    elif episodes[0].name.endswith('Part 1'):
+        return episodes[0].name[:-6].rstrip(' -,:')
+    else:
+        raise ValueError('unable to extract multipart episode name')
+
+
 class Disc():
     "Represents a DVD disc"
 
@@ -245,16 +258,20 @@ class Disc():
         cmdline = [config.get_path('vlc'), '--quiet', mrl]
         proc.check_call(cmdline, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
-    def rip(self, config, episode, title, audio_tracks, subtitle_tracks,
+    def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
         "Rip the specified title"
+        file_id = ' '.join(
+            config.id_template.format(
+                season=episode.season.number,
+                episode=episode.number
+            )
+            for episode in sorted(episodes, key=attrgetter('number'))
+        )
         filename = config.template.format(
             program=config.program.name,
-            id=config.id_template.format(
-                season=config.season.number,
-                episode=episode.number,
-            ),
-            name=episode.name,
+            id=file_id,
+            name=multipart_name(episodes),
             now=dt.datetime.now(),
             )
         # Replace invalid characters in the filename with -
@@ -328,15 +345,15 @@ class Disc():
                 '-o', tmpfile,
                 '--stik', 'TV Show',
                 # set tags for TV shows
-                '--TVShowName',   episode.season.program.name,
-                '--TVSeasonNum',  str(episode.season.number),
-                '--TVEpisodeNum', str(episode.number),
-                '--TVEpisode',    episode.name,
+                '--TVShowName',   episodes[0].season.program.name,
+                '--TVSeasonNum',  str(episodes[0].season.number),
+                '--TVEpisodeNum', str(episodes[0].number),
+                '--TVEpisode',    multipart_name(episodes),
                 # also set tags for music files as these have wider support
-                '--artist',       episode.season.program.name,
-                '--album',        'Season {}'.format(episode.season.number),
-                '--tracknum',     str(episode.number),
-                '--title',        episode.name,
+                '--artist',       episodes[0].season.program.name,
+                '--album',        'Season {}'.format(episodes[0].season.number),
+                '--tracknum',     str(episodes[0].number),
+                '--title',        multipart_name(episodes),
                 ]
             proc.check_call(cmdline)
             os.chmod(
@@ -345,6 +362,15 @@ class Disc():
             shutil.move(tmpfile, os.path.join(config.target, filename))
         finally:
             os.close(tmphandle)
+        for episode in episodes:
+            episode.disc_id = title.disc.ident
+            episode.disc_title = title.number
+            if start_chapter:
+                episode.start_chapter = start_chapter.number
+                episode.end_chapter = end_chapter.number
+            else:
+                episode.start_chapter = None
+                episode.end_chapter = None
 
 
 class Title():

@@ -1570,48 +1570,50 @@ class RipCmd(Cmd):
         else:
             episodes = self.episode_map.keys()
         for episode in episodes:
-            mapping = self.episode_map[episode]
             if not episode.ripped:
-                if isinstance(mapping, Title):
-                    chapter_start = chapter_end = None
-                    title = mapping
-                else:
-                    chapter_start, chapter_end = mapping
-                    assert chapter_start.title is chapter_end.title
-                    title = chapter_start.title
-                audio_tracks = [
-                    t for t in title.audio_tracks
-                    if self.config.in_audio_langs(t.language)
-                    ]
-                if not self.config.audio_all:
-                    audio_tracks = [t for t in audio_tracks if t.best]
-                subtitle_tracks = [
-                    t for t in title.subtitle_tracks
-                    if self.config.in_subtitle_langs(t.language)
-                    and (
-                        t.format == self.config.subtitle_format
-                        or self.config.subtitle_format == 'any'
-                        )
-                    ]
-                if not self.config.subtitle_all:
-                    subtitle_tracks = [t for t in subtitle_tracks if t.best]
-                self.pprint(
-                    'Ripping episode {episode.number}, '
-                    '"{episode.name}"'.format(episode=episode))
-                try:
-                    self.disc.rip(self.config, episode, title, audio_tracks,
-                        subtitle_tracks, chapter_start, chapter_end)
-                except proc.CalledProcessError as e:
-                    raise CmdError('process failed with code {}'.format(e.returncode))
-                else:
-                    episode.disc_id = self.disc.ident
-                    episode.disc_title = title.number
-                    if chapter_start:
-                        episode.start_chapter = chapter_start.number
-                        episode.end_chapter = chapter_end.number
-                    else:
-                        episode.start_chapter = None
-                        episode.end_chapter = None
+                self._rip_episode(episode)
+
+    def _rip_episode(self, episode):
+        mapping = self.episode_map[episode]
+        if isinstance(mapping, Title):
+            chapter_start = chapter_end = None
+            title = mapping
+            episodes = [e for e, t in self.episode_map.items() if t is title]
+        else:
+            chapter_start, chapter_end = mapping
+            assert chapter_start.title is chapter_end.title
+            title = chapter_start.title
+            episodes = [episode]
+        audio_tracks = [
+            t for t in title.audio_tracks
+            if self.config.in_audio_langs(t.language)
+            ]
+        if not self.config.audio_all:
+            audio_tracks = [t for t in audio_tracks if t.best]
+        subtitle_tracks = [
+            t for t in title.subtitle_tracks
+            if self.config.in_subtitle_langs(t.language)
+            and (
+                t.format == self.config.subtitle_format
+                or self.config.subtitle_format == 'any'
+                )
+            ]
+        if not self.config.subtitle_all:
+            subtitle_tracks = [t for t in subtitle_tracks if t.best]
+        if len(episodes) == 1:
+            self.pprint(
+                'Ripping episode {episode.number}, '
+                '"{episode.name}"'.format(episode=episode))
+        else:
+            self.pprint(
+                'Ripping episodes {numbers}, {title}'.format(
+                    numbers=' '.join(str(e.number) for e in episodes),
+                    title=episodes[0].name))
+        try:
+            self.disc.rip(self.config, episodes, title, audio_tracks,
+                subtitle_tracks, chapter_start, chapter_end)
+        except proc.CalledProcessError as e:
+            raise CmdError('process failed with code {}'.format(e.returncode))
 
     def do_unrip(self, arg):
         """
