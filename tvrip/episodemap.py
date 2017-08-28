@@ -50,11 +50,13 @@ def partition(seq, counts):
         yield seq[index:index + count]
         index += count
 
+
 def partition_ends(seq, counts):
     "An iterator that returns the start and end of chunks of seq defined by counts"
     # partition_ends(range(10), [3, 1, 2]) --> [(0, 2), (3, 3), (4, 5)]
     for s in partition(seq, counts):
         yield (s[0], s[-1])
+
 
 def valid(mapping, chapters, episodes, duration_min, duration_max):
     "Checks whether a possible mapping is valid"
@@ -78,6 +80,7 @@ def valid(mapping, chapters, episodes, duration_min, duration_max):
             for episode_chapters in partition(chapters, mapping)
         )
     )
+
 
 def calculate(
         chapters, episodes, duration_min, duration_max,
@@ -120,14 +123,18 @@ def calculate(
 class MapError(Exception):
     "Base class for mapping errors"
 
+
 class NoEpisodesError(MapError):
     "Exception raised when no episodes are available for mapping"
+
 
 class NoMappingError(MapError):
     "Exception raised when no title mapping is found"
 
+
 class NoSolutionsError(MapError):
     "Exception raised when no solutions are found by automap"
+
 
 class MultipleSolutionsError(MapError):
     "Exception raised when multiple solutions are found with no selection"
@@ -165,8 +172,8 @@ class EpisodeMap(dict):
     def items(self):
         return EpisodeItems(self)
 
-    def automap(self, titles, episodes, duration_min, duration_max, *,
-            strict_mapping=False, permit_multipart=True, choose_mapping=None):
+    def automap(self, titles, episodes, duration_min, duration_max,
+                *, strict_mapping=False, permit_multipart=True, choose_mapping=None):
         "Automatically map unmapped titles to unripped episodes"
         if not episodes:
             raise NoEpisodesError('No episodes available for mapping (new season?)')
@@ -189,9 +196,8 @@ class EpisodeMap(dict):
                     choose_mapping=choose_mapping)
         self.update(result)
 
-    def _automap_titles(
-            self, titles, episodes, duration_min, duration_max, *,
-            strict_mapping=False, permit_multipart=True):
+    def _automap_titles(self, titles, episodes, duration_min, duration_max,
+                        *, strict_mapping=False, permit_multipart=True):
         "Auto-mapping using a title-based algorithm"
         result = {}
         episodes = list(episodes)
@@ -222,9 +228,8 @@ class EpisodeMap(dict):
             raise NoMappingError("Mapping doesn't cover all episodes")
         return result
 
-    def _automap_chapters_longest(
-            self, titles, episodes, duration_min, duration_max, *,
-            choose_mapping=None):
+    def _automap_chapters_longest(self, titles, episodes, duration_min, duration_max,
+                                  *, choose_mapping=None):
         "Auto-mapping with chapters from the longest title in the selecteion"
         longest_title = sorted(titles, key=attrgetter('duration'))[-1]
         logging.debug(
@@ -284,4 +289,3 @@ class EpisodeItems(ItemsView):
     def __iter__(self):
         for key in self._mapping:
             yield key, self._mapping[key]
-

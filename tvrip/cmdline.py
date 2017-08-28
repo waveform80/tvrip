@@ -40,9 +40,9 @@ import os
 import re
 import cmd
 import readline
-import locale
 from textwrap import TextWrapper
-from tvrip.termsize import terminal_size
+
+from .termsize import terminal_size
 
 COLOR_BOLD    = '\033[1m'
 COLOR_BLACK   = '\033[30m'
@@ -65,14 +65,16 @@ __all__ = [
 class CmdError(Exception):
     "Base class for non-fatal Cmd errors"
 
+
 class CmdSyntaxError(CmdError):
     "Exception raised when the user makes a syntax error"
+
 
 class Cmd(cmd.Cmd):
     "An enhanced version of the standard Cmd command line processor"
     use_rawinput = True
     history_file = None
-    history_size = 1000 # <0 implies infinite history
+    history_size = 1000  # <0 implies infinite history
 
     def __init__(self, color_prompt=True):
         super().__init__()
@@ -205,8 +207,9 @@ class Cmd(cmd.Cmd):
             self.pprint(str(exc) + '\n')
 
     whitespace_re = re.compile(r'\s+$')
+
     def wrap(self, s, newline=True, wrap=True, initial_indent='',
-            subsequent_indent=''):
+             subsequent_indent=''):
         "Wraps a paragraph of text to the terminal"
         suffix = ''
         if newline:
@@ -234,8 +237,8 @@ class Cmd(cmd.Cmd):
         readline.remove_history_item(readline.get_current_history_length() - 1)
         return result
 
-    def pprint(self, s, newline=True, wrap=True,
-            initial_indent='', subsequent_indent=''):
+    def pprint(self, s, newline=True, wrap=True, initial_indent='',
+               subsequent_indent=''):
         "Pretty-prints text to the terminal"
         s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
         self.stdout.write(s)
@@ -292,8 +295,7 @@ class Cmd(cmd.Cmd):
                     self.parse_docstring(getattr(self, method).__doc__)[0]
                 )
                 for method in self.get_names()
-                if method.startswith('do_')
-                and method != 'do_EOF'
+                if method.startswith('do_') and method != 'do_EOF'
             ]
             # Size the column containing the method names, ensuring it is no
             # wider than one third of the terminal width
@@ -305,11 +307,11 @@ class Cmd(cmd.Cmd):
             for (command, help_text) in commands:
                 if len(command) <= maxlen:
                     self.pprint('%-*s%s' % (maxlen, command, help_text),
-                        subsequent_indent=indent)
+                                subsequent_indent=indent)
                 else:
                     self.pprint(command)
                     self.pprint(help_text, initial_indent=indent,
-                        subsequent_indent=indent)
+                                subsequent_indent=indent)
 
     def do_exit(self, arg):
         """
@@ -328,4 +330,3 @@ class Cmd(cmd.Cmd):
     do_quit = do_exit
 
     do_EOF = do_exit
-

@@ -54,4 +54,3 @@ __entry_points__ = {
         'tvrip = tvrip.main:main',
         ],
     }
-

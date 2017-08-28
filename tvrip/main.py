@@ -19,14 +19,9 @@
 
 "Implements the main loop and option parser for the tvrip application"
 
-import sys
-import logging
-import traceback
-from optparse import OptionParser, OptParseError
-
-from tvrip import __version__
-from tvrip.terminal import TerminalApplication
-from tvrip.ripcmd import RipCmd
+from . import __version__
+from .terminal import TerminalApplication
+from .ripcmd import RipCmd
 
 
 class TVRipApplication(TerminalApplication):
@@ -45,4 +40,3 @@ class TVRipApplication(TerminalApplication):
 
 
 main = TVRipApplication(__version__)
-

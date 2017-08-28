@@ -18,14 +18,13 @@
 
 "Implements the disc scanner and ripper"
 
-import sys
 import os
 import re
 import shutil
 import tempfile
 import datetime as dt
 import subprocess as proc
-from hashlib import sha1
+import hashlib
 from operator import attrgetter
 from itertools import groupby
 from weakref import proxy
@@ -46,65 +45,6 @@ AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
 
 class Disc():
     "Represents a DVD disc"
-
-    def __init__(self, config, titles=None):
-        super().__init__()
-        self.match = None
-        self.titles = []
-        self.name = ''
-        self.serial = None
-        self.ident = None
-        if titles is None:
-            titles = [0]
-        for title in titles:
-            self._scan_title(config, title)
-        # Calculate a hash of disc serial, and track properties to form a
-        # unique disc identifier, then replace disc-serial with this (#1)
-        h = sha1()
-        if self.serial:
-            h.update(self.serial)
-        h.update(str(len(self.titles)).encode())
-        previous = None
-        for title in self.titles:
-            h.update(str(title.duration).encode())
-            h.update(str(len(title.chapters)).encode())
-            for chapter in title.chapters:
-                h.update(str(chapter.start).encode())
-                h.update(str(chapter.duration).encode())
-        self.ident = '$H1$' + h.hexdigest()
-        # Mark duplicate titles
-        for title in self.titles:
-            if previous is not None:
-                if previous.duration == title.duration:
-                    if previous.duplicate == 'no':
-                        previous.duplicate = 'first'
-                    title.duplicate = 'yes'
-                else:
-                    if previous.duplicate == 'yes':
-                        previous.duplicate = 'last'
-            previous = title
-        if title.duplicate == 'yes':
-            title.duplicate = 'last'
-        # Mark "best" audio and subtitle tracks for each language
-        for title in self.titles:
-            for _, group in groupby(
-                    sorted(title.audio_tracks, key=attrgetter('name')),
-                    key=attrgetter('name')):
-                group = sorted(group, key=lambda track: (
-                    AUDIO_MIX_ORDER.index(track.channel_mix),
-                    AUDIO_ENCODING_ORDER.index(track.encoding)
-                ))
-                if group:
-                    group[0].best = True
-            for _, group in groupby(
-                    sorted(title.subtitle_tracks, key=attrgetter('name')),
-                    key=attrgetter('name')):
-                group = list(group)
-                if group:
-                    group[0].best = True
-
-    def __repr__(self):
-        return '<Disc()>'
 
     error1_re = re.compile(
         r"libdvdread: Can't open .* for reading", re.UNICODE)
@@ -138,6 +78,84 @@ class Disc():
         r'^    \+ (?P<number>\d+), (?P<name>.*) '
         r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>Text|Bitmap)\))?'
         r'\((?P<format>CC|VOBSUB)\)?$', re.UNICODE)
+
+    def __init__(self, config, titles=None):
+        super().__init__()
+        self.match = None
+        self.titles = []
+        self.name = ''
+        self.serial = None
+        self.ident = None
+        if titles is None:
+            titles = [0]
+        for title in titles:
+            self._scan_title(config, title)
+        self.ident = self._generate_ident()
+        self._mark_duplicates()
+        self._mark_best()
+
+    def _generate_ident(self):
+        # Calculate a hash of disc serial, and track properties to form a
+        # unique disc identifier, then replace disc-serial with this (#1)
+        h = hashlib.sha1()
+        if self.serial:
+            h.update(self.serial)
+        h.update(str(len(self.titles)).encode())
+        for title in self.titles:
+            h.update(str(title.duration).encode())
+            h.update(str(len(title.chapters)).encode())
+            for chapter in title.chapters:
+                h.update(str(chapter.start).encode())
+                h.update(str(chapter.duration).encode())
+        return '$H1$' + h.hexdigest()
+
+    def _mark_duplicates(self):
+        # Mark duplicate titles (adjacent titles with equal durations) as such;
+        # the Title.duplicate property contains one of the following states:
+        #
+        # * no:    this title is not a duplicate
+        # * first: this title is the first in a run of duplicates
+        # * yes:   this title is in the middle of a run of duplicates
+        # * last:  this title is the last in a run of duplicates
+        previous = None
+        for title in self.titles:
+            if previous is not None:
+                if previous.duration == title.duration:
+                    if previous.duplicate == 'no':
+                        previous.duplicate = 'first'
+                    title.duplicate = 'yes'
+                else:
+                    if previous.duplicate == 'yes':
+                        previous.duplicate = 'last'
+            previous = title
+        if title.duplicate == 'yes':
+            title.duplicate = 'last'
+
+    def _mark_best(self):
+        # Mark "best" audio and subtitle tracks for each language; the "best"
+        # audio track is determined by the global AUDIO_MIX_ORDER and
+        # AUDIO_ENCODING_ORDER values which define the preference order for
+        # these two properties
+        for title in self.titles:
+            for _, group in groupby(
+                    sorted(title.audio_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = sorted(group, key=lambda track: (
+                    AUDIO_MIX_ORDER.index(track.channel_mix),
+                    AUDIO_ENCODING_ORDER.index(track.encoding)
+                ))
+                if group:
+                    group[0].best = True
+            for _, group in groupby(
+                    sorted(title.subtitle_tracks, key=attrgetter('name')),
+                    key=attrgetter('name')):
+                group = list(group)
+                if group:
+                    group[0].best = True
+
+    def __repr__(self):
+        return '<Disc()>'
+
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
 
@@ -150,10 +168,10 @@ class Disc():
 
         cmdline = [
             config.get_path('handbrake'),
-            '-i', config.source,     # specify the input device
-            '-t', str(title),        # select the specified title
-            '--min-duration', '300', # only scan titles >5 minutes
-            '--scan',                # scan only
+            '-i', config.source,      # specify the input device
+            '-t', str(title),         # select the specified title
+            '--min-duration', '300',  # only scan titles >5 minutes
+            '--scan',                 # scan only
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
@@ -280,14 +298,14 @@ class Disc():
             '-i', config.source,
             '-t', str(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'av_mp4', # output an MP4 container
-            '-O',           # optimize for streaming
-            '-m',           # include chapter markers
-            '--encoder', 'x264',          # use x264 for encoding
-            '--encoder-preset', 'medium', # use x264 medium preset
-            '--encoder-profile', 'high',  # use x264 high profile
-            '--encoder-level', '4.1',     # use x264 level 4.1
-            '--quality', '23',            # video quality 23
+            '-f', 'av_mp4',  # output an MP4 container
+            '-O',            # optimize for streaming
+            '-m',            # include chapter markers
+            '--encoder', 'x264',           # use x264 for encoding
+            '--encoder-preset', 'medium',  # use x264 medium preset
+            '--encoder-profile', 'high',   # use x264 high profile
+            '--encoder-level', '4.1',      # use x264 level 4.1
+            '--quality', '23',             # video quality 23
             # advanced encoding options (mostly defaults from High Profile)
             '-x', 'psy-rd=1|0.15:vbv-bufsize=78125:vbv-maxrate=62500:me=umh:b-adapt=2',
             # disable cropping (otherwise vobsub subtitles screw up) but don't
@@ -301,11 +319,11 @@ class Disc():
             # audio encoding options (use 160kbps AAC with the decent FDK
             # encoder, plus whatever downmix the user selected for the
             # specified tracks)
-            '-a', ','.join(str(num)  for (num, _, _)  in audio_defs),
-            '-E', ','.join('mp3'     for ad           in audio_defs),
-            '-B', ','.join('160'     for ad           in audio_defs),
-            '-6', ','.join(mix       for (_, mix, _)  in audio_defs),
-            '-A', ','.join(name      for (_, _, name) in audio_defs),
+            '-a', ','.join(str(num) for (num, _, _)  in audio_defs),
+            '-E', ','.join('mp3'    for ad           in audio_defs),
+            '-B', ','.join('160'    for ad           in audio_defs),
+            '-6', ','.join(mix      for (_, mix, _)  in audio_defs),
+            '-A', ','.join(name     for (_, _, name) in audio_defs),
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
@@ -338,12 +356,12 @@ class Disc():
                 '--TVShowName',   episodes[0].season.program.name,
                 '--TVSeasonNum',  str(episodes[0].season.number),
                 '--TVEpisodeNum', str(episodes[0].number),
-                '--TVEpisode',    multipart_name(episodes),
+                '--TVEpisode',    multipart.name(episodes),
                 # also set tags for music files as these have wider support
                 '--artist',       episodes[0].season.program.name,
                 '--album',        'Season {}'.format(episodes[0].season.number),
                 '--tracknum',     str(episodes[0].number),
-                '--title',        multipart_name(episodes),
+                '--title',        multipart.name(episodes),
                 ]
             proc.check_call(cmdline)
             os.chmod(
@@ -497,5 +515,3 @@ class SubtitleTrack():
     def __repr__(self):
         return "<SubtitleTrack({number}, '{name}')>".format(
             number=self.number, name=self.name)
-
-

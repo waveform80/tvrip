@@ -27,7 +27,6 @@ globbing, response file handling, and common logging configuration and options.
 import sys
 import os
 import argparse
-import textwrap
 import logging
 import locale
 import traceback
@@ -147,7 +146,7 @@ class TerminalApplication():
                 self.config_bools = ['pdb'] + self.config_bools
             if not self.config_section:
                 self.config_section = self.config.sections()[0]
-            if not self.config_section in self.config.sections():
+            if self.config_section not in self.config.sections():
                 self.parser.error(
                     'unable to locate [%s] section in configuration' % self.config_section)
             self.parser.set_defaults(**{
@@ -203,5 +202,3 @@ class TerminalApplication():
     def main(self, args):
         "Called as the main body of the utility"
         raise NotImplementedError
-
-

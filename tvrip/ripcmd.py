@@ -25,14 +25,14 @@ from datetime import timedelta, datetime
 
 import sqlalchemy as sa
 
-from tvrip.ripper import Disc, Title
-from tvrip.database import (
+from .ripper import Disc, Title
+from .database import (
     init_session, Configuration, Program, Season, Episode,
     AudioLanguage, SubtitleLanguage, ConfigPath
     )
-from tvrip.episodemap import EpisodeMap, MapError
-from tvrip.cmdline import Cmd, CmdError, CmdSyntaxError
-from tvrip.const import DATADIR
+from .episodemap import EpisodeMap, MapError
+from .cmdline import Cmd, CmdError, CmdSyntaxError
+from .const import DATADIR
 from . import multipart
 
 
@@ -80,6 +80,7 @@ class RipCmd(Cmd):
     def _get_disc(self):
         "Returns the Disc object for the current source"
         return self.discs.get(self.config.source, None)
+
     def _set_disc(self, value):
         "Set the Disc object for the current source"
         if self.config.source is None:
@@ -91,6 +92,7 @@ class RipCmd(Cmd):
             del self.discs[self.config.source]
         else:
             self.discs[self.config.source] = value
+
     disc = property(_get_disc, _set_disc)
 
     def no_args(self, arg):
@@ -138,7 +140,7 @@ class RipCmd(Cmd):
         of the range or throws an error if no such episodes exist unless the
         optional must_exist flag is set to False.
         """
-        if not '-' in episodes:
+        if '-' not in episodes:
             raise CmdSyntaxError('Expected two dash-separated numbers')
         start, finish = (
             self.parse_episode(i, must_exist)
@@ -195,7 +197,7 @@ class RipCmd(Cmd):
         numbers, this method returns the Title objects at the start and end
         of the range or throws an error if no such titles exist.
         """
-        if not '-' in titles:
+        if '-' not in titles:
             raise CmdSyntaxError('Expected two dash-separated numbers')
         start, finish = (self.parse_title(i) for i in titles.split('-', 1))
         return start, finish
@@ -241,7 +243,7 @@ class RipCmd(Cmd):
         numbers, this method returns the Chapter objects at the start and end
         of the range or throws an error if no such chapters exist.
         """
-        if not '-' in chapters:
+        if '-' not in chapters:
             raise CmdSyntaxError('Expected two dash-separated numbers')
         start, finish = (
             self.parse_chapter(title, i)
@@ -290,22 +292,14 @@ class RipCmd(Cmd):
         "Removes all seasons from the specified program"
         if program is None:
             program = self.config.program
-        for season in self.session.query(
-                Season
-            ).filter(
-                (Season.program == program)
-            ):
+        for season in self.session.query(Season).filter((Season.program == program)):
             self.session.delete(season)
 
     def clear_episodes(self, season=None):
         "Removes all episodes from the specified season"
         if season is None:
             season = self.config.season
-        for episode in self.session.query(
-                Episode
-            ).filter(
-                (Episode.season == season)
-            ):
+        for episode in self.session.query(Episode).filter((Episode.season == season)):
             self.session.delete(episode)
 
     def pprint_disc(self):
@@ -336,8 +330,9 @@ class RipCmd(Cmd):
             raise CmdError('No titles found on the scanned disc')
         self.pprint(
             'Title {title}, duration: {duration}, duplicate: {duplicate}'.format(
-            title=title.number, duration=title.duration,
-            duplicate=title.duplicate))
+                title=title.number, duration=title.duration,
+                duplicate=title.duplicate)
+        )
         self.pprint('')
         table = [('Chapter', 'Start', 'Finish', 'Duration')]
         for chapter in title.chapters:
@@ -395,8 +390,12 @@ class RipCmd(Cmd):
                 ).order_by(
                     Program.name
                 ):
-            table.append((program, seasons, episodes,
-                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
+            table.append((
+                program,
+                seasons,
+                episodes,
+                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)
+            ))
         self.pprint_table(table)
 
     def pprint_seasons(self, program=None):
@@ -421,8 +420,11 @@ class RipCmd(Cmd):
                 ).order_by(
                     Season.number
                 ):
-            table.append((season, episodes,
-                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)))
+            table.append((
+                season,
+                episodes,
+                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)
+            ))
         self.pprint_table(table)
 
     def pprint_episodes(self, season=None):
@@ -436,16 +438,12 @@ class RipCmd(Cmd):
                 season=season.number, program=season.program.name))
         self.pprint('')
         table = [('Num', 'Title', 'Ripped')]
-        for episode in self.session.query(
-                Episode
-            ).filter(
-                (Episode.season == season)
-            ):
+        for episode in self.session.query(Episode).filter((Episode.season == season)):
             table.append((
                 episode.number,
                 episode.name,
                 ['', 'x'][episode.ripped]
-                ))
+            ))
         self.pprint_table(table)
 
     def do_config(self, arg=''):
@@ -540,7 +538,7 @@ class RipCmd(Cmd):
         arg = arg.strip()
         try:
             start, finish = self.parse_title_range(arg)
-        except CmdError as e:
+        except CmdError:
             start = finish = self.parse_title(arg)
         if start == finish:
             start.duplicate = 'no'
@@ -850,9 +848,15 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(
                 '{} is not a valid episode number'.format(number))
 
-        if op == 'ins':
-            # Shift all later episodes along 1
-            for episode in self.session.query(
+        {
+            'ins': self.insert_episode,
+            'upd': self.update_episode,
+            'del': self.delete_episode,
+        }[op](season, number, name)
+
+    def insert_episode(self, season, number, name):
+        # Shift all later episodes along 1
+        for episode in self.session.query(
                     Episode
                 ).filter(
                     (Episode.season == season) &
@@ -860,30 +864,32 @@ class RipCmd(Cmd):
                 ).order_by(
                     Episode.number.desc()
                 ):
-                episode.number += 1
-                self.session.flush()
-            episode = Episode(season, number, name)
-            self.session.add(episode)
-            self.pprint(
-                'Inserted episode {episode} to season {season} '
-                'of {program}'.format(
-                    episode=episode.number,
-                    season=episode.season.number,
-                    program=episode.season.program.name))
-        elif op == 'upd':
-            episode = self.parse_episode(number)
-            episode.name = name
-            self.pprint(
-                'Renamed episode {episode} of season {season} '
-                'of {program}'.format(
-                    episode=episode.number,
-                    season=episode.season.number,
-                    program=episode.season.program.name))
-        elif op == 'del':
-            # Shift all later episodes down 1
-            episode = self.parse_episode(number)
-            self.session.delete(episode)
-            for episode in self.session.query(
+            episode.number += 1
+            self.session.flush()
+        episode = Episode(season, number, name)
+        self.session.add(episode)
+        self.pprint(
+            'Inserted episode {episode} to season {season} '
+            'of {program}'.format(
+                episode=episode.number,
+                season=episode.season.number,
+                program=episode.season.program.name))
+
+    def update_episode(self, season, number, name):
+        episode = self.parse_episode(number)
+        episode.name = name
+        self.pprint(
+            'Renamed episode {episode} of season {season} '
+            'of {program}'.format(
+                episode=episode.number,
+                season=episode.season.number,
+                program=episode.season.program.name))
+
+    def delete_episode(self, season, number, name=None):
+        # Shift all later episodes down 1
+        episode = self.parse_episode(number)
+        self.session.delete(episode)
+        for episode in self.session.query(
                     Episode
                 ).filter(
                     (Episode.season == season) &
@@ -891,23 +897,21 @@ class RipCmd(Cmd):
                 ).order_by(
                     Episode.number
                 ):
-                episode.number -= 1
-                self.session.flush()
-            self.pprint(
-                'Deleted episode {episode} to season {season} '
-                'of {program}'.format(
-                    episode=number,
-                    season=season.number,
-                    program=season.program.name))
-        else:
-            assert False
+            episode.number -= 1
+            self.session.flush()
+        self.pprint(
+            'Deleted episode {episode} to season {season} '
+            'of {program}'.format(
+                episode=number,
+                season=season.number,
+                program=season.program.name))
 
     def create_episodes(self, count, season=None):
         "Creates the specified number of episodes in the current season"
         if season is None:
             season = self.config.season
         self.pprint('Please enter the names of the episodes. Leave a '
-            'name blank if you wish to terminate entry early:')
+                    'name blank if you wish to terminate entry early:')
         self.clear_episodes()
         for number in range(1, count + 1):
             name = self.input('{:2d}: '.format(number))
@@ -1016,7 +1020,7 @@ class RipCmd(Cmd):
             self.session.query(
                     Season
                 ).filter(
-                    (Season.program==self.config.program) &
+                    (Season.program == self.config.program) &
                     ("SUBSTR(CAST(season AS TEXT), 1, :length) = :season")
                 ).params(
                     length=len(text),
@@ -1082,7 +1086,7 @@ class RipCmd(Cmd):
         self.config.season = self.session.query(
                 Season
             ).filter(
-                (Season.program==new_program)
+                (Season.program == new_program)
             ).order_by(
                 Season.number
             ).first()
@@ -1091,6 +1095,7 @@ class RipCmd(Cmd):
         self.map_ripped()
 
     program_re = re.compile(r'^program\s+')
+
     def complete_program(self, text, line, start, finish):
         "Auto-completer for program command"
         match = self.program_re.match(line)
@@ -1209,20 +1214,20 @@ class RipCmd(Cmd):
         # repeat serial numbers or simply leave them blank), so a new mechanism
         # involving a hash of disc details was introduced.
         for episode in self.session.query(
-                Episode
-            ).filter(
-                (Episode.season == self.config.season) &
-                (
+                    Episode
+                ).filter(
+                    (Episode.season == self.config.season) &
                     (
-                        (Episode.disc_id.startswith('$H1$')) &
-                        (Episode.disc_id == self.disc.ident)
-                    ) |
-                    (
-                        (~Episode.disc_id.startswith('$H1$')) &
-                        (Episode.disc_id == self.disc.serial)
+                        (
+                            (Episode.disc_id.startswith('$H1$')) &
+                            (Episode.disc_id == self.disc.ident)
+                        ) |
+                        (
+                            (~Episode.disc_id.startswith('$H1$')) &
+                            (Episode.disc_id == self.disc.serial)
+                        )
                     )
-                )
-            ):
+                ):
             try:
                 title = [
                     t for t in self.disc.titles
@@ -1325,9 +1330,9 @@ class RipCmd(Cmd):
         # Filter out duplicate titles on the disc
         titles = [
             title for title in titles
-            if title.duplicate == 'no'
-            or self.config.duplicates == 'all'
-            or self.config.duplicates == title.duplicate
+            if title.duplicate == 'no' or
+            self.config.duplicates == 'all' or
+            self.config.duplicates == title.duplicate
             ]
         try:
             self.episode_map.automap(
@@ -1423,23 +1428,29 @@ class RipCmd(Cmd):
                     title=title.number,
                     duration=title.duration,
                     episode_num=episode.number,
-                    episode_title=episode.name))
+                    episode_title=episode.name
+                )
+            )
             self.episode_map[episode] = title
         else:
             start, end = target
             if start.title == end.title:
                 index = (
                     '{title}.{start:02d}-{end:02d}'.format(
-                    title=start.title.number,
-                    start=start.number,
-                    end=end.number))
+                        title=start.title.number,
+                        start=start.number,
+                        end=end.number
+                    )
+                )
             else:
                 index = (
                     '{st}.{sc:02d}-{et}.{ec:02d}'.format(
-                    st=start.title.number,
-                    sc=start.number,
-                    et=end.title.number,
-                    ec=end.number))
+                        st=start.title.number,
+                        sc=start.number,
+                        et=end.title.number,
+                        ec=end.number
+                    )
+                )
             self.pprint(
                 'Mapping chapters {index} (duration {duration}) '
                 'to episode {episode_num}, "{episode_title}"'.format(
@@ -1470,16 +1481,20 @@ class RipCmd(Cmd):
                     if start.title == end.title:
                         index = (
                             '{title}.{start:02d}-{end:02d}'.format(
-                            title=start.title.number,
-                            start=start.number,
-                            end=end.number))
+                                title=start.title.number,
+                                start=start.number,
+                                end=end.number
+                            )
+                        )
                     else:
                         index = (
                             '{st}.{sc:02d}-{et}.{ec:02d}'.format(
-                            st=start.title.number,
-                            sc=start.number,
-                            et=end.title.number,
-                            ec=end.number))
+                                st=start.title.number,
+                                sc=start.number,
+                                et=end.title.number,
+                                ec=end.number
+                            )
+                        )
                     duration = sum((
                         chapter.duration
                         for title in start.title.disc.titles
@@ -1593,26 +1608,28 @@ class RipCmd(Cmd):
             audio_tracks = [t for t in audio_tracks if t.best]
         subtitle_tracks = [
             t for t in title.subtitle_tracks
-            if self.config.in_subtitle_langs(t.language)
-            and (
-                t.format == self.config.subtitle_format
-                or self.config.subtitle_format == 'any'
-                )
-            ]
+            if self.config.in_subtitle_langs(t.language) and (
+                t.format == self.config.subtitle_format or
+                self.config.subtitle_format == 'any'
+            )
+        ]
         if not self.config.subtitle_all:
             subtitle_tracks = [t for t in subtitle_tracks if t.best]
         if len(episodes) == 1:
             self.pprint(
                 'Ripping episode {episode.number}, '
-                '"{episode.name}"'.format(episode=episode))
+                '"{episode.name}"'.format(episode=episode)
+            )
         else:
             self.pprint(
                 'Ripping episodes {numbers}, {title}'.format(
                     numbers=' '.join(str(e.number) for e in episodes),
-                    title=multipart.name(episodes)))
+                    title=multipart.name(episodes)
+                )
+            )
         try:
             self.disc.rip(self.config, episodes, title, audio_tracks,
-                subtitle_tracks, chapter_start, chapter_end)
+                          subtitle_tracks, chapter_start, chapter_end)
         except proc.CalledProcessError as e:
             raise CmdError('process failed with code {}'.format(e.returncode))
 
@@ -1678,9 +1695,10 @@ class RipCmd(Cmd):
         self.config.source = arg
 
     source_re = re.compile('^source\s+')
+
     def complete_source(self, text, line, start, finish):
         return self.complete_path(text, self.source_re.sub('', line),
-                start, finish)
+                                  start, finish)
 
     def do_target(self, arg):
         """
@@ -1703,9 +1721,10 @@ class RipCmd(Cmd):
         self.config.target = arg
 
     target_re = re.compile(r'^target\s+')
+
     def complete_target(self, text, line, start, finish):
         return self.complete_path(text, self.target_re.sub('', line),
-                start, finish)
+                                  start, finish)
 
     def do_temp(self, arg):
         """
@@ -1731,9 +1750,10 @@ class RipCmd(Cmd):
         self.config.temp = arg
 
     temp_re = re.compile(r'^temp\s+')
+
     def complete_temp(self, text, line, start, finish):
         return self.complete_path(text, self.temp_re.sub('', line),
-                start, finish)
+                                  start, finish)
 
     def do_template(self, arg):
         """

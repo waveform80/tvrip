@@ -20,6 +20,7 @@
 
 import os
 import tempfile
+from datetime import timedelta
 
 from sqlalchemy import (
     Column, ForeignKeyConstraint, ForeignKey,
@@ -29,13 +30,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.types import Unicode, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, synonym, sessionmaker
-from datetime import timedelta
 
-from tvrip.const import DATADIR
+from .const import DATADIR
 
 
 Session = sessionmaker()
 DeclarativeBase = declarative_base()
+
 
 # Enable foreign keys in SQLite
 @event.listens_for(Engine, 'connect')
@@ -54,7 +55,8 @@ class Episode(DeclarativeBase):
             ['program_name', 'season_number'],
             ['seasons.program_name', 'seasons.number'],
             onupdate='cascade', ondelete='cascade'),
-        CheckConstraint('(end_chapter is null and start_chapter is null) '
+        CheckConstraint(
+            '(end_chapter is null and start_chapter is null) '
             'or (end_chapter >= start_chapter)'),
         {},
     )
@@ -92,11 +94,11 @@ class Season(DeclarativeBase):
 
     __tablename__ = 'seasons'
 
-    program_name = Column(Unicode(200), ForeignKey('programs.name',
-        onupdate='cascade', ondelete='cascade'), primary_key=True)
+    program_name = Column(Unicode(200),
+                          ForeignKey('programs.name', onupdate='cascade', ondelete='cascade'),
+                          primary_key=True)
     number = Column(Integer, CheckConstraint('number >= 1'), primary_key=True)
-    episodes = relationship('Episode', backref='season',
-        order_by=[Episode.number])
+    episodes = relationship('Episode', backref='season', order_by=[Episode.number])
 
     def __init__(self, program, number):
         self.program = program
@@ -126,8 +128,10 @@ class AudioLanguage(DeclarativeBase):
 
     __tablename__ = 'config_audio'
 
-    config_id = Column(Integer, ForeignKey('config.id',
-        onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
+    config_id = Column(Integer,
+                       ForeignKey('config.id', onupdate='cascade',
+                                  ondelete='cascade'), default=1,
+                       primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
 
     def __init__(self, config, lang):
@@ -143,8 +147,9 @@ class SubtitleLanguage(DeclarativeBase):
 
     __tablename__ = 'config_subtitles'
 
-    config_id = Column(Integer, ForeignKey('config.id',
-        onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
+    config_id = Column(Integer,
+                       ForeignKey('config.id', onupdate='cascade', ondelete='cascade'),
+                       default=1, primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
 
     def __init__(self, config, lang):
@@ -160,8 +165,9 @@ class ConfigPath(DeclarativeBase):
 
     __tablename__ = 'config_paths'
 
-    config_id = Column(Integer, ForeignKey('config.id',
-        onupdate='cascade', ondelete='cascade'), default=1, primary_key=True)
+    config_id = Column(Integer,
+                       ForeignKey('config.id', onupdate='cascade', ondelete='cascade'),
+                       default=1, primary_key=True)
     name = Column(Unicode(100), primary_key=True)
     path = Column(Unicode(300), nullable=False)
 
@@ -177,7 +183,7 @@ class ConfigPath(DeclarativeBase):
 class Configuration(DeclarativeBase):
     """Represents a stored configuration for the application"""
 
-    __tablename__  = 'config'
+    __tablename__ = 'config'
     __table_args__ = (
         ForeignKeyConstraint(
             ['program_name'],
@@ -192,54 +198,56 @@ class Configuration(DeclarativeBase):
 
     id = Column(Integer, primary_key=True)
     source = Column(Unicode(300), nullable=False, default='/dev/dvd')
-    target = Column(Unicode(300), nullable=False,
-        default=os.path.expanduser('~/Videos'))
-    temp = Column(Unicode(300), nullable=False,
-        default=tempfile.gettempdir())
-    template = Column(Unicode(300), nullable=False,
-        default='{program} - {id} - {name}.mp4')
-    id_template = Column(Unicode(100), nullable=False,
-                         default='{season}x{episode:02d}')
+    target = Column(Unicode(300), nullable=False, default=os.path.expanduser('~/Videos'))
+    temp = Column(Unicode(300), nullable=False, default=tempfile.gettempdir())
+    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.mp4')
+    id_template = Column(Unicode(100), nullable=False, default='{season}x{episode:02d}')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)
     _duration_max = Column('duration_max', Integer, nullable=False, default=50)
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(Unicode(6),
-        CheckConstraint("subtitle_format in ('none', 'vobsub', 'cc', 'any')"),
-        nullable=False, default='none')
+                             CheckConstraint("subtitle_format in ('none', 'vobsub', 'cc', 'any')"),
+                             nullable=False, default='none')
     audio_mix = Column(Unicode(6),
-        CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
-        nullable=False, default='dpl2')
+                       CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
+                       nullable=False, default='dpl2')
     decomb = Column(Unicode(4),
-        CheckConstraint("decomb in ('off', 'on', 'auto')"),
-        nullable=False, default='off')
+                    CheckConstraint("decomb in ('off', 'on', 'auto')"),
+                    nullable=False, default='off')
     audio_all = Column(Boolean, nullable=False, default=False)
     audio_langs = relationship('AudioLanguage', backref='config')
     subtitle_all = Column(Boolean, nullable=False, default=False)
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
     dvdnav = Column(Boolean, nullable=False, default=True)
     duplicates = Column(Unicode(5),
-        CheckConstraint("duplicates in ('all', 'first', 'last')"),
-        nullable=False, default='all')
+                        CheckConstraint("duplicates in ('all', 'first', 'last')"),
+                        nullable=False, default='all')
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
-    season = relationship('Season', primaryjoin=
-            'and_(Season.program_name == Configuration.program_name, '
-            'Season.number == foreign(Configuration.season_number))')
+    season = relationship('Season',
+                          primaryjoin='and_('
+                          'Season.program_name == Configuration.program_name, '
+                          'Season.number == foreign(Configuration.season_number)'
+                          ')')
 
     def _get_duration_min(self):
         return timedelta(minutes=self._duration_min)
+
     def _set_duration_min(self, value):
         self._duration_min = value.seconds / 60
+
     duration_min = synonym('_duration_min',
-        descriptor=property(_get_duration_min, _set_duration_min))
+                           descriptor=property(_get_duration_min, _set_duration_min))
 
     def _get_duration_max(self):
         return timedelta(minutes=self._duration_max)
+
     def _set_duration_max(self, value):
         self._duration_max = value.seconds / 60
+
     duration_max = synonym('_duration_max',
-        descriptor=property(_get_duration_max, _set_duration_max))
+                           descriptor=property(_get_duration_max, _set_duration_max))
 
     def in_audio_langs(self, lang):
         """Returns True if lang is a selected audio language"""
@@ -253,21 +261,24 @@ class Configuration(DeclarativeBase):
         """Returns the configured path of the specified utility"""
         session = Session.object_session(self)
         return session.query(ConfigPath).\
-            filter(ConfigPath.config_id==self.id).\
-            filter(ConfigPath.name==name).one().path
+            filter(ConfigPath.config_id == self.id).\
+            filter(ConfigPath.name == name).one().path
 
     def set_path(self, name, value):
         """Sets the configured path of the specified utility"""
         session = Session.object_session(self)
         session.query(ConfigPath).\
-            filter(ConfigPath.config_id==self.id).\
-            filter(ConfigPath.name==name).one().path = value
+            filter(ConfigPath.config_id == self.id).\
+            filter(ConfigPath.name == name).one().path = value
         session.commit()
 
     def __repr__(self):
         return "<Configuration(...)>"
 
+
 SESSION = None
+
+
 def init_session(url=None, debug=False):
     """Initializes the connection to the database and returns a new session
 

@@ -36,13 +36,12 @@ try:
 except ImportError:
     pass
 
-# All meta-data is defined as global variables in the package root so that
-# other modules can query it easily without having to wade through distutils
-# nonsense
-import tvrip as app
-
 
 def main():
+    # All meta-data is defined as global variables in the package root so that
+    # other modules can query it easily without having to wade through distutils
+    # nonsense
+    import tvrip as app
     with io.open(os.path.join(HERE, 'README.rst'), 'r') as readme:
         setup(
             name                 = app.__project__,
@@ -70,4 +69,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

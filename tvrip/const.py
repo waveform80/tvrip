@@ -21,6 +21,6 @@
 import os
 
 # The path under which tvrip-related data will be kept
-DATADIR = os.path.expanduser('~/.tvrip') # must be absolute
+DATADIR = os.path.expanduser('~/.tvrip')  # must be absolute
 if not os.path.exists(DATADIR):
     os.mkdir(DATADIR)
