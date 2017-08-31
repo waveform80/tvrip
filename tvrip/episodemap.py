@@ -151,8 +151,6 @@ class EpisodeMap(dict):
 
     def __setitem__(self, key, value):
         # Ensures values are either a Title or a (Chapter, Chapter) tuple.
-        # Also ensures that titles and chapters are not duplicated in the
-        # mapping
         assert isinstance(key, Episode)
         try:
             start, finish = value
@@ -160,7 +158,6 @@ class EpisodeMap(dict):
             assert isinstance(finish, Chapter)
         except (TypeError, ValueError):
             assert isinstance(value, Title)
-        assert (value not in self.values()) or (self[key] == value)
         super().__setitem__(key, value)
 
     def keys(self):
