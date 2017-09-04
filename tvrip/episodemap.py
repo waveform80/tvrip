@@ -221,7 +221,7 @@ class EpisodeMap(dict):
                     title.number, title.duration)
         if not result:
             raise NoMappingError('No mapping for any titles found')
-        elif strict_mapping and len(result) != len(episodes):
+        elif strict_mapping and episodes:
             raise NoMappingError("Mapping doesn't cover all episodes")
         return result
 
