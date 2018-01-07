@@ -97,7 +97,7 @@ class Season(DeclarativeBase):
     program_name = Column(Unicode(200),
                           ForeignKey('programs.name', onupdate='cascade', ondelete='cascade'),
                           primary_key=True)
-    number = Column(Integer, CheckConstraint('number >= 1'), primary_key=True)
+    number = Column(Integer, CheckConstraint('number >= 0'), primary_key=True)
     episodes = relationship('Episode', backref='season', order_by=[Episode.number])
 
     def __init__(self, program, number):

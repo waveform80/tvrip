@@ -982,9 +982,9 @@ class RipCmd(Cmd):
             raise CmdSyntaxError(
                 'A season must be a valid number '
                 '({} specified)'.format(arg))
-        if arg < 1:
+        if arg < 0:
             raise CmdSyntaxError(
-                'A season number must be 1 or higher '
+                'A season number must be 0 or higher '
                 '({} specified)'.format(arg))
         self.config.season = self.session.query(Season).get(
             (self.config.program.name, arg))
