@@ -305,7 +305,7 @@ class Disc():
             '--encoder-preset', 'medium',  # use x264 medium preset
             '--encoder-profile', 'high',   # use x264 high profile
             '--encoder-level', '4.1',      # use x264 level 4.1
-            '--quality', '23',             # video quality 23
+            '--quality', '21',             # video quality 21
             # advanced encoding options (mostly defaults from High Profile)
             '-x', 'psy-rd=1|0.15:vbv-bufsize=78125:vbv-maxrate=62500:me=umh:b-adapt=2',
             # disable cropping (otherwise vobsub subtitles screw up) but don't
@@ -316,12 +316,11 @@ class Disc():
             # explicitly specifying them)
             '--loose-anamorphic',
             '--modulus', '16',
-            # audio encoding options (use 160kbps AAC with the decent FDK
-            # encoder, plus whatever downmix the user selected for the
-            # specified tracks)
+            # audio encoding options (use 192kbps MP3 plus whatever downmix the
+            # user selected for the specified tracks)
             '-a', ','.join(str(num) for (num, _, _)  in audio_defs),
             '-E', ','.join('mp3'    for ad           in audio_defs),
-            '-B', ','.join('160'    for ad           in audio_defs),
+            '-B', ','.join('192'    for ad           in audio_defs),
             '-6', ','.join(mix      for (_, mix, _)  in audio_defs),
             '-A', ','.join(name     for (_, _, name) in audio_defs),
             ]
