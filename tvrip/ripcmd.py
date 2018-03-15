@@ -492,6 +492,8 @@ class RipCmd(Cmd):
             self.config.subtitle_format))
         self.pprint('subtitle_all     = {}'.format(
             ['off', 'on'][self.config.subtitle_all]))
+        self.pprint('subtitle_default = {}'.format(
+            ['off', 'on'][self.config.subtitle_default]))
         self.pprint('subtitle_langs   = {}'.format(
             ' '.join(l.lang for l in self.config.subtitle_langs)))
         self.pprint('dvdnav           = {}'.format(
@@ -766,6 +768,21 @@ class RipCmd(Cmd):
         (tvrip) subtitle_all on
         """
         self.config.subtitle_all = self.parse_bool(arg)
+
+    def do_subtitle_default(self, arg):
+        """
+        Sets whether to mark the "best" subtitle as the default
+
+        Syntax: subtitle_default <off|on>
+
+        The 'subtitle_default' command specifies whether the "best" subtitle
+        track (the first matching a specified language) should be marked as
+        the default track.
+
+        (tvrip) subtitle_default off
+        (tvrip) subtitle_default on
+        """
+        self.config.subtitle_default = self.parse_bool(arg)
 
     def do_decomb(self, arg):
         """

@@ -290,7 +290,7 @@ class Disc():
             for track in audio_tracks
             ]
         subtitle_defs = [
-            (track.number, track.name)
+            (track.number, track.name, track.best)
             for track in subtitle_tracks
             ]
         cmdline = [
@@ -336,7 +336,13 @@ class Disc():
                 cmdline.append(str(start_chapter.number))
         if config.subtitle_format == 'vobsub':
             cmdline.append('-s')
-            cmdline.append(','.join(str(num) for (num, _) in subtitle_defs))
+            cmdline.append(','.join(str(num) for (num, _, _) in subtitle_defs))
+            if config.subtitle_default:
+                for num, name, best in subtitle_defs:
+                    if best:
+                        cmdline.append('--subtitle-default')
+                        cmdline.append(str(num))
+                        break
         if config.decomb == 'on':
             cmdline.append('-d')
             cmdline.append('slow')

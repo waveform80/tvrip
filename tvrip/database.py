@@ -218,6 +218,7 @@ class Configuration(DeclarativeBase):
     audio_all = Column(Boolean, nullable=False, default=False)
     audio_langs = relationship('AudioLanguage', backref='config')
     subtitle_all = Column(Boolean, nullable=False, default=False)
+    subtitle_default = Column(Boolean, nullable=False, default=False)
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
     dvdnav = Column(Boolean, nullable=False, default=True)
     duplicates = Column(Unicode(5),
