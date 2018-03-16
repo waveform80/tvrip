@@ -27,6 +27,7 @@ def prefix(episodes):
     # A crude heuristic based on episode titles ending in " - Part n", "(n)",
     # the subsequent episode titles being simply '"'
     first_name = episodes[0].name
+    n = 1
     for n, e in enumerate(episodes[1:], start=2):
         if e.name == '"':
             continue
