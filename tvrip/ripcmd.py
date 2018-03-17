@@ -1241,7 +1241,7 @@ class RipCmd(Cmd):
         self.episode_map.clear()
         try:
             self.disc = Disc(self.config, titles)
-        except IOError as exc:
+        except (IOError, proc.CalledProcessError) as exc:
             self.disc = None
             raise CmdError(exc)
         self.map_ripped()
