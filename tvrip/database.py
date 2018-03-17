@@ -220,6 +220,9 @@ class Configuration(DeclarativeBase):
     subtitle_all = Column(Boolean, nullable=False, default=False)
     subtitle_default = Column(Boolean, nullable=False, default=False)
     subtitle_langs = relationship('SubtitleLanguage', backref='config')
+    video_style = Column(Unicode(10),
+                         CheckConstraint("video_style in ('tv', 'film', 'animation')"),
+                         nullable=False, default='tv')
     dvdnav = Column(Boolean, nullable=False, default=True)
     duplicates = Column(Unicode(5),
                         CheckConstraint("duplicates in ('all', 'first', 'last')"),

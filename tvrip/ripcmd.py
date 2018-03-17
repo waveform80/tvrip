@@ -496,6 +496,7 @@ class RipCmd(Cmd):
             ['off', 'on'][self.config.subtitle_default]))
         self.pprint('subtitle_langs   = {}'.format(
             ' '.join(l.lang for l in self.config.subtitle_langs)))
+        self.pprint('video_style      = {}'.format(self.config.video_style))
         self.pprint('dvdnav           = {}'.format(
             ['no', 'yes'][self.config.dvdnav]))
 
@@ -622,6 +623,31 @@ class RipCmd(Cmd):
             raise CmdError(
                 'Path name "{}" is invalid, please see "config" '
                 'for valid options'.format(name))
+
+    def do_video_style(self, arg):
+        """
+        Sets the style of video to rip.
+
+        Syntax: video_style <style-value>
+
+        The 'video_style' command specifies the sort of video that the encoder
+        will be handling. The valid styles are 'tv', 'film', and 'animation'.
+        For example:
+
+        (tvrip) video_style tv
+        (tvrip) video_style animation
+        """
+        try:
+            arg = {
+                'tv':         'tv',
+                'television': 'tv',
+                'film':       'film',
+                'anim':       'animation',
+                'animation':  'animation',
+                }[arg.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError('Invalid video style {}'.format(arg))
+        self.config.video_style = arg
 
     def do_audio_langs(self, arg):
         """
