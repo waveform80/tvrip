@@ -315,13 +315,13 @@ class Disc():
             # explicitly specifying them)
             '--loose-anamorphic',
             '--modulus', '16',
-            # audio encoding options (use 192kbps MP3 plus whatever downmix the
-            # user selected for the specified tracks)
-            '-a', ','.join(str(num) for (num, _, _)  in audio_defs),
-            '-E', ','.join('mp3'    for ad           in audio_defs),
-            '-B', ','.join('192'    for ad           in audio_defs),
-            '-6', ','.join(mix      for (_, mix, _)  in audio_defs),
-            '-A', ','.join(name     for (_, _, name) in audio_defs),
+            # audio encoding options (use 160kbps FDK-AAC plus whatever downmix
+            # the user selected for the specified tracks)
+            '-a', ','.join(str(num)  for (num, _, _)  in audio_defs),
+            '-E', ','.join('fdk_aac' for ad           in audio_defs),
+            '-B', ','.join('160'     for ad           in audio_defs),
+            '-6', ','.join(mix       for (_, mix, _)  in audio_defs),
+            '-A', ','.join(name      for (_, _, name) in audio_defs),
             ]
         cmdline.append('--quality')
         cmdline.append(str({
