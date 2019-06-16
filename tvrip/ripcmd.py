@@ -269,9 +269,10 @@ class RipCmd(Cmd):
         """
         Parse a string containing a title or a chapter-range specification.
 
-        Given a string representing a title, a title.start-end chapter range,
-        or a title.start-title.end range, this method returns a Title object or
-        the (Chapter, Chapter) tuple that the string represents.
+        Given a string representing a title, a title.start chapter, a
+        title.start-end chapter range, or a title.start-title.end range, this
+        method returns a Title object or the (Chapter, Chapter) tuple that the
+        string represents.
         """
         if '.' in s:
             title, chapters = s.split('.', 1)
@@ -283,8 +284,11 @@ class RipCmd(Cmd):
                     self.parse_chapter(self.parse_title(start_title), start_chapter),
                     self.parse_chapter(self.parse_title(end_title), end_chapter)
                     )
-            else:
+            elif '-' in chapters:
                 return self.parse_chapter_range(self.parse_title(title), chapters)
+            else:
+                chapter = self.parse_chapter(self.parse_title(title), chapters)
+                return (chapter, chapter)
         else:
             return self.parse_title(s)
 
@@ -1436,7 +1440,7 @@ class RipCmd(Cmd):
         """
         Maps episodes to titles or chapter ranges.
 
-        Syntax: map [episode title[.start-end]]
+        Syntax: map [episode title[.start[-end]]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
