@@ -89,7 +89,7 @@ class RipCmd(Cmd):
             # XXX assert that no background jobs are currently running
             pass
         if value is None:
-            del self.discs[self.config.source]
+            self.discs.pop(self.config.source, None)
         else:
             self.discs[self.config.source] = value
 
