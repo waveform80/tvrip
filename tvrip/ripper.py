@@ -75,9 +75,11 @@ class Disc():
         r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$', re.UNICODE)
     subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$', re.UNICODE)
     subtitle_track_re = re.compile(
-        r'^    \+ (?P<number>\d+), (?P<name>.*) '
-        r'\(iso639-2: (?P<language>[a-z]{2,3})\)( \((?P<type>Text|Bitmap)\))?'
-        r'\((?P<format>CC|VOBSUB)\)?$', re.UNICODE)
+        r'^    \+ (?P<number>\d+), '
+        r'(?P<name>[^([]*)'
+        r'( \(iso639-2: (?P<language>[a-z]{2,3})\))?'
+        r'( \((?P<type>Letter Box|Wide Screen|Text|Bitmap)\))?'
+        r'( [([](?P<format>CC|VOBSUB)[)\]])?$', re.UNICODE)
 
     def __init__(self, config, titles=None):
         super().__init__()
@@ -99,7 +101,7 @@ class Disc():
         # unique disc identifier, then replace disc-serial with this (#1)
         h = hashlib.sha1()
         if self.serial:
-            h.update(self.serial)
+            h.update(self.serial.encode())
         h.update(str(len(self.titles)).encode())
         for title in self.titles:
             h.update(str(title.duration).encode())
@@ -249,8 +251,12 @@ class Disc():
                 track = SubtitleTrack(title)
                 track.number = int(self.match.group('number'))
                 track.name = str(self.match.group('name'))
-                track.language = str(self.match.group('language'))
-                track.format = self.match.group('format').lower()
+                if self.match.group('format') is not None:
+                    track.format = self.match.group('format').lower()
+                if self.match.group('language') is not None:
+                    track.language = str(self.match.group('language'))
+                else:
+                    track.guess_language()
 
     def play(self, config, title_or_chapter):
         "Play the specified title or chapter"
@@ -524,6 +530,12 @@ class SubtitleTrack():
         self.format = 'VOBSUB'
         self.best = False
         self.log = ''
+
+    def guess_language(self):
+        if self.name.startswith('English'):
+            self.language = 'eng'
+        elif self.name.startswith('Japanese'):
+            self.language = 'jpn'
 
     def __repr__(self):
         return "<SubtitleTrack({number}, '{name}')>".format(
