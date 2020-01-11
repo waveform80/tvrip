@@ -177,7 +177,9 @@ class Disc():
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
-        output = proc.check_output(cmdline, stderr=proc.STDOUT, universal_newlines=True)
+        output = proc.check_output(
+            cmdline, stderr=proc.STDOUT, universal_newlines=True,
+            errors='replace')
         state = {'disc'}
         title = None
         # Parse the output into child objects
