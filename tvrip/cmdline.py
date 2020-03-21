@@ -238,6 +238,28 @@ class Cmd(cmd.Cmd):
         readline.remove_history_item(readline.get_current_history_length() - 1)
         return result
 
+    def input_number(self, valid, prompt=''):
+        suffix = '[{min}-{max}]'.format(
+            min=min(valid), max=max(valid))
+        prompt = '{prompt} {suffix} '.format(prompt=prompt, suffix=suffix)
+        try:
+            result = int(self.input(prompt))
+            if result not in valid:
+                raise ValueError('out of range')
+        except ValueError:
+            while True:
+                try:
+                    result = int(self.input(
+                        'Invalid input. Please enter a number {suffix} '
+                        ''.format(suffix=suffix)))
+                    if result not in valid:
+                        raise ValueError('out of range')
+                except ValueError:
+                    pass
+                else:
+                    break
+        return result
+
     def pprint(self, s, newline=True, wrap=True, initial_indent='',
                subsequent_indent=''):
         "Pretty-prints text to the terminal"

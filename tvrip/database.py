@@ -227,6 +227,8 @@ class Configuration(DeclarativeBase):
     duplicates = Column(Unicode(5),
                         CheckConstraint("duplicates in ('all', 'first', 'last')"),
                         nullable=False, default='all')
+    api_key = Column(Unicode(128), nullable=False, default='')
+    api_url = Column(Unicode(300), nullable=False, default='https://api.thetvdb.com/')
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
     season = relationship('Season',

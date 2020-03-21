@@ -24,6 +24,7 @@ import subprocess as proc
 from pathlib import Path
 from datetime import timedelta, datetime
 
+import requests
 import sqlalchemy as sa
 
 from .ripper import Disc, Title
@@ -34,6 +35,7 @@ from .database import (
 from .episodemap import EpisodeMap, MapError
 from .cmdline import Cmd, CmdError, CmdSyntaxError
 from .const import DATADIR
+from .tvdb import TVDB
 from . import multipart
 
 
@@ -64,7 +66,10 @@ class RipCmd(Cmd):
             self.session.add(
                 ConfigPath(self.config, 'vlc', 'vlc'))
             self.session.commit()
+        self.set_api()
         self.config_handlers = {
+            'api_key':          self.set_api_key,
+            'api_url':          self.set_api_url,
             'atomicparsley':    self.set_executable,
             'audio_all':        self.set_bool,
             'audio_langs':      self.set_langs,
@@ -520,6 +525,8 @@ class RipCmd(Cmd):
         self.pprint('video_style      = {}'.format(self.config.video_style))
         self.pprint('dvdnav           = {}'.format(
             ['no', 'yes'][self.config.dvdnav]))
+        self.pprint('api_url          = {}'.format(self.config.api_url))
+        self.pprint('api_key          = {}'.format(self.config.api_key))
 
     def do_set(self, arg):
         """
@@ -891,6 +898,26 @@ class RipCmd(Cmd):
                 'The new id_template contains an error: {}'.format(exc))
         self.config.id_template = value
 
+    def set_api_key(self, var, value):
+        assert var == 'api_key'
+        if set(value) - set('0123456789abcdef'):
+            raise CmdSyntaxError('API key contains non-hex digits')
+        if len(value) not in (0, 32):
+            raise CmdSyntaxError('API key must be blank or 32 hex-digits')
+        self.config.api_key = value
+        self.set_api()
+
+    def set_api_url(self, var, value):
+        assert var == 'api_url'
+        self.config.api_url = value
+        self.set_api()
+
+    def set_api(self):
+        if self.config.api_url and self.config.api_key:
+            self.api = TVDB(self.config.api_key, self.config.api_url)
+        else:
+            self.api = None
+
     def do_duplicate(self, arg):
         """
         Manually specifies duplicated titles on a disc.
@@ -1096,7 +1123,7 @@ class RipCmd(Cmd):
         else:
             self.pprint_episodes()
 
-    def do_season(self, arg):
+    def do_season(self, arg, program_id=None):
         """
         Sets which season of the program the disc contains.
 
@@ -1129,23 +1156,13 @@ class RipCmd(Cmd):
         if self.config.season is None:
             self.config.season = Season(self.config.program, arg)
             self.session.add(self.config.season)
-            try:
-                count = int(self.input(
-                    'Season {season} of program {program} is new. Please '
-                    'enter the number of episodes in this season (enter 0 if '
-                    'you do not wish to define episodes at this time) '
-                    '[0-n] '.format(
-                        season=self.config.season.number,
-                        program=self.config.program.name)))
-            except ValueError:
-                while True:
-                    try:
-                        count = int(self.input(
-                            'Invalid input. Please enter a number [0-n] '))
-                    except ValueError:
-                        pass
-                    else:
-                        break
+            count = self.input_number(
+                range(100),
+                'Season {season} of program {program} is new. Please enter '
+                'the number of episodes in this season (enter 0 if you do '
+                'not wish to define episodes at this time)'
+                ''.format(season=self.config.season.number,
+                          program=self.config.program.name))
             if count != 0:
                 self.do_episodes(count)
         self.episode_map.clear()
@@ -1200,15 +1217,19 @@ class RipCmd(Cmd):
             raise CmdSyntaxError('You must specify a program name')
         new_program = self.session.query(Program).get((arg,))
         if new_program is None:
-            self.new_program(arg)
+            try:
+                new_program = self.find_program(arg)
+            except CmdError:
+                new_program = self.new_program(arg)
+        self.config.program = new_program
         self.config.season = self.session.query(
                 Season
             ).filter(
-                (Season.program == new_program)
+                Season.program == new_program,
+                Season.number > 0
             ).order_by(
                 Season.number
             ).first()
-        self.config.program = new_program
         self.episode_map.clear()
         self.map_ripped()
 
@@ -1223,28 +1244,71 @@ class RipCmd(Cmd):
             self.session.query(Program).filter(Program.name.startswith(name))
             ]
 
+    def find_program(self, name):
+
+        def format_overview(s):
+            if not s:
+                return '-'
+            else:
+                lines = s.splitlines()
+                if len(lines) == 1:
+                    s = lines[0]
+                else:
+                    s = ''.join(lines[0] + ['...'])
+                if len(s) > 200:
+                    s = s[:197] + '...'
+                return s
+
+        if not self.api:
+            raise CmdError('api_key or api_url not configured')
+        self.pprint('Searching the TVDB for {}'.format(name))
+        data = self.api.search(name)
+        if not data:
+            self.pprint('No results found for {}'.format(name))
+            raise CmdError('no results found for {}'.format(name))
+        self.pprint('Found the following matches on the TVDB:')
+        self.pprint('')
+        table = [('#', 'Title', 'Aired', 'Status', 'Overview')]
+        for num, entry in enumerate(data, start=1):
+            table.append((
+                num,
+                entry.title,
+                str(entry.aired) if entry.aired else '-',
+                entry.status,
+                format_overview(entry.overview),
+            ))
+        self.pprint_table(table)
+        self.pprint('')
+        index = self.input_number(
+            range(len(data) + 1),
+            'Which entry matches the program you wish to rip (enter '
+            '0 if you wish to enter program information manually)?')
+        if index == 0:
+            raise CmdError('user opted for manual entry')
+        entry = data[index - 1]
+        new_program = Program(entry.title)
+        self.session.add(new_program)
+        for season in self.api.seasons(entry.id):
+            self.pprint('Querying TVDB for season {}'.format(season))
+            new_season = Season(new_program, season)
+            self.session.add(new_season)
+            for episode, title in self.api.episodes(entry.id, season):
+                self.session.add(Episode(new_season, episode, title))
+        return new_program
+
     def new_program(self, name):
         new_program = Program(name=name)
         self.session.add(new_program)
-        try:
-            count = int(self.input(
-                'Program {} is new. How many seasons exist (enter '
-                '0 if you do not wish to define seasons and episodes '
-                'at this time)? [0-n] '.format(
-                    new_program.name)))
-        except ValueError:
-            while True:
-                try:
-                    count = int(self.input(
-                        'Invalid input. Please enter a number [0-n] '))
-                except ValueError:
-                    pass
-                else:
-                    break
+        count = self.input_number(
+            range(100),
+            'Program {} is new. How many seasons exist (enter 0 if you do '
+            'not wish to define seasons and episodes at this time)?'
+            ''.format(name))
         self.config.program = new_program
         self.config.season = None
         for number in range(1, count + 1):
             self.do_season(number)
+        return new_program
 
     def do_programs(self, arg=''):
         """
