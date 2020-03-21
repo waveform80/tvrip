@@ -31,6 +31,7 @@ import logging
 import locale
 import traceback
 import configparser
+from collections import namedtuple, OrderedDict
 
 try:
     # Optionally import argcomplete (for auto-completion) if it's installed
@@ -51,7 +52,7 @@ _CONSOLE.setLevel(logging.DEBUG)
 logging.getLogger().addHandler(_CONSOLE)
 
 
-class TerminalApplication():
+class TerminalApplication:
     """
     Base class for command line applications.
 
@@ -111,7 +112,8 @@ class TerminalApplication():
             argcomplete.autocomplete(self.parser, exclude=['-P'])
         elif 'COMP_LINE' in os.environ:
             return 0
-        sys.excepthook = self.handle
+        sys.excepthook = ErrorHandler()
+        sys.excepthook[OSError] = (sys.excepthook.exc_message, 1)
         args = self.read_configuration(args)
         args = self.parser.parse_args(args)
         self.configure_logging(args)
@@ -171,34 +173,128 @@ class TerminalApplication():
         else:
             logging.getLogger().setLevel(logging.INFO)
 
-    def handle(self, exc_type, exc_value, exc_trace):
-        "Global application exception handler"
-        if issubclass(exc_type, (SystemExit,)):
-            # Exit with 0 ("success") for system exit (as it was intentional)
-            return 0
-        elif issubclass(exc_type, (KeyboardInterrupt,)):
-            # Exit with 2 if the user deliberately terminates with Ctrl+C
-            return 2
-        elif issubclass(exc_type, (argparse.ArgumentError,)):
-            # For option parser errors output the error along with a message
-            # indicating how the help page can be displayed
-            logging.critical(str(exc_value))
-            logging.critical('Try the --help option for more information.')
-            return 2
-        elif issubclass(exc_type, (IOError,)):
-            # For simple errors like IOError just output the message which
-            # should be sufficient for the end user (no need to confuse them
-            # with a full stack trace)
-            logging.critical(str(exc_value))
-            return 1
-        else:
-            # Otherwise, log the stack trace and the exception into the log
-            # file for debugging purposes
-            for line in traceback.format_exception(exc_type, exc_value, exc_trace):
-                for msg in line.rstrip().split('\n'):
-                    logging.critical(msg.replace('%', '%%'))
-            return 1
-
     def main(self, args):
         "Called as the main body of the utility"
         raise NotImplementedError
+
+
+class ErrorAction(namedtuple('ErrorAction', ('message', 'exitcode'))):
+    """
+    Named tuple dictating the action to take in response to an unhandled
+    exception of the type it is associated with in :class:`ErrorHandler`.
+    The *message* is an iterable of lines to be output as critical error
+    log messages, and *exitcode* is an integer to return as the exit code of
+    the process.
+
+    Either of these can also be functions which will be called with the
+    exception info (type, value, traceback) and will be expected to return
+    an iterable of lines (for *message*) or an integer (for *exitcode*).
+    """
+
+
+class ErrorHandler:
+    """
+    Global configurable application exception handler. For "basic" errors (I/O
+    errors, keyboard interrupt, etc.) just the error message is printed as
+    there's generally no need to confuse the user with a complete stack trace
+    when it's just a missing file. Other exceptions, however, are logged with
+    the usual full stack trace.
+
+    The configuration can be augmented with other exception classes that should
+    be handled specially by treating the instance as a dictionary mapping
+    exception classes to :class:`ErrorAction` tuples (or any 2-tuple, which
+    will be converted to an :class:`ErrorAction`).
+
+    For example::
+
+        >>> import sys
+        >>> sys.excepthook = ErrorHandler()
+        >>> sys.excepthook[KeyboardInterrupt]
+        (None, 1)
+        >>> sys.excepthook[SystemExit]
+        (None, <function ErrorHandler.exc_value at 0x7f6178915e18>)
+        >>> sys.excepthook[ValueError] = (sys.excepthook.exc_message, 3)
+        >>> sys.excepthook[Exception] = ("An error occurred", 1)
+        >>> raise ValueError("foo is not an integer")
+        foo is not an integer
+
+    Note the lack of a traceback in the output; if the example were a script
+    it would also have exited with return code 3.
+    """
+    def __init__(self):
+        self._config = OrderedDict([
+            # Exception type,        (handler method, exit code)
+            (SystemExit,             (None, self.exc_value)),
+            (KeyboardInterrupt,      (None, 2)),
+            (argparse.ArgumentError, (self.syntax_error, 2)),
+        ])
+
+    @staticmethod
+    def exc_message(exc_type, exc_value, exc_tb):
+        """
+        Extracts the message associated with the exception (by calling
+        :class:`str` on the exception instance). The result is returned as a
+        one-element list containing the message.
+        """
+        return [str(exc_value)]
+
+    @staticmethod
+    def exc_value(exc_type, exc_value, exc_tb):
+        """
+        Returns the first argument of the exception instance. In the case of
+        :exc:`SystemExit` this is the expected return code of the script.
+        """
+        return exc_value.args[0]
+
+    @staticmethod
+    def syntax_error(exc_type, exc_value, exc_tb):
+        """
+        Returns the message associated with the exception, and an additional
+        line suggested the user try the ``--help`` option. This should be used
+        in response to exceptions indicating the user made an error in their
+        command line.
+        """
+        return ErrorHandler.exc_message(exc_type, exc_value, exc_tb) + [
+            _('Try the --help option for more information.'),
+        ]
+
+    def clear(self):
+        """
+        Remove all pre-defined error handlers.
+        """
+        self._config.clear()
+
+    def __len__(self):
+        return len(self._config)
+
+    def __contains__(self, key):
+        return key in self._config
+
+    def __getitem__(self, key):
+        return self._config[key]
+
+    def __setitem__(self, key, value):
+        self._config[key] = ErrorAction(*value)
+
+    def __delitem__(self, key):
+        del self._config[key]
+
+    def __call__(self, exc_type, exc_value, exc_tb):
+        for exc_class, (message, value) in self._config.items():
+            if issubclass(exc_type, exc_class):
+                if callable(message):
+                    message = message(exc_type, exc_value, exc_tb)
+                if callable(value):
+                    value = value(exc_type, exc_value, exc_tb)
+                if message is not None:
+                    for line in message:
+                        logging.critical(line)
+                    sys.stderr.flush()
+                raise SystemExit(value)
+        # Otherwise, log the stack trace and the exception into the log
+        # file for debugging purposes
+        for line in traceback.format_exception(exc_type, exc_value, exc_tb):
+            for msg in line.rstrip().split('\n'):
+                logging.critical(msg.replace('%', '%%'))
+        sys.stderr.flush()
+        raise SystemExit(1)

@@ -19,7 +19,8 @@
 
 "Implements the main loop and option parser for the tvrip application"
 
-from . import __version__
+from pkg_resources import require
+
 from .terminal import TerminalApplication
 from .ripcmd import RipCmd
 
@@ -34,9 +35,10 @@ class TVRipApplication(TerminalApplication):
     def main(self, args):
         # Start the interpreter
         cmd = RipCmd(debug=args.debug)
-        cmd.pprint('TVRip %s' % __version__)
+        cmd.pprint('TVRip %s' % pkg.version)
         cmd.pprint('Type "help" for more information.')
         cmd.cmdloop()
 
 
-main = TVRipApplication(__version__)
+pkg = require('tvrip')[0]
+main = TVRipApplication(pkg.version)

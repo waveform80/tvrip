@@ -321,7 +321,7 @@ class RipCmd(Cmd):
                 title.number,
                 len(title.chapters),
                 title.duration,
-                {'first': ' ┐', 'yes': ' │', 'last': ' ┘', 'no': ''}[title.duplicate],
+                {'first': '━┓', 'yes': ' ┃', 'last': '━┛', 'no': ''}[title.duplicate],
                 ' '.join(track.language for track in title.audio_tracks)
                 ))
         self.pprint_table(table)
@@ -352,7 +352,7 @@ class RipCmd(Cmd):
         for track in title.audio_tracks:
             suffix = ''
             if track.best and self.config.in_audio_langs(track.language):
-                suffix = 'x'
+                suffix = '✓'
             table.append((
                 track.number,
                 track.language,
@@ -367,7 +367,7 @@ class RipCmd(Cmd):
         for track in title.subtitle_tracks:
             suffix = ''
             if track.best and self.config.in_subtitle_langs(track.language):
-                suffix = 'x'
+                suffix = '✓'
             table.append((
                 track.number,
                 track.language,
@@ -446,7 +446,7 @@ class RipCmd(Cmd):
             table.append((
                 episode.number,
                 episode.name,
-                ['', 'x'][episode.ripped]
+                '✓' if episode.ripped else '',
             ))
         self.pprint_table(table)
 
@@ -1551,16 +1551,10 @@ class RipCmd(Cmd):
                             (title.number, chapter.number) <=
                             (end.title.number, end.number))
                         ), timedelta())
-                self.pprint(
-                    '{ripped:2s}title {title:<11s} ({duration}) = '
-                    'episode {episode_num:2d}, '
-                    '"{episode_title}"'.format(
-                        ripped='*' if episode.ripped else ' ',
-                        title=index,
-                        duration=duration,
-                        episode_num=episode.number,
-                        episode_title=episode.name
-                        ))
+                table.append(
+                    (index, duration, '✓' if episode.ripped else '',
+                     episode.number, episode.name))
+            self.pprint_table(table)
         else:
             self.pprint('Episode map is currently empty')
 

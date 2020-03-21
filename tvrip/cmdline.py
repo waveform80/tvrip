@@ -43,6 +43,7 @@ import readline
 from textwrap import TextWrapper
 
 from .termsize import terminal_size
+from .formatter import TableWrapper, pretty_table
 
 COLOR_BOLD    = '\033[1m'
 COLOR_BLACK   = '\033[30m'
@@ -219,7 +220,7 @@ class Cmd(cmd.Cmd):
             if match:
                 suffix = match.group()
         if wrap:
-            self._wrapper.width = terminal_size()[0] - 2
+            self._wrapper.width = min(120, terminal_size()[0] - 2)
             self._wrapper.initial_indent = initial_indent
             self._wrapper.subsequent_indent = subsequent_indent
             s = self._wrapper.fill(s)
@@ -245,27 +246,11 @@ class Cmd(cmd.Cmd):
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
         "Pretty-prints a table of data"
-        # Calculate the maximum length of each column. Note that zip(*data) is
-        # a quick trick for transposing a list of lists, assuming each row in
-        # data is of equal length
-        lengths = [
-            max(len(str(item)) for item in row)
-            for row in zip(*data)
-        ]
-        # Take a copy of data that we can insert header and footer lines into
-        data = list(data)
-        if header_rows > 0:
-            data.insert(header_rows, tuple('-' * i for i in lengths))
-        if footer_rows > 0:
-            data.insert(-footer_rows, tuple('-' * i for i in lengths))
-        # Print the result. Note that we avoid pprint here as we deliberately
-        # don't want to wrap anything (in the vague hope that the terminal is
-        # wide enough).
-        # XXX Improve algorithm to reduce column widths when terminal is slim
-        for row in data:
-            self.stdout.write(' '.join(
-                '%-*s' % (length, s) for (length, s) in zip(lengths, row)
-            ) + '\n')
+        wrapper = TableWrapper(
+            width=min(120, terminal_size()[0] - 2), header_rows=header_rows,
+            footer_rows=footer_rows, **pretty_table)
+        for row in wrapper.wrap(data):
+            self.stdout.write(row + '\n')
 
     def do_help(self, arg):
         """
@@ -289,7 +274,8 @@ class Cmd(cmd.Cmd):
             if paras[-1].startswith(self.base_prompt):
                 self.pprint('')
         else:
-            commands = [
+            commands = [('Command', 'Description')]
+            commands += [
                 (
                     method[3:],
                     self.parse_docstring(getattr(self, method).__doc__)[0]
@@ -297,21 +283,7 @@ class Cmd(cmd.Cmd):
                 for method in self.get_names()
                 if method.startswith('do_') and method != 'do_EOF'
             ]
-            # Size the column containing the method names, ensuring it is no
-            # wider than one third of the terminal width
-            maxlen = min(
-                max(len(command) for (command, help) in commands) + 2,
-                terminal_size()[0] / 3
-            )
-            indent = ' ' * maxlen
-            for (command, help_text) in commands:
-                if len(command) <= maxlen:
-                    self.pprint('%-*s%s' % (maxlen, command, help_text),
-                                subsequent_indent=indent)
-                else:
-                    self.pprint(command)
-                    self.pprint(help_text, initial_indent=indent,
-                                subsequent_indent=indent)
+            self.pprint_table(commands)
 
     def do_exit(self, arg):
         """
