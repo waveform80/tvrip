@@ -21,6 +21,7 @@
 import os
 import re
 import subprocess as proc
+from pathlib import Path
 from datetime import timedelta, datetime
 
 import sqlalchemy as sa
@@ -63,6 +64,28 @@ class RipCmd(Cmd):
             self.session.add(
                 ConfigPath(self.config, 'vlc', 'vlc'))
             self.session.commit()
+        self.config_handlers = {
+            'atomicparsley':    self.set_executable,
+            'audio_all':        self.set_bool,
+            'audio_langs':      self.set_langs,
+            'audio_mix':        self.set_audio_mix,
+            'decomb':           self.set_decomb,
+            'duplicates':       self.set_duplicates,
+            'duration':         self.set_duration,
+            'dvdnav':           self.set_bool,
+            'handbrake':        self.set_executable,
+            'id_template':      self.set_id_template,
+            'source':           self.set_device,
+            'subtitle_all':     self.set_bool,
+            'subtitle_default': self.set_bool,
+            'subtitle_format':  self.set_subtitle_format,
+            'subtitle_langs':   self.set_langs,
+            'target':           self.set_directory,
+            'template':         self.set_template,
+            'temp':             self.set_directory,
+            'video_style':      self.set_video_style,
+            'vlc':              self.set_executable,
+        }
 
     def onecmd(self, line):
         # Ensure that the current transaction is committed after a command, or
@@ -386,7 +409,7 @@ class RipCmd(Cmd):
                     sa.func.count(Episode.number),
                     sa.func.count(Episode.disc_id)
                 ).outerjoin(
-                    Season
+                    Season, Season.program_name == Program.name
                 ).outerjoin(
                     Episode
                 ).group_by(
@@ -470,15 +493,9 @@ class RipCmd(Cmd):
         self.pprint('')
         self.pprint('source           = {}'.format(self.config.source))
         self.pprint('duration         = {min}-{max} (mins)'.format(
-            min=self.config.duration_min.seconds / 60,
-            max=self.config.duration_max.seconds / 60))
+            min=self.config.duration_min.total_seconds() / 60,
+            max=self.config.duration_max.total_seconds() / 60))
         self.pprint('duplicates       = {}'.format(self.config.duplicates))
-        self.pprint('program          = {}'.format(
-            self.config.program.name if self.config.program else '<none set>'
-        ))
-        self.pprint('season           = {}'.format(
-            self.config.season.number if self.config.season else '<none set>'
-        ))
         self.pprint('')
         self.pprint('Ripping Configuration:')
         self.pprint('')
@@ -504,21 +521,375 @@ class RipCmd(Cmd):
         self.pprint('dvdnav           = {}'.format(
             ['no', 'yes'][self.config.dvdnav]))
 
-    def do_dvdnav(self, arg):
+    def do_set(self, arg):
         """
-        Sets whether libdvdnav or libdvdread are used by HandBrake.
+        Sets a configuration option.
 
-        Syntax: dvdnav <off|on>
+        Syntax: set <variable> <value>
 
-        The 'dvdnav' command is used to configure the library HandBrake will
-        use for reading DVDs. The default is 'on' meaning that libdvdnav will
-        be used; if 'off' is specified, libdvdread will be used instead. For
-        example:
-
-        (tvrip) dvdnav off
-        (tvrip) dvdnav on
+        The 'set' command is used to alter the value of one of the
+        configuration settings listed by the 'config' command.
         """
-        self.config.dvdnav = self.parse_bool(arg)
+        try:
+            (var, value) = arg.split(' ', 1)
+        except (TypeError, ValueError):
+            raise CmdSyntaxError('You must specify a variable and a value')
+        var = var.strip().lower()
+        value = value.strip()
+        try:
+            self.config_handlers[var](var, value)
+        except KeyError:
+            raise CmdSyntaxError(
+                'Invalid configuration variable: {}'.format(var))
+
+    set_re = re.compile(r'^set\s+')
+    set_var_re = re.compile(r'^set\s+([a-z_]+)\s+')
+
+    def complete_set(self, text, line, start, finish):
+        "Auto-completer for set command"
+        match = self.set_var_re.match(line)
+        if match:
+            var = match.group(1)
+            try:
+                handler = self.config_handlers[var]
+            except KeyError:
+                return None
+            else:
+                try:
+                    return handler.complete(self, text, line, start, finish)
+                except AttributeError:
+                    return None
+        else:
+            match = self.set_re.match(line)
+            var = line[match.end():]
+            return [
+                name[start - match.end():]
+                for name in self.config_handlers
+                if name.startswith(var)
+            ]
+
+    def do_help(self, arg):
+        """
+        Displays the available commands or help on a specified command or
+        configuration setting.
+
+        The 'help' command is used to display the help text for a command or,
+        if no command is specified, it presents a list of all available
+        commands along with a brief description of each.
+        """
+        try:
+            super().do_help(arg)
+        except CmdError as exc:
+            try:
+                doc = self.config_handlers[arg].__doc__
+            except KeyError:
+                raise exc
+            else:
+                for para in self.parse_docstring(doc):
+                    self.pprint(para)
+                    self.pprint('')
+
+    def set_executable(self, var, value):
+        """
+        This configuration option takes the path of an executable, e.g.
+        "/usr/bin/vlc".
+        """
+        value = Path(value).expanduser()
+        if not value.exists():
+            raise CmdError('Path {} does not exist'.format(value))
+        if not os.access(str(value), os.X_OK, effective_ids=True):
+            raise CmdError('Path {} is not executable'.format(value))
+        self.config.set_path(var, value)
+
+    def set_directory(self, var, value):
+        """
+        This configuration option takes the path of a directory, e.g.
+        "/home/me/Videos".
+        """
+        value = Path(value).expanduser()
+        if not value.exists():
+            raise CmdError('Path {} does not exist'.format(value))
+        if not value.is_dir():
+            raise CmdError('Path {} is not a directory'.format(value))
+        setattr(self.config, var, value)
+
+    def set_device(self, var, value):
+        """
+        This configuration option takes the path of a device, e.g.
+        "/dev/sr0".
+        """
+        value = Path(value).expanduser()
+        if not value.exists():
+            raise CmdError('Path {} does not exist'.format(value))
+        if not value.is_block_device():
+            raise CmdError('Path {} is not a block device'.format(value))
+        setattr(self.config, var, value)
+
+    def set_complete_one(self, line, start, valid):
+        match = self.set_var_re.match(line)
+        value = line[match.end():]
+        return [
+            name[start - match.end():]
+            for name in valid
+            if name.startswith(value)
+        ]
+
+    def set_bool(self, var, value):
+        """
+        This configuration option is either "on" or "off".
+        """
+        setattr(self.config, var, self.parse_bool(value))
+
+    def set_complete_bool(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {'false', 'true', 'off', 'on', 'no', 'yes'})
+
+    set_bool.complete = set_complete_bool
+
+    def set_duplicates(self, var, value):
+        """
+        This configuration option can be set to "all", "first", or "last". When
+        "all", duplicate titles will be treated individually and will all be
+        considered for auto-mapping. When "first" only the first of a set of
+        duplicates will be considered for auto-mapping, and conversely when
+        "last" only the last of a set of duplicates will be used.
+        """
+        assert var == 'duplicates'
+        if value not in ('all', 'first', 'last'):
+            raise CmdSyntaxError(
+                '"{}" is not a valid option for duplicates'.format(value))
+        self.config.duplicates = value
+
+    def set_complete_duplicates(self, text, line, start, finish):
+        return self.set_complete_one(line, start, {'all', 'first', 'last'})
+
+    set_duplicates.complete = set_complete_duplicates
+
+    def set_duration(self, var, value):
+        """
+        This configuration option sets the minimum and maximum length (in
+        minutes) that an episode is expected to be. This is used when scanning
+        a source device for titles which are likely to be episodes, and when
+        auto-mapping titles to episodes.
+        """
+        assert var == 'duration'
+        self.config.duration_min, self.config.duration_max = (
+            timedelta(minutes=i)
+            for i in self.parse_number_range(value))
+
+    def set_video_style(self, var, value):
+        """
+        This configuration option can be set to "tv", "film", or "animation".
+        It influences the video encoder during ripping.
+        """
+        assert var == 'video_style'
+        try:
+            value = {
+                'tv':         'tv',
+                'television': 'tv',
+                'film':       'film',
+                'anim':       'animation',
+                'animation':  'animation',
+                }[value]
+        except KeyError:
+            raise CmdSyntaxError('Invalid video style {}'.format(value))
+        self.config.video_style = value
+
+    def set_complete_video_style(self, text, line, start, finish):
+        return self.set_complete_simple(
+            line, start, {'tv', 'television', 'film', 'anim', 'animation'})
+
+    set_video_style.complete = set_complete_video_style
+
+    def set_langs(self, var, value):
+        """
+        This configuration option accepts a space-separated list of languages
+        to use when extracting audio or subtitle from an episode. Languages are
+        specified as 3-character ISO639 codes, e.g. "eng jpn".
+        """
+        value = value.lower().split(' ')
+        new_langs = set(value)
+        try:
+            lang_cls = {
+                'audio_langs':    AudioLanguage,
+                'subtitle_langs': SubtitleLanguage,
+            }[var]
+        except KeyError:
+            assert False
+        for lang in getattr(self.config, var):
+            if lang.lang in new_langs:
+                new_langs.remove(lang.lang)
+            else:
+                self.session.delete(lang)
+        for lang in new_langs:
+            self.session.add(lang_cls(self.config, lang=lang))
+
+    def set_complete_langs(self, text, line, start, finish):
+        langs = {
+            'aar', 'abk', 'ace', 'ach', 'ada', 'ady', 'afr', 'ain', 'aka',
+            'alb', 'ale', 'alt', 'amh', 'anp', 'ara', 'arg', 'arm', 'arn',
+            'arp', 'arw', 'asm', 'ast', 'ava', 'awa', 'aym', 'aze', 'bak',
+            'bal', 'bam', 'ban', 'baq', 'bas', 'bej', 'bel', 'bem', 'ben',
+            'bho', 'bik', 'bin', 'bis', 'bla', 'bod', 'bos', 'bra', 'bre',
+            'bua', 'bug', 'bul', 'bur', 'byn', 'cad', 'car', 'cat', 'ceb',
+            'ces', 'cha', 'che', 'chi', 'chk', 'chm', 'chn', 'cho', 'chp',
+            'chr', 'chv', 'chy', 'cnr', 'cor', 'cos', 'cre', 'crh', 'csb',
+            'cym', 'cze', 'dak', 'dan', 'dar', 'del', 'den', 'deu', 'dgr',
+            'din', 'div', 'doi', 'dsb', 'dua', 'dut', 'dyu', 'dzo', 'efi',
+            'eka', 'ell', 'eng', 'est', 'eus', 'ewe', 'ewo', 'fan', 'fao',
+            'fas', 'fat', 'fij', 'fil', 'fin', 'fon', 'fra', 'fre', 'frr',
+            'frs', 'fry', 'ful', 'fur', 'gaa', 'gay', 'gba', 'geo', 'ger',
+            'gil', 'gla', 'gle', 'glg', 'glv', 'gon', 'gor', 'grb', 'gre',
+            'grn', 'gsw', 'guj', 'gwi', 'hai', 'hat', 'hau', 'haw', 'heb',
+            'her', 'hil', 'hin', 'hmn', 'hmo', 'hrv', 'hsb', 'hun', 'hup',
+            'hye', 'iba', 'ibo', 'ice', 'iii', 'iku', 'ilo', 'ind', 'inh',
+            'ipk', 'isl', 'ita', 'jav', 'jpn', 'jpr', 'jrb', 'kaa', 'kab',
+            'kac', 'kal', 'kam', 'kan', 'kas', 'kat', 'kau', 'kaz', 'kbd',
+            'kha', 'khm', 'kik', 'kin', 'kir', 'kmb', 'kok', 'kom', 'kon',
+            'kor', 'kos', 'kpe', 'krc', 'krl', 'kru', 'kua', 'kum', 'kur',
+            'kut', 'lad', 'lah', 'lam', 'lao', 'lav', 'lez', 'lim', 'lin',
+            'lit', 'lol', 'loz', 'ltz', 'lua', 'lub', 'lug', 'lun', 'luo',
+            'lus', 'mac', 'mad', 'mag', 'mah', 'mai', 'mak', 'mal', 'man',
+            'mao', 'mar', 'mas', 'may', 'mdf', 'mdr', 'men', 'mic', 'min',
+            'mkd', 'mlg', 'mlt', 'mnc', 'mni', 'moh', 'mon', 'mos', 'mri',
+            'msa', 'mus', 'mwl', 'mwr', 'mya', 'myv', 'nap', 'nau', 'nav',
+            'nbl', 'nde', 'ndo', 'nds', 'nep', 'new', 'nia', 'niu', 'nld',
+            'nno', 'nob', 'nog', 'nor', 'nqo', 'nso', 'nya', 'nym', 'nyn',
+            'nyo', 'nzi', 'oci', 'oji', 'ori', 'orm', 'osa', 'oss', 'pag',
+            'pam', 'pan', 'pap', 'pau', 'per', 'pol', 'pon', 'por', 'pus',
+            'que', 'raj', 'rap', 'rar', 'roh', 'rom', 'ron', 'rum', 'run',
+            'rup', 'rus', 'sad', 'sag', 'sah', 'sas', 'sat', 'scn', 'sco',
+            'sel', 'shn', 'sid', 'sin', 'slo', 'slk', 'slv', 'sma', 'sme',
+            'smj', 'smn', 'smo', 'sms', 'sna', 'snd', 'snk', 'som', 'sot',
+            'spa', 'sqi', 'srd', 'srn', 'srp', 'srr', 'ssw', 'suk', 'sun',
+            'sus', 'swa', 'swe', 'syr', 'tah', 'tam', 'tat', 'tel', 'tem',
+            'ter', 'tet', 'tgk', 'tgl', 'tha', 'tib', 'tig', 'tir', 'tiv',
+            'tkl', 'tli', 'tmh', 'tog', 'ton', 'tpi', 'tsi', 'tsn', 'tso',
+            'tuk', 'tum', 'tur', 'tvl', 'twi', 'tyv', 'udm', 'uig', 'ukr',
+            'umb', 'urd', 'uzb', 'vai', 'ven', 'vie', 'vot', 'wal', 'war',
+            'was', 'wel', 'wln', 'wol', 'xal', 'xho', 'yao', 'yap', 'yid',
+            'yor', 'zap', 'zen', 'zgh', 'zha', 'zho', 'zul', 'zun', 'zza',
+        }
+        return [lang for lang in langs if lang.startswith(text)]
+
+    set_langs.complete = set_complete_langs
+
+    def set_audio_mix(self, var, value):
+        """
+        This configuration option specifies an audio mix. Valid values are
+        "mono", "stereo", "dpl1", and "dpl2". AC3 or DTS are not currently
+        supported.
+        """
+        assert var == 'audio_mix'
+        try:
+            value = {
+                'mono':     'mono',
+                'm':        'mono',
+                '1':        'mono',
+                'stereo':   'stereo',
+                's':        'stereo',
+                '2':        'stereo',
+                'dpl1':     'dpl1',
+                'dpl2':     'dpl2',
+                'surround': 'dpl2',
+                'prologic': 'dpl2',
+                }[value]
+        except KeyError:
+            raise CmdSyntaxError('Invalid audio mix {}'.format(value))
+        self.config.audio_mix = value
+
+    def set_complete_audio_mix(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start,
+            {'mono', 'stereo', 'dpl1', 'dpl2', 'surround', 'prologic'})
+
+    set_audio_mix.complete = set_complete_audio_mix
+
+    def set_subtitle_format(self, var, value):
+        """
+        This configuration option specifies a subtitle format. Valid values
+        are "none", "vobsub", "cc", and "all".
+        """
+        assert var == 'subtitle_format'
+        try:
+            value = {
+                'off':    'none',
+                'none':   'none',
+                'vob':    'vobsub',
+                'vobsub': 'vobsub',
+                'bmp':    'vobsub',
+                'bitmap': 'vobsub',
+                'cc':     'cc',
+                'text':   'cc',
+                'any':    'any',
+                'all':    'any',
+                'both':   'any',
+                }[value]
+        except KeyError:
+            raise CmdSyntaxError(
+                'Invalid subtitle extraction mode {}'.format(value))
+        self.config.subtitle_format = value
+
+    def set_complete_subtitle_format(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start,
+            {'off', 'none', 'vobsub', 'bitmap', 'cc', 'text', 'all', 'both'})
+
+    set_subtitle_format.complete = set_complete_subtitle_format
+
+    def set_decomb(self, var, value):
+        """
+        This configuration option specifies a decomb mode. Valid values are
+        "off", "on", and "auto".
+        """
+        assert var == 'decomb'
+        try:
+            self.config.decomb = ['off', 'on'][self.parse_bool(value)]
+        except ValueError:
+            if value == 'auto':
+                self.config.decomb = 'auto'
+            else:
+                raise
+
+    def set_complete_decomb(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {'false', 'true', 'off', 'on', 'no', 'yes', 'auto'})
+
+    set_decomb.complete = set_complete_decomb
+
+    def set_template(self, var, value):
+        assert var == 'template'
+        try:
+            value.format(
+                program='Program Name',
+                id='1x01',
+                name='Foo Bar',
+                now=datetime.now(),
+                )
+        except KeyError as exc:
+            raise CmdError(
+                'The new template contains an '
+                'invalid substitution key: {}'.format(exc))
+        except ValueError as exc:
+            raise CmdError(
+                'The new template contains an error: {}'.format(exc))
+        self.config.template = value
+
+    def set_id_template(self, var, value):
+        assert var == 'id_template'
+        try:
+            value.format(
+                season=1,
+                episode=10,
+                )
+        except KeyError as exc:
+            raise CmdError(
+                'The new id_template contains an '
+                'invalid substitution key: {}'.format(exc))
+        except ValueError as exc:
+            raise CmdError(
+                'The new id_template contains an error: {}'.format(exc))
+        self.config.id_template = value
 
     def do_duplicate(self, arg):
         """
@@ -573,286 +944,6 @@ class RipCmd(Cmd):
                     }[finish.next.duplicate]
             except KeyError:
                 pass
-
-    def do_duplicates(self, arg):
-        """
-        Sets how duplicate titles on a disc are handled.
-
-        Syntax: duplicates <all|first|last>
-
-        The 'duplicates' command is used to configure how tvrip should handle
-        duplicate titles on a disc. Duplicate titles are defined as consecutive
-        titles with precisely the same length (these are commonly found in some
-        collections, e.g. where separate titles have been defined simply for
-        audio commentaries).
-
-        The default is 'all' which means duplicate titles should be treated
-        normally and included along with all other titles for auto-mapping.
-        When set to 'first', only the first title of a duplicate set will be
-        considered for auto-mapping. Likewise, 'last' includes only the last
-        title of a duplicate set on the disc. Duplicates can still be manually
-        mapped and ripped; this option only affects auto-mapping. Examples:
-
-        (tvrip) duplicates first
-        (tvrip) duplicates all
-        """
-        arg = arg.strip().lower()
-        if arg not in ('all', 'first', 'last'):
-            raise CmdSyntaxError(
-                '"{}" is not a valid option for duplicates'.format(arg))
-        self.config.duplicates = arg
-
-    def do_path(self, arg):
-        """
-        Sets a path to an external utility.
-
-        Syntax: path <name> <value>
-
-        The 'path' command is used to alter the path of one of the external
-        utilities used by TVRip. Specify the name of the path (which you can
-        find from the 'config' command) and the new path to the utility. For
-        example:
-
-        (tvrip) path handbrake /usr/bin/HandBrakeCLI
-        (tvrip) path atomicparsley /usr/bin/AtomicParsley
-        """
-        name, path = arg.split(' ', 1)
-        if not os.path.exists(path):
-            self.pprint("Warning: path '{}' does not exist".format(path))
-        if not os.access(path, os.X_OK):
-            self.pprint("Warning: path '{}' is not executable".format(path))
-        try:
-            self.config.set_path(name, path)
-        except sa.orm.exc.NoResultFound:
-            raise CmdError(
-                'Path name "{}" is invalid, please see "config" '
-                'for valid options'.format(name))
-
-    def do_video_style(self, arg):
-        """
-        Sets the style of video to rip.
-
-        Syntax: video_style <style-value>
-
-        The 'video_style' command specifies the sort of video that the encoder
-        will be handling. The valid styles are 'tv', 'film', and 'animation'.
-        For example:
-
-        (tvrip) video_style tv
-        (tvrip) video_style animation
-        """
-        try:
-            arg = {
-                'tv':         'tv',
-                'television': 'tv',
-                'film':       'film',
-                'anim':       'animation',
-                'animation':  'animation',
-                }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError('Invalid video style {}'.format(arg))
-        self.config.video_style = arg
-
-    def do_audio_langs(self, arg):
-        """
-        Sets the list of audio languages to rip.
-
-        Syntax: audio_langs <lang>...
-
-        The 'audio_langs' command sets the list of languages for which audio
-        tracks will be extracted and converted. Languages are specified as
-        space separated lowercase 3-character ISO639 codes. For example:
-
-        (tvrip) audio_langs eng jpn
-        (tvrip) audio_langs eng
-        """
-        arg = arg.lower().split(' ')
-        new_langs = set(arg)
-        for lang in self.config.audio_langs:
-            if lang.lang in new_langs:
-                new_langs.remove(lang.lang)
-            else:
-                self.session.delete(lang)
-        for lang in new_langs:
-            self.session.add(AudioLanguage(self.config, lang=lang))
-
-    def do_audio_mix(self, arg):
-        """
-        Sets the audio mixdown
-
-        Syntax: audio_mix <mix-value>
-
-        The 'audio_mix' command sets the audio mixdown used by the 'rip'
-        command.  The valid mixes are 'mono', 'stereo', 'dpl1', and 'dpl2' with
-        the latter two indicating Dolby Pro Logic I and II respectively. AC3 or
-        DTS pass-thru cannot be configured at this time. For example:
-
-        (tvrip) audio_mix stereo
-        (tvrip) audio_mix dpl2
-        """
-        try:
-            arg = {
-                'mono':     'mono',
-                'm':        'mono',
-                '1':        'mono',
-                'stereo':   'stereo',
-                's':        'stereo',
-                '2':        'stereo',
-                'dpl1':     'dpl1',
-                'dpl2':     'dpl2',
-                'surround': 'dpl2',
-                'prologic': 'dpl2',
-                }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError('Invalid audio mix {}'.format(arg))
-        self.config.audio_mix = arg
-
-    def do_audio_all(self, arg):
-        """
-        Sets whether to extract all language-matched audio tracks
-
-        Syntax: audio_all <off|on>
-
-        The 'audio_all' command specifies whether, of the audio tracks which
-        match the specified languages (see the 'audio_langs' command), only the
-        best track should be extracted, or all matching tracks. For example:
-
-        (tvrip) audio_tracks off
-        (tvrip) audio_tracks on
-        """
-        self.config.audio_all = self.parse_bool(arg)
-
-    def do_subtitle_langs(self, arg):
-        """
-        Sets the list of subtitle languages to rip.
-
-        Syntax: subtitle_langs <lang>...
-
-        The 'subtitle_langs' command sets the list of languages for which
-        subtitle tracks will be extracted and converted. Languages are
-        specified as space separated lowercase 3-character ISO639 codes. For
-        example:
-
-        (tvrip) subtitle_langs eng jpn
-        (tvrip) subtitle_langs eng
-        """
-        arg = arg.lower().split(' ')
-        new_langs = set(arg)
-        for lang in self.config.subtitle_langs:
-            if lang.lang in new_langs:
-                new_langs.remove(lang.lang)
-            else:
-                self.session.delete(lang)
-        for lang in new_langs:
-            self.session.add(SubtitleLanguage(self.config, lang=lang))
-
-    def do_subtitle_format(self, arg):
-        """
-        Sets the subtitle extraction mode
-
-        Syntax: subtitle_format <format>
-
-        The 'subtitle_format' command sets the subtitles extraction mode used
-        by the 'rip' command. The valid formats are 'none' indicating that
-        subtitles should not be extracted at all, 'vobsub' which causes
-        subtitles to be extracted as timed image overlays, 'cc' which causes
-        text-based closed captions to be embedded in the resulting MP4, or
-        'any' which indicates any format of subtitle should be accepted.  Be
-        aware that text-based closed captions do not work with several players.
-        For example:
-
-        (tvrip) subtitle_format vobsub
-        (tvrip) subtitle_format none
-        """
-        try:
-            arg = {
-                'off':    'none',
-                'none':   'none',
-                'vob':    'vobsub',
-                'vobsub': 'vobsub',
-                'bmp':    'vobsub',
-                'bitmap': 'vobsub',
-                'cc':     'cc',
-                'text':   'cc',
-                'any':    'any',
-                'all':    'any',
-                'both':   'any',
-                }[arg.strip().lower()]
-        except KeyError:
-            raise CmdSyntaxError(
-                'Invalid subtitle extraction mode {}'.format(arg))
-        self.config.subtitle_format = arg
-
-    def do_subtitle_all(self, arg):
-        """
-        Sets whether to extract all language-matched subtitles
-
-        Syntax: subtitle_all <off|on>
-
-        The 'subtitle_all' command specifies whether, of the subtitle tracks
-        which match the specified languages (see the 'subtitle_langs' command),
-        only the best matching track should be extracted, or all matching
-        tracks. For example:
-
-        (tvrip) subtitle_all off
-        (tvrip) subtitle_all on
-        """
-        self.config.subtitle_all = self.parse_bool(arg)
-
-    def do_subtitle_default(self, arg):
-        """
-        Sets whether to mark the "best" subtitle as the default
-
-        Syntax: subtitle_default <off|on>
-
-        The 'subtitle_default' command specifies whether the "best" subtitle
-        track (the first matching a specified language) should be marked as
-        the default track.
-
-        (tvrip) subtitle_default off
-        (tvrip) subtitle_default on
-        """
-        self.config.subtitle_default = self.parse_bool(arg)
-
-    def do_decomb(self, arg):
-        """
-        Sets the decomb option for video conversion.
-
-        Syntax: decomb <off|on|auto>
-
-        The 'decomb' command sets the decomb setting for the video converter.
-        Valid settings are currently 'off', 'on', and 'auto'. For example:
-
-        (tvrip) decomb off
-        (tvrip) decomb on
-        """
-        try:
-            self.config.decomb = ['off', 'on'][self.parse_bool(arg)]
-        except ValueError:
-            if arg.strip().lower() == 'auto':
-                self.config.decomb = 'auto'
-            else:
-                raise
-
-    def do_duration(self, arg):
-        """
-        Sets range of episode duration.
-
-        Syntax: duration <min>-<max>
-
-        The 'duration' command sets the minimum and maximum length (in minutes)
-        that an episode is expected to be.  This is used when scanning a source
-        device for titles which are likely to be episodes. For example:
-
-        (tvrip) duration 40-50
-        (tvrip) duration 25-35
-        """
-        if not arg:
-            raise CmdSyntaxError('You must specify a new duration')
-        self.config.duration_min, self.config.duration_max = (
-            timedelta(minutes=i)
-            for i in self.parse_number_range(arg)
-            )
 
     def do_episode(self, arg):
         """
@@ -1109,27 +1200,7 @@ class RipCmd(Cmd):
             raise CmdSyntaxError('You must specify a program name')
         new_program = self.session.query(Program).get((arg,))
         if new_program is None:
-            new_program = Program(name=arg)
-            self.session.add(new_program)
-            try:
-                count = int(self.input(
-                    'Program {} is new. How many seasons exist (enter '
-                    '0 if you do not wish to define seasons and episodes '
-                    'at this time)? [0-n] '.format(
-                        new_program.name)))
-            except ValueError:
-                while True:
-                    try:
-                        count = int(self.input(
-                            'Invalid input. Please enter a number [0-n] '))
-                    except ValueError:
-                        pass
-                    else:
-                        break
-            self.config.program = new_program
-            self.config.season = None
-            for number in range(1, count + 1):
-                self.do_season(number)
+            self.new_program(arg)
         self.config.season = self.session.query(
                 Season
             ).filter(
@@ -1146,11 +1217,34 @@ class RipCmd(Cmd):
     def complete_program(self, text, line, start, finish):
         "Auto-completer for program command"
         match = self.program_re.match(line)
-        name = str(line[match.end():])
+        name = line[match.end():]
         return [
             program.name[start - match.end():] for program in
             self.session.query(Program).filter(Program.name.startswith(name))
             ]
+
+    def new_program(self, name):
+        new_program = Program(name=name)
+        self.session.add(new_program)
+        try:
+            count = int(self.input(
+                'Program {} is new. How many seasons exist (enter '
+                '0 if you do not wish to define seasons and episodes '
+                'at this time)? [0-n] '.format(
+                    new_program.name)))
+        except ValueError:
+            while True:
+                try:
+                    count = int(self.input(
+                        'Invalid input. Please enter a number [0-n] '))
+                except ValueError:
+                    pass
+                else:
+                    break
+        self.config.program = new_program
+        self.config.season = None
+        for number in range(1, count + 1):
+            self.do_season(number)
 
     def do_programs(self, arg=''):
         """
@@ -1516,13 +1610,21 @@ class RipCmd(Cmd):
             self.episode_map[episode] = (start, end)
 
     def get_map(self):
-        self.pprint('Episode Mapping (* indicates ripped):')
+        if self.config.program is None:
+            raise CmdError('No program has been set')
+        if self.config.season is None:
+            raise CmdError('No season has been set')
+        program = self.config.program
+        season = self.config.season
+        self.pprint('Episode Mapping for {} season {}:'.format(
+            program.name, season.number))
         self.pprint('')
         if self.episode_map:
+            table = [('Title', 'Duration', 'Ripped', 'Episode', 'Name')]
             for episode, mapping in self.episode_map.items():
                 if isinstance(mapping, Title):
                     index = '{}'.format(mapping.number)
-                    duration = str(mapping.duration)
+                    duration = mapping.duration
                 else:
                     start, end = mapping
                     if start.title == end.title:
@@ -1715,146 +1817,3 @@ class RipCmd(Cmd):
                 episode.start_chapter = None
                 episode.end_chapter = None
 
-    def do_source(self, arg):
-        """
-        Sets the source device.
-
-        Syntax: source <device>
-
-        The 'source' command sets a new source device. The home directory
-        shorthand (~) may be used in the specified path. For example:
-
-        (tvrip) source /dev/dvd
-        (tvrip) source /dev/sr0
-
-        See also: target, temp
-        """
-        arg = os.path.expanduser(arg)
-        if not os.path.exists(arg):
-            self.pprint('Path {} does not exist'.format(arg))
-            return
-        self.config.source = arg
-
-    source_re = re.compile('^source\s+')
-
-    def complete_source(self, text, line, start, finish):
-        return self.complete_path(text, self.source_re.sub('', line),
-                                  start, finish)
-
-    def do_target(self, arg):
-        """
-        Sets the target path.
-
-        Syntax: target <path>
-
-        The 'target' command sets a new target path. The home-directory
-        shorthand (~) may be used in the specified path. For example:
-
-        (tvrip) target ~/Videos
-
-        See also: source, temp
-        """
-        arg = os.path.expanduser(arg)
-        if not os.path.exists(arg):
-            raise CmdError('Path {} does not exist'.format(arg))
-        if not os.path.isdir(arg):
-            raise CmdError('Path {} is not a directory'.format(arg))
-        self.config.target = arg
-
-    target_re = re.compile(r'^target\s+')
-
-    def complete_target(self, text, line, start, finish):
-        return self.complete_path(text, self.target_re.sub('', line),
-                                  start, finish)
-
-    def do_temp(self, arg):
-        """
-        Sets the temporary files path.
-
-        Syntax: temp <path>
-
-        The 'temp' command sets the path which will be used for temporary
-        storage (actually a temporary directory under this path is used). The
-        home-directory shorthand (~) may be used, but be aware that no spaces
-        are permitted in the path name. For example:
-
-        (tvrip) temp ~/tmp
-        (tvrip) temp /var/tmp
-
-        See also: source, target
-        """
-        arg = os.path.expanduser(arg)
-        if not os.path.exists(arg):
-            raise CmdError('Path {} does not exist'.format(arg))
-        if not os.path.isdir(arg):
-            raise CmdError('Path {} is not a directory'.format(arg))
-        self.config.temp = arg
-
-    temp_re = re.compile(r'^temp\s+')
-
-    def complete_temp(self, text, line, start, finish):
-        return self.complete_path(text, self.temp_re.sub('', line),
-                                  start, finish)
-
-    def do_template(self, arg):
-        """
-        Sets the template used for filenames.
-
-        Syntax: template <string>
-
-        The 'template' command sets the new filename template. The template is
-        specified as a Python format string including named subsitution markers
-        (program, id, and name). The format-string is specified
-        without quotation marks. For example:
-
-        (tvrip) template {program} - {id} - {name}.mp4
-        (tvrip) template {id}_{name}.mp4
-
-        See also: id_template
-        """
-        try:
-            arg.format(
-                program='Program Name',
-                id='1x01',
-                name='Foo Bar',
-                now=datetime.now(),
-                )
-        except KeyError as exc:
-            raise CmdError(
-                'The new template contains an '
-                'invalid substitution key: {}'.format(exc))
-        except ValueError as exc:
-            raise CmdError(
-                'The new template contains an error: {}'.format(exc))
-        self.config.template = arg
-
-    def do_id_template(self, arg):
-        """
-        Sets the template used for the {id} component of filenames.
-
-        Syntax: id_template <string>
-
-        The 'id_template' command sets the new template used to form the {id}
-        component in the filename template. The template is specified as a
-        Python format string include named substitution markers (season, and
-        episode). The format-string is specified without quotation marks. For
-        example:
-
-        (tvrip) id_template {season}x{episode:02d}
-        (tvrip) id_template S{season:02d}E{episode02d}
-
-        See also: template
-        """
-        try:
-            arg.format(
-                season=1,
-                episode=10,
-                )
-        except KeyError as exc:
-            raise CmdError(
-                'The new id_template contains an '
-                'invalid substitution key: {}'.format(exc))
-        except ValueError as exc:
-            raise CmdError(
-                'The new id_template contains an error: {}'.format(exc))
-        self.config.id_template = arg

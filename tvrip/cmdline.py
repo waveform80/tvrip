@@ -105,8 +105,8 @@ class Cmd(cmd.Cmd):
         """
         Parse a dash-separated number range.
 
-        Given a string containing two dash-separated numbers, returns the integer
-        value of the start and end of the range.
+        Given a string containing two dash-separated numbers, returns the
+        integer value of the start and end of the range.
         """
         try:
             start, finish = (int(i) for i in s.split('-', 1))
@@ -122,8 +122,8 @@ class Cmd(cmd.Cmd):
         Parse a comma-separated list of dash-separated number ranges.
 
         Given a string containing comma-separated numbers or ranges of numbers,
-        returns a sequence of all specified numbers (ranges of numbers are expanded
-        by this method).
+        returns a sequence of all specified numbers (ranges of numbers are
+        expanded by this method).
         """
         result = []
         for i in s.split(','):
