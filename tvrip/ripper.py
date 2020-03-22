@@ -28,6 +28,7 @@ import hashlib
 from operator import attrgetter
 from itertools import groupby
 from weakref import proxy
+from pathlib import Path
 
 from . import multipart
 
@@ -364,7 +365,8 @@ class Disc():
             cmdline.append('slow')
         elif config.decomb == 'auto':
             cmdline.append('-5')
-        proc.check_call(cmdline)
+        with (Path(config.temp) / 'tvrip.log').open('a') as log:
+            proc.check_call(cmdline, stdout=log, stderr=log)
         # Tag the resulting file
         tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
         try:
@@ -384,7 +386,8 @@ class Disc():
                 '--tracknum',     str(episodes[0].number),
                 '--title',        multipart.name(episodes),
                 ]
-            proc.check_call(cmdline)
+            with (Path(config.temp) / 'tvrip.log').open('a') as log:
+                proc.check_call(cmdline, stdout=log, stderr=log)
             os.chmod(
                 tmpfile,
                 os.stat(os.path.join(config.target, filename)).st_mode)
