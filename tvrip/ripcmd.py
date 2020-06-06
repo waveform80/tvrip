@@ -1004,7 +1004,9 @@ class RipCmd(Cmd):
             except (TypeError, ValueError):
                 raise CmdSyntaxError(
                     'You must specify an episode number and name for insert/update')
-        elif op != 'del':
+        elif op == 'del':
+            name = ''
+        else:
             raise CmdSyntaxError(
                 'Episode operation must be one of insert/update/delete')
         try:
