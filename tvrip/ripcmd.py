@@ -606,7 +606,7 @@ class RipCmd(Cmd):
             raise CmdError('Path {} does not exist'.format(value))
         if not os.access(str(value), os.X_OK, effective_ids=True):
             raise CmdError('Path {} is not executable'.format(value))
-        self.config.set_path(var, value)
+        self.config.set_path(var, str(value))
 
     def set_directory(self, var, value):
         """
