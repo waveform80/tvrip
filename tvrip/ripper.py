@@ -20,11 +20,13 @@
 
 import os
 import re
+import json
 import shutil
 import tempfile
 import datetime as dt
 import subprocess as proc
 import hashlib
+from fractions import Fraction
 from operator import attrgetter
 from itertools import groupby
 from weakref import proxy
@@ -34,14 +36,13 @@ from . import multipart
 
 
 AUDIO_MIX_ORDER = [
-    '5.1 ch',
-    '5.0 ch',
-    'Dolby Surround',
-    '3.1 ch',
-    '2.0 ch',
-    '1.0 ch',
+    '5point1',
+    'dpl2',
+    'dpl1',
+    'stereo',
+    'mono',
     ]
-AUDIO_ENCODING_ORDER = ['DTS', 'AC3']
+AUDIO_ENCODING_ORDER = ['dts', 'ac3']
 
 
 class Disc():
@@ -54,33 +55,6 @@ class Disc():
     disc_name_re = re.compile(r'^libdvdnav: DVD Title: (?P<name>.*)$')
     disc_serial_re = re.compile(
         r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
-    title_re = re.compile(
-        r'^\+ title (?P<number>\d+):$', re.UNICODE)
-    duration_re = re.compile(
-        r'^  \+ duration: (?P<duration>.*)$', re.UNICODE)
-    stats_re = re.compile(
-        r'^  \+ size: (?P<size>.*), aspect: (?P<aspect_ratio>.*), '
-        r'(?P<frame_rate>.*) fps$', re.UNICODE)
-    crop_re = re.compile(r'^  \+ autocrop: (?P<crop>.*)$', re.UNICODE)
-    comb_re = re.compile(r'^  \+ combing detected,.*$', re.UNICODE)
-    chapters_re = re.compile(r'^  \+ chapters:$', re.UNICODE)
-    chapter_re = re.compile(
-        r'^    \+ (?P<number>\d+): cells \d+->\d+, \d+ blocks, '
-        r'duration (?P<duration>.*)$', re.UNICODE)
-    audio_tracks_re = re.compile(r'^  \+ audio tracks:$', re.UNICODE)
-    audio_track_re = re.compile(
-        r'^    \+ (?P<number>\d+), '
-        r'(?P<name>[^(]*) \((?P<encoding>[^)]*)\)( \((?P<label>[^)]*)\))? '
-        r'\((?P<channel_mix>\d+\.\d+ ch)\)( \(Dolby [^)]*\))? '
-        r'\(iso639-2: (?P<language>[a-z]{2,3})\), '
-        r'(?P<sample_rate>\d+)Hz, (?P<bit_rate>\d+)bps$', re.UNICODE)
-    subtitle_tracks_re = re.compile(r'^  \+ subtitle tracks:$', re.UNICODE)
-    subtitle_track_re = re.compile(
-        r'^    \+ (?P<number>\d+), '
-        r'(?P<name>[^([]*)'
-        r'( \(iso639-2: (?P<language>[a-z]{2,3})\))?'
-        r'( \((?P<type>Letter Box|Wide Screen|Text|Bitmap)\))?'
-        r'( [([](?P<format>CC|VOBSUB)[)\]])?$', re.UNICODE)
 
     def __init__(self, config, titles=None):
         super().__init__()
@@ -175,91 +149,73 @@ class Disc():
             '-t', str(title),         # select the specified title
             '--min-duration', '300',  # only scan titles >5 minutes
             '--scan',                 # scan only
+            '--json',                 # JSON output
             ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
-        output = proc.check_output(
-            cmdline, stderr=proc.STDOUT, universal_newlines=True,
-            errors='replace')
-        state = {'disc'}
-        title = None
-        # Parse the output into child objects
-        for line in output.splitlines():
-            if 'disc' in state and (
-                    _match(self.error1_re, line) or
-                    _match(self.error2_re, line)):
+        result = proc.run(cmdline, stdout=proc.PIPE, stderr=proc.PIPE,
+                          check=True, encoding='utf-8', errors='replace')
+        for line in result.stderr.splitlines():
+            if _match(self.error1_re, line) or _match(self.error2_re, line):
                 raise IOError(
                     'Unable to read disc in {}'.format(config.source))
-            if 'disc' in state and _match(self.disc_name_re, line):
+            elif _match(self.disc_name_re, line):
                 self.name = self.match.group('name')
-            elif 'disc' in state and _match(self.disc_serial_re, line):
+            elif _match(self.disc_serial_re, line):
                 self.serial = str(self.match.group('serial'))
-            elif 'disc' in state and _match(self.title_re, line):
-                if title:
-                    title.chapters = sorted(
-                        title.chapters, key=attrgetter('number'))
-                    title.audio_tracks = sorted(
-                        title.audio_tracks, key=attrgetter('number'))
-                    title.subtitle_tracks = sorted(
-                        title.subtitle_tracks, key=attrgetter('number'))
-                state = {'disc', 'title'}
-                title = Title(self)
-                title.number = int(self.match.group('number'))
-            elif 'title' in state and _match(self.duration_re, line):
-                state = {'disc', 'title'}
-                hours, minutes, seconds = (
-                    int(i) for i in self.match.group('duration').split(':'))
-                title.duration = dt.timedelta(
-                    seconds=seconds, minutes=minutes, hours=hours)
-            elif 'title' in state and _match(self.stats_re, line):
-                state = {'disc', 'title'}
-                title.size = (
-                    int(i) for i in self.match.group('size').split('x'))
-                title.aspect_ratio = float(self.match.group('aspect_ratio'))
-                title.frame_rate = float(self.match.group('frame_rate'))
-            elif 'title' in state and _match(self.crop_re, line):
-                state = {'disc', 'title'}
-                title.crop = (
-                    int(i) for i in self.match.group('crop').split('/'))
-            elif 'title' in state and _match(self.comb_re, line):
-                title.interlaced = True
-            elif 'title' in state and _match(self.chapters_re, line):
-                state = {'disc', 'title', 'chapter'}
-            elif 'chapter' in state and _match(self.chapter_re, line):
+        try:
+            json_start = result.stdout.rindex('JSON Title Set:')
+        except ValueError:
+            raise IOError('Unable to find JSON data in HandBrake output')
+        json_disc = json.loads(
+            result.stdout[json_start + len('JSON Title Set:'):])
+
+        title = None
+        for json_title in json_disc['TitleList']:
+            title = Title(self)
+            title.number = json_title['Index']
+            title.duration = dt.timedelta(
+                hours=json_title['Duration'].get('Hours', 0),
+                minutes=json_title['Duration'].get('Minutes', 0),
+                seconds=json_title['Duration'].get('Seconds', 0))
+            title.size = (
+                json_title['Geometry']['Width'],
+                json_title['Geometry']['Height'])
+            par = Fraction(json_title['Geometry']['PAR']['Num'],
+                           json_title['Geometry']['PAR']['Den'])
+            title.aspect_ratio = title.size[0] * par / title.size[1]
+            title.frame_rate = Fraction(
+                json_title['FrameRate']['Num'],
+                json_title['FrameRate']['Den'])
+            title.crop = tuple(json_title['Crop'])
+            title.interlaced = json_title['InterlaceDetected']
+            for json_ch in json_title['ChapterList']:
                 chapter = Chapter(title)
-                chapter.number = int(self.match.group('number'))
-                hours, minutes, seconds = (
-                    int(i) for i in self.match.group('duration').split(':'))
+                chapter.number = int(json_ch['Name'][len('Chapter '):])
                 chapter.duration = dt.timedelta(
-                    seconds=seconds, minutes=minutes, hours=hours)
-            elif 'title' in state and _match(self.audio_tracks_re, line):
-                state = {'disc', 'title', 'audio'}
-            elif 'audio' in state and _match(self.audio_track_re, line):
+                    hours=json_ch['Duration'].get('Hours', 0),
+                    minutes=json_ch['Duration'].get('Minutes', 0),
+                    seconds=json_ch['Duration'].get('Seconds', 0))
+            title.chapters = sorted(
+                title.chapters, key=attrgetter('number'))
+            for num, json_audio in enumerate(json_title['AudioList'], start=1):
                 track = AudioTrack(title)
-                track.number = int(self.match.group('number'))
-                if self.match.group('label'):
-                    track.name = '{name} ({label})'.format(
-                        name=self.match.group('name'),
-                        label=self.match.group('label'))
-                else:
-                    track.name = self.match.group('name')
-                track.language = str(self.match.group('language'))
-                track.encoding = str(self.match.group('encoding'))
-                track.channel_mix = str(self.match.group('channel_mix'))
-                track.sample_rate = int(self.match.group('sample_rate'))
-                track.bit_rate = int(self.match.group('bit_rate'))
-            elif 'title' in state and _match(self.subtitle_tracks_re, line):
-                state = {'disc', 'title', 'subtitle'}
-            elif 'subtitle' in state and _match(self.subtitle_track_re, line):
-                track = SubtitleTrack(title)
-                track.number = int(self.match.group('number'))
-                track.name = str(self.match.group('name'))
-                if self.match.group('format') is not None:
-                    track.format = self.match.group('format').lower()
-                if self.match.group('language') is not None:
-                    track.language = str(self.match.group('language'))
-                else:
-                    track.guess_language()
+                track.number = num
+                track.name = json_audio['Language']
+                track.language = json_audio['LanguageCode']
+                track.encoding = json_audio['CodecName']
+                track.channel_mix = json_audio['ChannelLayoutName']
+                track.sample_rate = json_audio['SampleRate']
+                track.bit_rate = json_audio['BitRate']
+            title.audio_tracks = sorted(
+                title.audio_tracks, key=attrgetter('number'))
+            for num, json_sub in enumerate(json_title['SubtitleList'], start=1):
+                track.number = num
+                track.name = json_sub['Language']
+                track.language = json_sub['LanguageCode']
+                track.format = json_sub['SourceName']
+            title.subtitle_tracks = sorted(
+                title.subtitle_tracks, key=attrgetter('number'))
 
     def play(self, config, title_or_chapter):
         "Play the specified title or chapter"
