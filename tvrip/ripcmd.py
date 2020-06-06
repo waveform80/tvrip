@@ -1252,11 +1252,7 @@ class RipCmd(Cmd):
             if not s:
                 return '-'
             else:
-                lines = s.splitlines()
-                if len(lines) == 1:
-                    s = lines[0]
-                else:
-                    s = ''.join(lines[0] + ['...'])
+                s = s.splitlines()[0]
                 if len(s) > 200:
                     s = s[:197] + '...'
                 return s
