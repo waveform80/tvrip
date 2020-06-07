@@ -210,6 +210,7 @@ class Disc():
             title.audio_tracks = sorted(
                 title.audio_tracks, key=attrgetter('number'))
             for num, json_sub in enumerate(json_title['SubtitleList'], start=1):
+                track = SubtitleTrack(title)
                 track.number = num
                 track.name = json_sub['Language']
                 track.language = json_sub['LanguageCode']
