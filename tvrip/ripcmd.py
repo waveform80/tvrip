@@ -1223,6 +1223,10 @@ class RipCmd(Cmd):
                 new_program = self.find_program(arg)
             except CmdError:
                 new_program = self.new_program(arg)
+        # This is necessary to workaround a tricky transition; e.g. current
+        # configuration is for season 3 of something but we're transitioning
+        # to a program which doesn't have 3 seasons
+        self.config.season = None
         self.config.program = new_program
         self.config.season = self.session.query(
                 Season
