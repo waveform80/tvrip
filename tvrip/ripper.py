@@ -37,8 +37,8 @@ from . import multipart
 
 AUDIO_MIX_ORDER = [
     '5point1',
-    'dpl2',
-    'dpl1',
+    '5.1(side)',
+    'downmix',
     'stereo',
     'mono',
     ]
