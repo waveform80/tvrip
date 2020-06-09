@@ -1156,17 +1156,11 @@ class RipCmd(Cmd):
         self.config.season = self.session.query(Season).get(
             (self.config.program.name, arg))
         if self.config.season is None:
-            self.config.season = Season(self.config.program, arg)
-            self.session.add(self.config.season)
-            count = self.input_number(
-                range(100),
-                'Season {season} of program {program} is new. Please enter '
-                'the number of episodes in this season (enter 0 if you do '
-                'not wish to define episodes at this time)'
-                ''.format(season=self.config.season.number,
-                          program=self.config.program.name))
-            if count != 0:
-                self.do_episodes(count)
+            try:
+                new_season = self.find_season(arg)
+            except CmdError:
+                new_season = self.new_season(arg)
+        self.config.season = new_season
         self.episode_map.clear()
         self.map_ripped()
 
@@ -1184,6 +1178,30 @@ class RipCmd(Cmd):
                     season=text
                 )
             ]
+
+    def find_season(self, number):
+        entry = self.find_program_entry(self.config.program.name)
+        if not number in self.api.seasons(entry.id):
+            raise CmdError('Season {} not found on TVDB'.format(number))
+        new_season = Season(self.config.program, number)
+        for episode, title in self.api.episodes(entry.id, number):
+            self.session.add(Episode(new_season, episode, title))
+        return new_season
+
+    def new_season(self, number):
+        new_season = Season(self.config.program, arg)
+        self.session.add(new_season)
+        count = self.input_number(
+            range(100),
+            'Season {season} of program {program} is new. Please enter '
+            'the number of episodes in this season (enter 0 if you do '
+            'not wish to define episodes at this time)'
+            ''.format(season=new_season.number,
+                      program=self.config.program.name))
+        self.config.season = new_season
+        if count != 0:
+            self.do_episodes(count)
+        return new_season
 
     def do_seasons(self, arg=''):
         """
@@ -1250,7 +1268,7 @@ class RipCmd(Cmd):
             self.session.query(Program).filter(Program.name.startswith(name))
             ]
 
-    def find_program(self, name):
+    def find_program_entry(self, name):
 
         def format_overview(s):
             if not s:
@@ -1287,7 +1305,10 @@ class RipCmd(Cmd):
             '0 if you wish to enter program information manually)?')
         if index == 0:
             raise CmdError('user opted for manual entry')
-        entry = data[index - 1]
+        return data[index - 1]
+
+    def find_program(self, name):
+        entry = self.find_program_entry(name)
         new_program = Program(entry.title)
         self.session.add(new_program)
         for season in self.api.seasons(entry.id):
@@ -1600,7 +1621,7 @@ class RipCmd(Cmd):
         """
         Maps episodes to titles or chapter ranges.
 
-        Syntax: map [episode title[.start[-end]]]
+        Syntax: map [episode[-end] title[.start[-end]]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
@@ -1609,6 +1630,7 @@ class RipCmd(Cmd):
         (tvrip) map 3 1
         (tvrip) map 7 4
         (tvrip) map 5 2.1-12
+        (tvrip) map 1-2 4
 
         If no arguments are specified, the current episode map will be
         displayed.
@@ -1622,58 +1644,49 @@ class RipCmd(Cmd):
 
     def set_map(self, arg):
         try:
-            episode, target = arg.split(' ')
+            source, target = arg.split(' ')
         except ValueError:
             raise CmdSyntaxError('You must specify two arguments')
-        episode = self.parse_episode(episode)
+        if '-' in episode:
+            source = self.parse_episode_range(source)
+            start, end = source
+            source_label = 'episodes {start.number}-{end.number} "{start.title}"'.format(
+                start=start, end=end)
+        else:
+            source = self.parse_episode(source)
+            source_label = 'episode {episode.number} "{episode.title}"'.format(
+                episode=source)
         target = self.parse_title_or_chapter_range(target)
         if isinstance(target, Title):
-            title = target
-            self.pprint(
-                'Mapping title {title} (duration {duration}) to episode '
-                '{episode_num}, "{episode_title}"'.format(
-                    title=title.number,
-                    duration=title.duration,
-                    episode_num=episode.number,
-                    episode_title=episode.name
-                )
-            )
-            self.episode_map[episode] = title
+            target_label = 'title {title.number} (duration {title.duration})'.format(
+                title=target)
         else:
             start, end = target
             if start.title == end.title:
                 index = (
-                    '{title}.{start:02d}-{end:02d}'.format(
-                        title=start.title.number,
-                        start=start.number,
-                        end=end.number
-                    )
-                )
+                    '{start.title.number}.{start.number:02d}-'
+                    '{end.number:02d}'.format(
+                        start=start, end=end))
             else:
                 index = (
-                    '{st}.{sc:02d}-{et}.{ec:02d}'.format(
-                        st=start.title.number,
-                        sc=start.number,
-                        et=end.title.number,
-                        ec=end.number
-                    )
-                )
-            self.pprint(
-                'Mapping chapters {index} (duration {duration}) '
-                'to episode {episode_num}, "{episode_title}"'.format(
-                    index=index,
-                    duration=sum((
-                        chapter.duration
-                        for title in start.title.disc.titles
-                        for chapter in title.chapters
-                        if (
-                            (start.title.number, start.number) <=
-                            (title.number, chapter.number) <=
-                            (end.title.number, end.number))
-                        ), timedelta()),
-                    episode_num=episode.number,
-                    episode_title=episode.name))
-            self.episode_map[episode] = (start, end)
+                    '{start.title.number}.{start.number:02d}-'
+                    '{end.title.number}.{end.number:02d}'.format(
+                        start=start, end=end))
+            target_label = 'chapters {index} (duration {duration})'.format(
+                index=index,
+                duration=sum((
+                    chapter.duration
+                    for title in start.title.disc.titles
+                    for chapter in title.chapters
+                    if (
+                        (start.title.number, start.number) <=
+                        (title.number, chapter.number) <=
+                        (end.title.number, end.number))
+                    ), timedelta()))
+        self.pprint(
+            'Mapping {target_label} to {source_label}'.format(
+                source_label=source_label, target_label=target_label))
+        self.episode_map[source] = target
 
     def get_map(self):
         if self.config.program is None:

@@ -106,7 +106,7 @@ def calculate(
         elif duration >= duration_min:
             new_map = mapping + [count + 1]
             # If the duration of the group of chapters is within range, check
-            # whether the mapping is a whole is valid and add it to the
+            # whether the mapping as a whole is valid and add it to the
             # solutions list if so
             if valid(new_map, chapters, episodes, duration_min, duration_max):
                 solutions.append(new_map)
@@ -150,8 +150,14 @@ class EpisodeMap(dict):
             yield episode
 
     def __setitem__(self, key, value):
-        # Ensures values are either a Title or a (Chapter, Chapter) tuple.
-        assert isinstance(key, Episode)
+        # Ensure keys are either an Episode or an (Episode, Episode) tuple
+        try:
+            start, finish = key
+            assert isinstance(start, Episode)
+            assert isinstance(finish, Episode)
+        except (TypeError, ValueError):
+            assert isinstance(key, Episode)
+        # Ensures values are either a Title or a (Chapter, Chapter) tuple
         try:
             start, finish = value
             assert isinstance(start, Chapter)
