@@ -1621,16 +1621,19 @@ class RipCmd(Cmd):
         """
         Maps episodes to titles or chapter ranges.
 
-        Syntax: map [episode[-end] title[.start[-end]]]
+        Syntax: map [episode title[.start[-end]]]
 
         The 'map' command is used to define which title on the disc contains
         the specified episode. This is used when constructing the filename of
-        ripped episodes. For example:
+        ripped episodes. Note that multiple episodes can be mapped to a single
+        title, to deal with multi-part episodes being encoded as a single
+        title.
+
+        For example:
 
         (tvrip) map 3 1
         (tvrip) map 7 4
         (tvrip) map 5 2.1-12
-        (tvrip) map 1-2 4
 
         If no arguments are specified, the current episode map will be
         displayed.
@@ -1644,18 +1647,10 @@ class RipCmd(Cmd):
 
     def set_map(self, arg):
         try:
-            source, target = arg.split(' ')
+            episode, target = arg.split(' ')
         except ValueError:
             raise CmdSyntaxError('You must specify two arguments')
-        if '-' in episode:
-            source = self.parse_episode_range(source)
-            start, end = source
-            source_label = 'episodes {start.number}-{end.number} "{start.title}"'.format(
-                start=start, end=end)
-        else:
-            source = self.parse_episode(source)
-            source_label = 'episode {episode.number} "{episode.title}"'.format(
-                episode=source)
+        episode = self.parse_episode(episode)
         target = self.parse_title_or_chapter_range(target)
         if isinstance(target, Title):
             target_label = 'title {title.number} (duration {title.duration})'.format(
@@ -1684,9 +1679,9 @@ class RipCmd(Cmd):
                         (end.title.number, end.number))
                     ), timedelta()))
         self.pprint(
-            'Mapping {target_label} to {source_label}'.format(
-                source_label=source_label, target_label=target_label))
-        self.episode_map[source] = target
+            'Mapping {target_label} to {episode.number} "{episode.name}"'.format(
+                episode=episode, target_label=target_label))
+        self.episode_map[episode] = target
 
     def get_map(self):
         if self.config.program is None:

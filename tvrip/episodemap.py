@@ -150,14 +150,8 @@ class EpisodeMap(dict):
             yield episode
 
     def __setitem__(self, key, value):
-        # Ensure keys are either an Episode or an (Episode, Episode) tuple
-        try:
-            start, finish = key
-            assert isinstance(start, Episode)
-            assert isinstance(finish, Episode)
-        except (TypeError, ValueError):
-            assert isinstance(key, Episode)
-        # Ensures values are either a Title or a (Chapter, Chapter) tuple
+        # Ensures values are either a Title or a (Chapter, Chapter) tuple.
+        assert isinstance(key, Episode)
         try:
             start, finish = value
             assert isinstance(start, Chapter)
