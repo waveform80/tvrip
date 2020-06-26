@@ -1160,7 +1160,7 @@ class RipCmd(Cmd):
                 new_season = self.find_season(arg)
             except CmdError:
                 new_season = self.new_season(arg)
-        self.config.season = new_season
+            self.config.season = new_season
         self.episode_map.clear()
         self.map_ripped()
 
