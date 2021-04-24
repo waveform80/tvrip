@@ -618,7 +618,7 @@ class RipCmd(Cmd):
             raise CmdError('Path {} does not exist'.format(value))
         if not value.is_dir():
             raise CmdError('Path {} is not a directory'.format(value))
-        setattr(self.config, var, value)
+        setattr(self.config, var, str(value))
 
     def set_device(self, var, value):
         """
@@ -630,7 +630,7 @@ class RipCmd(Cmd):
             raise CmdError('Path {} does not exist'.format(value))
         if not value.is_block_device():
             raise CmdError('Path {} is not a block device'.format(value))
-        setattr(self.config, var, value)
+        setattr(self.config, var, str(value))
 
     def set_complete_one(self, line, start, valid):
         match = self.set_var_re.match(line)
