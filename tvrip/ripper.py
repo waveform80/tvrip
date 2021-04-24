@@ -202,9 +202,9 @@ class Disc():
                 track = AudioTrack(title)
                 track.number = num
                 track.name = json_audio['Language']
-                track.language = json_audio['LanguageCode']
-                track.encoding = json_audio['CodecName']
-                track.channel_mix = json_audio['ChannelLayoutName']
+                track.language = json_audio['LanguageCode'].lower()
+                track.encoding = json_audio['CodecName'].lower()
+                track.channel_mix = json_audio['ChannelLayoutName'].lower()
                 track.sample_rate = json_audio['SampleRate']
                 track.bit_rate = json_audio['BitRate']
             title.audio_tracks = sorted(
@@ -213,8 +213,8 @@ class Disc():
                 track = SubtitleTrack(title)
                 track.number = num
                 track.name = json_sub['Language']
-                track.language = json_sub['LanguageCode']
-                track.format = json_sub['SourceName']
+                track.language = json_sub['LanguageCode'].lower()
+                track.format = json_sub['SourceName'].lower()
             title.subtitle_tracks = sorted(
                 title.subtitle_tracks, key=attrgetter('number'))
 
