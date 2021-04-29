@@ -42,7 +42,10 @@ AUDIO_MIX_ORDER = [
     'stereo',
     'mono',
     ]
-AUDIO_ENCODING_ORDER = ['dts', 'ac3']
+AUDIO_ENCODING_ORDER = {
+    encoding: index
+    for index, encoding in enumerate(['dts', 'ac3'])
+}
 
 
 class Disc():
@@ -119,7 +122,7 @@ class Disc():
                     key=attrgetter('name')):
                 group = sorted(group, key=lambda track: (
                     AUDIO_MIX_ORDER.index(track.channel_mix),
-                    AUDIO_ENCODING_ORDER.index(track.encoding)
+                    AUDIO_ENCODING_ORDER.get(track.encoding, len(AUDIO_ENCODING_ORDER))
                 ))
                 if group:
                     group[0].best = True
