@@ -1539,9 +1539,9 @@ class RipCmd(Cmd):
                 ).all()
         if titles == '*':
             titles = [
-                    title for title in self.disc.titles
-                    if title not in self.episode_map.values()
-                    ]
+                title for title in self.disc.titles
+                if title not in self.episode_map.values()
+                ]
         else:
             titles = self.parse_title_list(titles)
         self.map_ripped()

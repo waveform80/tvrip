@@ -27,18 +27,18 @@ def prefix(episodes):
     # A crude heuristic based on episode titles ending in " - Part n", "(n)",
     # the subsequent episode titles being simply '"'
     first_name = episodes[0].name
-    n = 1
-    for n, e in enumerate(episodes[1:], start=2):
-        if e.name == '"':
+    for part, episode in enumerate(episodes[1:], start=2):
+        if episode.name == '"': # ditto (continuation of prior episode)
             continue
-        elif e.name.endswith('Part %d' % n):
-            if e.name[:-6] == first_name[:-6]:
+        elif episode.name.endswith('Part %d' % part):
+            if episode.name[:-6] == first_name[:-6]:
                 continue
-        elif e.name.endswith('(%d)' % n):
-            if e.name[:-3] == first_name[:-3]:
+        elif episode.name.endswith('(%d)' % part):
+            if episode.name[:-3] == first_name[:-3]:
                 continue
-        break
-    return n - 1
+        else:
+            return part - 1
+    return part
 
 
 def name(episodes):
