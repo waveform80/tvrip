@@ -19,10 +19,13 @@
 
 "Implements the main loop and option parser for the tvrip application"
 
+import os
+
 from pkg_resources import require
 
 from .terminal import TerminalApplication
 from .ripcmd import RipCmd
+from .const import DATADIR
 
 
 class TVRipApplication(TerminalApplication):
@@ -33,6 +36,10 @@ class TVRipApplication(TerminalApplication):
     DVD containing a TV series (or a season of a TV series) via HandBrake.
     """
     def main(self, args):
+        try:
+            os.mkdir(DATADIR)
+        except FileExistsError:
+            pass
         # Start the interpreter
         cmd = RipCmd(debug=args.debug)
         cmd.pprint('TVRip %s' % pkg.version)

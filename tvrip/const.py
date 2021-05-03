@@ -21,6 +21,7 @@
 import os
 
 # The path under which tvrip-related data will be kept
-DATADIR = os.path.expanduser('~/.tvrip')  # must be absolute
-if not os.path.exists(DATADIR):
-    os.mkdir(DATADIR)
+XDG_CONFIG_HOME = os.environ.get(
+    'XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
+DATADIR = os.environ.get(
+    'TVRIP_CONFIG', os.path.join(XDG_CONFIG_HOME, 'tvrip'))
