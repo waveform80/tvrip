@@ -24,6 +24,7 @@ import os
 from pkg_resources import require
 
 from .terminal import TerminalApplication
+from .database import init_session
 from .ripcmd import RipCmd
 from .const import DATADIR
 
@@ -40,11 +41,11 @@ class TVRipApplication(TerminalApplication):
             os.mkdir(DATADIR)
         except FileExistsError:
             pass
-        # Start the interpreter
-        cmd = RipCmd(debug=args.debug)
-        cmd.pprint('TVRip %s' % pkg.version)
-        cmd.pprint('Type "help" for more information.')
-        cmd.cmdloop()
+        with init_session(debug=args.debug) as session:
+            cmd = RipCmd(session)
+            cmd.pprint('TVRip %s' % pkg.version)
+            cmd.pprint('Type "help" for more information.')
+            cmd.cmdloop()
 
 
 pkg = require('tvrip')[0]

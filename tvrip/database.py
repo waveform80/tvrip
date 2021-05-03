@@ -282,25 +282,16 @@ class Configuration(DeclarativeBase):
         return "<Configuration(...)>"
 
 
-SESSION = None
-
-
-def init_session(url=None, debug=False):
+def init_session(url='sqlite:///{DATADIR}/tvrip.db'.format(DATADIR=DATADIR),
+                 debug=False):
     """Initializes the connection to the database and returns a new session
 
     This routine must be called once during the application to open the
     connection to the tvrip database and obtain a session object for
     manipulating that connection.
     """
-    # The SESSION global is simply used to ensure this is a one-time call so
-    # multiple simultaneous database connections don't get opened
-    global SESSION
-    assert SESSION is None
-
-    if url is None:
-        url = 'sqlite:///%s' % os.path.join(DATADIR, 'tvrip.db')
     engine = create_engine(url, echo=debug)
-    SESSION = Session(bind=engine)
+    session = Session(bind=engine)
     DeclarativeBase.metadata.bind = engine
     DeclarativeBase.metadata.create_all()
-    return SESSION
+    return session

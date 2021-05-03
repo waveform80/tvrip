@@ -44,11 +44,11 @@ class RipCmd(Cmd):
 
     prompt = '(tvrip) '
 
-    def __init__(self, debug=False):
+    def __init__(self, session):
         super().__init__()
         self.discs = {}
         self.episode_map = EpisodeMap()
-        self.session = init_session(debug=debug)
+        self.session = session
         # Specify the history filename
         self.history_file = os.path.join(DATADIR, 'tvrip.history')
         # Read the configuration from the database
