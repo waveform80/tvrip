@@ -5,8 +5,11 @@ from tvrip import database
 @pytest.fixture()
 def db(request, tmpdir):
     url = 'sqlite:///{tmpdir!s}/tvrip.db'.format(tmpdir=tmpdir)
-    with database.init_session(url) as session:
+    session = database.init_session(url)
+    try:
         yield session
+    finally:
+        session.close()
 
 
 @pytest.fixture()

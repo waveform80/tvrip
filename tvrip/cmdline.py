@@ -42,7 +42,7 @@ import cmd
 import readline
 from textwrap import TextWrapper
 
-from .termsize import terminal_size
+from .terminal import term_size
 from .formatter import TableWrapper, pretty_table
 
 COLOR_BOLD    = '\033[1m'
@@ -220,7 +220,7 @@ class Cmd(cmd.Cmd):
             if match:
                 suffix = match.group()
         if wrap:
-            self._wrapper.width = min(120, terminal_size()[0] - 2)
+            self._wrapper.width = min(120, term_size()[0] - 2)
             self._wrapper.initial_indent = initial_indent
             self._wrapper.subsequent_indent = subsequent_indent
             s = self._wrapper.fill(s)
@@ -269,7 +269,7 @@ class Cmd(cmd.Cmd):
     def pprint_table(self, data, header_rows=1, footer_rows=0):
         "Pretty-prints a table of data"
         wrapper = TableWrapper(
-            width=min(120, terminal_size()[0] - 2), header_rows=header_rows,
+            width=min(120, term_size()[0] - 2), header_rows=header_rows,
             footer_rows=footer_rows, **pretty_table)
         for row in wrapper.wrap(data):
             self.stdout.write(row + '\n')

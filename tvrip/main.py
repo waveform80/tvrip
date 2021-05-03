@@ -20,33 +20,60 @@
 "Implements the main loop and option parser for the tvrip application"
 
 import os
+import sys
+import argparse
 
 from pkg_resources import require
 
-from .terminal import TerminalApplication
+from .terminal import ErrorHandler
 from .database import init_session
 from .ripcmd import RipCmd
 from .const import DATADIR
 
 
-class TVRipApplication(TerminalApplication):
+class TVRipApplication:
     """
     %prog [options]
 
     This command line interface simplifies the extraction and transcoding of a
     DVD containing a TV series (or a season of a TV series) via HandBrake.
     """
+    def __init__(self):
+        super().__init__()
+        pkg = require('tvrip')[0]
+        self.version = pkg.version
+        self.parser = argparse.ArgumentParser(description=self.__doc__)
+        self.parser.add_argument(
+            '--version', action='version', version=self.version)
+        self.parser.add_argument(
+            '-P', '--pdb', dest='debug', action='store_true', default=False,
+            help='run under PDB (debug mode)')
+
+    def __call__(self, args=None):
+        if args is None:
+            args = sys.argv[1:]
+        sys.excepthook = ErrorHandler()
+        sys.excepthook[OSError] = (sys.excepthook.exc_message, 1)
+        args = self.parser.parse_args(args)
+        if args.debug:
+            import pdb
+            return pdb.runcall(self.main, args)
+        else:
+            return self.main(args) or 0
+
     def main(self, args):
         try:
             os.mkdir(DATADIR)
         except FileExistsError:
             pass
-        with init_session(debug=args.debug) as session:
+        session = init_session(debug=args.debug)
+        try:
             cmd = RipCmd(session)
-            cmd.pprint('TVRip %s' % pkg.version)
+            cmd.pprint('TVRip %s' % self.version)
             cmd.pprint('Type "help" for more information.')
             cmd.cmdloop()
+        finally:
+            session.close()
 
 
-pkg = require('tvrip')[0]
-main = TVRipApplication(pkg.version)
+main = TVRipApplication()

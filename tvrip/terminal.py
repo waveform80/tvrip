@@ -24,158 +24,92 @@ facilities to command line applications: a help screen, universal file
 globbing, response file handling, and common logging configuration and options.
 """
 
-import sys
 import os
-import argparse
-import logging
+import sys
+import struct
 import locale
+import argparse
 import traceback
 import configparser
 from collections import namedtuple, OrderedDict
-
-try:
-    # Optionally import argcomplete (for auto-completion) if it's installed
-    import argcomplete
-except ImportError:
-    argcomplete = None
 
 
 # Use the user's default locale instead of C
 locale.setlocale(locale.LC_ALL, '')
 
-# Set up a console logging handler which just prints messages without any other
-# adornments. This will be used for logging messages sent before we "properly"
-# configure logging according to the user's preferences
-_CONSOLE = logging.StreamHandler(sys.stderr)
-_CONSOLE.setFormatter(logging.Formatter('%(message)s'))
-_CONSOLE.setLevel(logging.DEBUG)
-logging.getLogger().addHandler(_CONSOLE)
 
+if sys.platform.startswith('win'):
+    # ctypes query_console_size() adapted from
+    # http://code.activestate.com/recipes/440694/
+    import ctypes
 
-class TerminalApplication:
-    """
-    Base class for command line applications.
+    def term_size():
+        "Returns the size (cols, rows) of the console"
 
-    This class provides command line parsing, file globbing, response file
-    handling and common logging configuration for command line utilities.
-    Descendent classes should override the main() method to implement their
-    main body, and __init__() if they wish to extend the command line options.
-    """
-    # Get the default output encoding from the default locale
-    encoding = locale.getdefaultlocale()[1]
+        def get_handle_size(handle):
+            "Subroutine for querying terminal size from std handle"
+            handle = ctypes.windll.kernel32.GetStdHandle(handle)
+            if handle:
+                buf = ctypes.create_string_buffer(22)
+                if ctypes.windll.kernel32.GetConsoleScreenBufferInfo(
+                        handle, buf):
+                    (left, top, right, bottom) = struct.unpack(
+                        'hhhhHhhhhhh', buf.raw)[5:9]
+                    return (right - left + 1, bottom - top + 1)
+            return None
 
-    # This class is the abstract base class for each of the command line
-    # utility classes defined. It provides some basic facilities like an option
-    # parser, console pretty-printing, logging and exception handling
+        stdin, stdout, stderr = -10, -11, -12
+        return (
+            get_handle_size(stderr) or
+            get_handle_size(stdout) or
+            get_handle_size(stdin) or
+            # Default
+            (80, 25)
+        )
 
-    def __init__(
-            self, version, description=None, config_files=None,
-            config_section=None, config_bools=None):
-        super(TerminalApplication, self).__init__()
-        if description is None:
-            description = self.__doc__
-        self.parser = argparse.ArgumentParser(
-            description=description,
-            fromfile_prefix_chars='@')
-        self.parser.add_argument(
-            '--version', action='version', version=version)
-        if config_files:
-            self.config = configparser.ConfigParser(interpolation=None)
-            self.config_files = config_files
-            self.config_section = config_section
-            self.config_bools = config_bools
-            self.parser.add_argument(
-                '-c', '--config', metavar='FILE',
-                help='specify the configuration file to load')
-        else:
-            self.config = None
-        self.parser.set_defaults(log_level=logging.WARNING)
-        self.parser.add_argument(
-            '-q', '--quiet', dest='log_level', action='store_const',
-            const=logging.ERROR, help='produce less console output')
-        self.parser.add_argument(
-            '-v', '--verbose', dest='log_level', action='store_const',
-            const=logging.INFO, help='produce more console output')
-        arg = self.parser.add_argument(
-            '-l', '--log-file', metavar='FILE',
-            help='log messages to the specified file')
-        if argcomplete:
-            arg.completer = argcomplete.FilesCompleter(['*.log', '*.txt'])
-        self.parser.add_argument(
-            '-P', '--pdb', dest='debug', action='store_true', default=False,
-            help='run under PDB (debug mode)')
+else:
+    # POSIX query_console_size() adapted from
+    # http://mail.python.org/pipermail/python-list/2006-February/365594.html
+    # http://mail.python.org/pipermail/python-list/2000-May/033365.html
+    import fcntl
+    import termios
 
-    def __call__(self, args=None):
-        if args is None:
-            args = sys.argv[1:]
-        if argcomplete:
-            argcomplete.autocomplete(self.parser, exclude=['-P'])
-        elif 'COMP_LINE' in os.environ:
-            return 0
-        sys.excepthook = ErrorHandler()
-        sys.excepthook[OSError] = (sys.excepthook.exc_message, 1)
-        args = self.read_configuration(args)
-        args = self.parser.parse_args(args)
-        self.configure_logging(args)
-        if args.debug:
+    def term_size():
+        "Returns the size (cols, rows) of the console"
+
+        def get_handle_size(handle):
+            "Subroutine for querying terminal size from std handle"
             try:
-                import pudb
-            except ImportError:
-                pudb = None
-                import pdb
-            return (pudb or pdb).runcall(self.main, args)
-        else:
-            return self.main(args) or 0
+                buf = fcntl.ioctl(handle, termios.TIOCGWINSZ, '12345678')
+                row, col = struct.unpack('hhhh', buf)[0:2]
+                return (col, row)
+            except OSError:
+                return None
 
-    def read_configuration(self, args):
-        if not self.config:
-            return args
-        # Parse the --config argument only
-        parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument('-c', '--config', dest='config', action='store')
-        conf_args, args = parser.parse_known_args(args)
-        if conf_args.config:
-            self.config_files.append(conf_args.config)
-        logging.info(
-            'Reading configuration from %s', ', '.join(self.config_files))
-        conf_read = self.config.read(self.config_files)
-        if conf_args.config and conf_args.config not in conf_read:
-            self.parser.error('unable to read %s' % conf_args.config)
-        if conf_read:
-            if self.config_bools is None:
-                self.config_bools = ['pdb']
+        stdin, stdout, stderr = 0, 1, 2
+        # Try stderr first as it's the least likely to be redirected
+        result = (
+            get_handle_size(stderr) or
+            get_handle_size(stdout) or
+            get_handle_size(stdin)
+        )
+        if not result:
+            try:
+                fd = os.open(os.ctermid(), os.O_RDONLY)
+            except OSError:
+                pass
             else:
-                self.config_bools = ['pdb'] + self.config_bools
-            if not self.config_section:
-                self.config_section = self.config.sections()[0]
-            if self.config_section not in self.config.sections():
-                self.parser.error(
-                    'unable to locate [%s] section in configuration' % self.config_section)
-            self.parser.set_defaults(**{
-                key:
-                self.config.getboolean(self.config_section, key)
-                if key in self.config_bools else
-                self.config.get(self.config_section, key)
-                for key in self.config.options(self.config_section)
-                })
-        return args
-
-    def configure_logging(self, args):
-        _CONSOLE.setLevel(args.log_level)
-        if args.log_file:
-            log_file = logging.FileHandler(args.log_file)
-            log_file.setFormatter(
-                logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
-            log_file.setLevel(logging.DEBUG)
-            logging.getLogger().addHandler(log_file)
-        if args.debug:
-            logging.getLogger().setLevel(logging.DEBUG)
-        else:
-            logging.getLogger().setLevel(logging.INFO)
-
-    def main(self, args):
-        "Called as the main body of the utility"
-        raise NotImplementedError
+                try:
+                    result = get_handle_size(fd)
+                finally:
+                    os.close(fd)
+        if not result:
+            try:
+                result = (os.environ['COLUMNS'], os.environ['LINES'])
+            except KeyError:
+                # Default
+                result = (80, 24)
+        return result
 
 
 class ErrorAction(namedtuple('ErrorAction', ('message', 'exitcode'))):
@@ -255,7 +189,7 @@ class ErrorHandler:
         command line.
         """
         return ErrorHandler.exc_message(exc_type, exc_value, exc_tb) + [
-            _('Try the --help option for more information.'),
+            'Try the --help option for more information.',
         ]
 
     def clear(self):
@@ -288,13 +222,13 @@ class ErrorHandler:
                     value = value(exc_type, exc_value, exc_tb)
                 if message is not None:
                     for line in message:
-                        logging.critical(line)
+                        print(line, file=sys.stderr)
                     sys.stderr.flush()
                 raise SystemExit(value)
         # Otherwise, log the stack trace and the exception into the log
         # file for debugging purposes
         for line in traceback.format_exception(exc_type, exc_value, exc_tb):
             for msg in line.rstrip().split('\n'):
-                logging.critical(msg.replace('%', '%%'))
+                print(msg, file=sys.stderr)
         sys.stderr.flush()
         raise SystemExit(1)
