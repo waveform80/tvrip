@@ -221,9 +221,11 @@ class Disc():
             title.subtitle_tracks = sorted(
                 title.subtitle_tracks, key=attrgetter('number'))
 
-    def play(self, config, title_or_chapter):
+    def play(self, config, title_or_chapter=None):
         "Play the specified title or chapter"
-        if isinstance(title_or_chapter, Title):
+        if title_or_chapter is None:
+            mrl = 'dvd://{source}'.format(source=config.source)
+        elif isinstance(title_or_chapter, Title):
             mrl = 'dvd://{source}#{title}'.format(
                 source=config.source,
                 title=title_or_chapter.number)

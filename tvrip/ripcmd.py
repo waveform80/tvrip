@@ -1385,7 +1385,7 @@ class RipCmd(Cmd):
         """
         Plays the specified episode.
 
-        Syntax: play <title[.chapter]>
+        Syntax: play [title[.chapter]]
 
         The 'play' command plays the specified title (and optionally chapter)
         of the currently scanned disc. Note that a disc must be scanned before
@@ -1394,10 +1394,13 @@ class RipCmd(Cmd):
 
         See also: scan, disc
         """
-        if not arg:
-            raise CmdSyntaxError('You must specify something to play')
+        if not self.disc:
+            raise CmdError('No disc has been scanned yet')
         try:
-            self.parse_title_or_chapter(arg).play(self.config)
+            if not arg:
+                self.disc.play(self.config)
+            else:
+                self.parse_title_or_chapter(arg).play(self.config)
         except proc.CalledProcessError as e:
             raise CmdError('VLC exited with code {}'.format(e.returncode))
 
