@@ -64,7 +64,7 @@ class Disc():
         self.match = None
         self.titles = []
         self.name = ''
-        self.serial = None
+        self.serial = ''
         self.ident = None
         if titles is None:
             titles = [0]
@@ -78,8 +78,7 @@ class Disc():
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
         h = hashlib.sha1()
-        if self.serial:
-            h.update(self.serial.encode())
+        h.update(self.serial.encode())
         h.update(str(len(self.titles)).encode())
         for title in self.titles:
             h.update(str(title.duration).encode())
@@ -165,7 +164,7 @@ class Disc():
             elif _match(self.disc_name_re, line):
                 self.name = self.match.group('name')
             elif _match(self.disc_serial_re, line):
-                self.serial = str(self.match.group('serial'))
+                self.serial = self.match.group('serial')
         try:
             json_start = result.stdout.rindex('JSON Title Set:')
         except ValueError:
