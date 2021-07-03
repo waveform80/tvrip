@@ -596,6 +596,34 @@ class RipCmd(Cmd):
                     self.pprint(para)
                     self.pprint('')
 
+    def set_complete_one(self, line, start, valid):
+        match = self.set_var_re.match(line)
+        value = line[match.end():]
+        return [
+            name[start - match.end():]
+            for name in valid
+            if name.startswith(value)
+        ]
+
+    def set_complete_path(self, line, start, is_dir=False, is_exec=False,
+                          is_block_device=False):
+        match = self.set_var_re.match(line)
+        value = line[match.end():]
+        if value.endswith('/'):
+            path = Path(value)
+        else:
+            path = Path(value).parent
+        for item in path.iterdir():
+            if str(item).startswith(value):
+                if item.is_dir():
+                    yield str(item)[start - match.end():] + '/'
+                elif not is_dir:
+                    if is_exec and not os.access(item, os.X_OK):
+                        continue
+                    elif is_block_device and not item.is_block_device():
+                        continue
+                    yield str(item)[start - match.end():]
+
     def set_executable(self, var, value):
         """
         This configuration option takes the path of an executable, e.g.
@@ -607,6 +635,11 @@ class RipCmd(Cmd):
         if not os.access(str(value), os.X_OK, effective_ids=True):
             raise CmdError('Path {} is not executable'.format(value))
         self.config.set_path(var, str(value))
+
+    def set_complete_executable(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_exec=True))
+
+    set_executable.complete = set_complete_executable
 
     def set_directory(self, var, value):
         """
@@ -620,6 +653,11 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a directory'.format(value))
         setattr(self.config, var, str(value))
 
+    def set_complete_directory(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_dir=True))
+
+    set_directory.complete = set_complete_directory
+
     def set_device(self, var, value):
         """
         This configuration option takes the path of a device, e.g.
@@ -632,14 +670,10 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a block device'.format(value))
         setattr(self.config, var, str(value))
 
-    def set_complete_one(self, line, start, valid):
-        match = self.set_var_re.match(line)
-        value = line[match.end():]
-        return [
-            name[start - match.end():]
-            for name in valid
-            if name.startswith(value)
-        ]
+    def set_complete_device(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_block_device=True))
+
+    set_device.complete = set_complete_device
 
     def set_bool(self, var, value):
         """
