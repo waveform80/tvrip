@@ -28,8 +28,8 @@ import subprocess as proc
 import hashlib
 from fractions import Fraction
 from operator import attrgetter
-from itertools import groupby
-from weakref import proxy
+from itertools import groupby, chain
+from weakref import ref
 from pathlib import Path
 
 from . import multipart
@@ -123,14 +123,12 @@ class Disc():
                     AUDIO_MIX_ORDER.index(track.channel_mix),
                     AUDIO_ENCODING_ORDER.get(track.encoding, len(AUDIO_ENCODING_ORDER))
                 ))
-                if group:
-                    group[0].best = True
+                group[0].best = True
             for _, group in groupby(
                     sorted(title.subtitle_tracks, key=attrgetter('name')),
                     key=attrgetter('name')):
                 group = list(group)
-                if group:
-                    group[0].best = True
+                group[0].best = True
 
     def __repr__(self):
         return '<Disc()>'
@@ -233,12 +231,20 @@ class Disc():
                 source=config.source,
                 title=title_or_chapter.title.number,
                 chapter=title_or_chapter.number)
+        else:
+            assert False
         cmdline = [config.get_path('vlc'), '--quiet', mrl]
         proc.check_call(cmdline, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
     def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
         "Rip the specified title"
+        for item in chain(audio_tracks, subtitle_tracks,
+                          [start_chapter, end_chapter]):
+            if item is not None and item.title is not title:
+                raise ValueError(
+                    '{item} does not belong to {title}'.format(
+                        item=item, title=title))
         file_id = ' '.join(
             config.id_template.format(
                 season=episode.season.number,
@@ -251,18 +257,18 @@ class Disc():
             id=file_id,
             name=multipart.name(episodes),
             now=dt.datetime.now(),
-            )
+        )
         # Replace invalid characters in the filename with -
         filename = re.sub(r'[\/:]', '-', filename)
         # Convert the video track
         audio_defs = [
             (track.number, config.audio_mix, track.name)
             for track in audio_tracks
-            ]
+        ]
         subtitle_defs = [
             (track.number, track.name, track.best)
             for track in subtitle_tracks
-            ]
+        ]
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,
@@ -292,7 +298,7 @@ class Disc():
             '-B', ','.join('160'     for ad           in audio_defs),
             '-6', ','.join(mix       for (_, mix, _)  in audio_defs),
             '-A', ','.join(name      for (_, _, name) in audio_defs),
-            ]
+        ]
         cmdline.append('--quality')
         cmdline.append(str({
             'film':      21,
@@ -311,8 +317,9 @@ class Disc():
                     '{start}-{end}'.format(
                         start=start_chapter.number, end=end_chapter.number))
             else:
+                end_chapter = start_chapter
                 cmdline.append(str(start_chapter.number))
-        if config.subtitle_format == 'vobsub':
+        if config.subtitle_format == 'vobsub' and subtitle_defs:
             cmdline.append('-s')
             cmdline.append(','.join(str(num) for (num, _, _) in subtitle_defs))
             if config.subtitle_default:
@@ -346,7 +353,7 @@ class Disc():
                 '--album',        'Season {}'.format(episodes[0].season.number),
                 '--tracknum',     str(episodes[0].number),
                 '--title',        multipart.name(episodes),
-                ]
+            ]
             with (Path(config.temp) / 'tvrip.log').open('a') as log:
                 proc.check_call(cmdline, stdout=log, stderr=log)
             os.chmod(
@@ -372,7 +379,7 @@ class Title():
     def __init__(self, disc):
         super().__init__()
         disc.titles.append(self)
-        self.disc = proxy(disc)
+        self._disc = ref(disc)
         self.number = 0
         self.duration = dt.timedelta()
         self.size = (0, 0)
@@ -387,6 +394,11 @@ class Title():
 
     def __repr__(self):
         return '<Title({})>'.format(self.number)
+
+    @property
+    def disc(self):
+        "Returns the owning :class:`Disc`"
+        return self._disc()
 
     @property
     def previous(self):
@@ -416,25 +428,36 @@ class Chapter():
     def __init__(self, title):
         super().__init__()
         title.chapters.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.number = 0
         self.duration = dt.timedelta(0)
+
+    def __repr__(self):
+        return '<Chapter({number}, {duration})>'.format(
+            number=self.number, duration=self.duration)
+
+    @property
+    def title(self):
+        "Returns the owning :class:`Title`"
+        return self._title()
 
     @property
     def start(self):
         "Returns the start time of the chapter"
-        result = dt.datetime(dt.MINYEAR, 1, 1)
-        for chapter in self.title.chapters:
-            if chapter.number >= self.number:
-                break
-            result += chapter.duration
-        return result.time()
+        return (
+            dt.datetime(dt.MINYEAR, 1, 1) + sum((
+                c.duration
+                for c in self.title.chapters[:self.title.chapters.index(self)]
+            ), dt.timedelta(0))
+        ).time()
 
     @property
     def finish(self):
         "Returns the finish time of the chapter"
-        result = dt.datetime.combine(dt.date(dt.MINYEAR, 1, 1), self.start)
-        return (result + self.duration).time()
+        return (
+            dt.datetime.combine(dt.date(dt.MINYEAR, 1, 1), self.start) +
+            self.duration
+        ).time()
 
     @property
     def previous(self):
@@ -453,10 +476,6 @@ class Chapter():
         except IndexError:
             return None
 
-    def __repr__(self):
-        return '<Chapter({number}, {duration})>'.format(
-            number=self.number, duration=self.duration)
-
     def play(self, config):
         "Starts VLC playing at the chapter start"
         self.title.disc.play(config, self)
@@ -468,7 +487,7 @@ class AudioTrack():
     def __init__(self, title):
         super().__init__()
         title.audio_tracks.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.name = ''
         self.number = 0
         self.language = ''
@@ -479,8 +498,13 @@ class AudioTrack():
         self.best = False
 
     def __repr__(self):
-        return "<AudioTrack({number}, '{name}')>".format(
+        return '<AudioTrack({number}, {name!r})>'.format(
             number=self.number, name=self.name)
+
+    @property
+    def title(self):
+        "Returns the owning title"
+        return self._title()
 
 
 class SubtitleTrack():
@@ -489,7 +513,7 @@ class SubtitleTrack():
     def __init__(self, title):
         super().__init__()
         title.subtitle_tracks.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.number = 0
         self.name = ''
         self.language = ''
@@ -497,12 +521,11 @@ class SubtitleTrack():
         self.best = False
         self.log = ''
 
-    def guess_language(self):
-        if self.name.startswith('English'):
-            self.language = 'eng'
-        elif self.name.startswith('Japanese'):
-            self.language = 'jpn'
-
     def __repr__(self):
-        return "<SubtitleTrack({number}, '{name}')>".format(
+        return '<SubtitleTrack({number}, {name!r})>'.format(
             number=self.number, name=self.name)
+
+    @property
+    def title(self):
+        "Returns the owning title"
+        return self._title()

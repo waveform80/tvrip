@@ -1,6 +1,7 @@
 import re
 import json
 import subprocess
+from pathlib import Path
 from datetime import timedelta
 from itertools import groupby
 from unittest import mock
@@ -21,8 +22,14 @@ def db(request):
 
 
 @pytest.fixture()
-def with_config(request, db):
+def with_config(request, db, tmp_path):
     cfg = database.Configuration()
+    tmp = tmp_path / 'tmp'
+    tmp.mkdir()
+    cfg.temp = str(tmp)
+    target = tmp_path / 'videos'
+    target.mkdir()
+    cfg.target = str(target)
     db.add(cfg)
     db.add(database.AudioLanguage(cfg, 'eng'))
     db.add(database.SubtitleLanguage(cfg, 'eng'))
@@ -134,8 +141,7 @@ def with_proc(request):
                         'LanguageCode': lang,
                         'TrackNumber': sub_track,
                     }
-                    for sub_track, lang in enumerate(
-                        ('eng', 'eng', 'fra'))
+                    for sub_track, lang in enumerate(('eng', 'eng', 'fra'), start=1)
                 ],
                 'ChapterList': [
                     {
@@ -147,8 +153,8 @@ def with_proc(request):
                             'Ticks': duration.total_seconds() * 90000,
                         },
                     }
-                    for chapter in title_chapters
-                    for duration in (title_duration * chapter / sum(title_chapters),)
+                    for chapter, scale in enumerate(title_chapters, start=1)
+                    for duration in (title_duration * scale / sum(title_chapters),)
                 ],
                 'Crop': [0, 0, 0, 0],
                 'Duration': {
@@ -193,6 +199,17 @@ def with_proc(request):
                         args=cmdline, returncode=1, stdout='', stderr='bad chapter')
         return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
 
+    def mock_atomicparsley(cmdline, **kwargs):
+        source = Path(cmdline[1])
+        target = Path(cmdline[cmdline.index('-o') + 1])
+        with target.open('w') as target_file:
+            with source.open('r') as source_file:
+                target_file.write(source_file.read())
+            target_file.write(json.dumps(cmdline))
+            target_file.write('\n')
+        return mock.Mock(args=cmdline, returncode=0, stdout='',
+                         stderr='Tagging {target}'.format(target=target))
+
     def mock_handbrake(cmdline, **kwargs):
         data = disc_data.copy()
         source = cmdline[cmdline.index('-i') + 1]
@@ -211,7 +228,7 @@ def with_proc(request):
                     t for t in data['TitleList']
                     if t['Index'] == title
                 ]
-        if '--scan' in cmdline and '--json' in cmdline:
+        if '--scan' in cmdline:
             stderr = """\
 libdvdnav: Random stuff
 libdvdnav: DVD Title: FOO AND BAR
@@ -236,6 +253,11 @@ Progress: {{
 }}
 JSON Title Set: {json}
 """.format(json=json.dumps(data))
+        else:
+            target = Path(cmdline[cmdline.index('-o') + 1])
+            stdout = ''
+            stderr = 'Ripping to {target}'.format(target=target)
+            target.write_text(json.dumps(cmdline) + '\n')
         return mock.Mock(args=cmdline, returncode=0,
                          stdout=stdout, stderr=stderr)
 
@@ -259,4 +281,5 @@ JSON Title Set: {json}
 
     with mock.patch('tvrip.ripper.proc') as proc:
         proc.run.side_effect = mock_run
+        proc.check_call.side_effect = mock_check_call
         yield proc
