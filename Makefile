@@ -1,4 +1,4 @@
-# vim: set noet sw=4 ts=4:
+# vim: set noet sw=4 ts=4 fileencoding=utf-8:
 
 # External utilities
 PYTHON=python3
@@ -11,11 +11,11 @@ DEST_DIR=/
 # Calculate the base names of the distribution, the location of all source,
 # documentation, packaging, icon, and executable script files
 NAME:=$(shell $(PYTHON) $(PYFLAGS) setup.py --name)
+PKG_DIR:=$(subst -,_,$(NAME))
 VER:=$(shell $(PYTHON) $(PYFLAGS) setup.py --version)
-PYVER:=$(shell $(PYTHON) $(PYFLAGS) -c "import sys; print('py%d.%d' % sys.version_info[:2])")
 PY_SOURCES:=$(shell \
 	$(PYTHON) $(PYFLAGS) setup.py egg_info >/dev/null 2>&1 && \
-	grep -v "\.egg-info" $(NAME).egg-info/SOURCES.txt)
+	grep -v "\.egg-info" $(PKG_DIR).egg-info/SOURCES.txt)
 DOC_SOURCES:=docs/conf.py \
 	$(wildcard docs/*.png) \
 	$(wildcard docs/*.svg) \
@@ -40,7 +40,7 @@ all:
 	@echo "make test - Run tests"
 	@echo "make doc - Generate HTML and PDF documentation"
 	@echo "make source - Create source package"
-	@echo "make egg - Generate a PyPI egg package"
+	@echo "make wheel - Generate a PyPI wheel package"
 	@echo "make zip - Generate a source zip package"
 	@echo "make tar - Generate a source tar package"
 	@echo "make dist - Generate all packages"
@@ -60,21 +60,22 @@ doc: $(DOC_SOURCES)
 
 source: $(DIST_TAR) $(DIST_ZIP)
 
-egg: $(DIST_EGG)
+wheel: $(DIST_WHEEL)
 
 zip: $(DIST_ZIP)
 
 tar: $(DIST_TAR)
 
-dist: $(DIST_EGG) $(DIST_TAR) $(DIST_ZIP)
+dist: $(DIST_WHEEL) $(DIST_TAR) $(DIST_ZIP)
 
 develop: tags
+	@# These have to be done separately to avoid a cockup...
 	$(PIP) install -U setuptools
 	$(PIP) install -U pip
 	$(PIP) install -e .[doc,test]
 
 test:
-	$(PYTEST)
+	$(PYTEST) tests
 
 clean:
 	$(PYTHON) $(PYFLAGS) setup.py clean
@@ -101,16 +102,15 @@ $(DIST_TAR): $(PY_SOURCES) $(SUBDIRS)
 $(DIST_ZIP): $(PY_SOURCES) $(SUBDIRS)
 	$(PYTHON) $(PYFLAGS) setup.py sdist --formats zip
 
-$(DIST_EGG): $(PY_SOURCES) $(SUBDIRS)
-	$(PYTHON) $(PYFLAGS) setup.py bdist_egg
+$(DIST_WHEEL): $(PY_SOURCES) $(SUBDIRS)
+	$(PYTHON) $(PYFLAGS) setup.py bdist_wheel
 
 release:
 	$(MAKE) clean
 	test -z "$(shell git status --porcelain)"
 	git tag -s release-$(VER) -m "Release $(VER)"
-	git push origin tag release-$(VER)
-
-upload: $(DIST_TAR) $(DIST_WHEEL)
+	git push origin release-$(VER)
+	$(MAKE) $(DIST_TAR) $(DIST_WHEEL)
 	$(TWINE) check $(DIST_TAR) $(DIST_WHEEL)
 	$(TWINE) upload $(DIST_TAR) $(DIST_WHEEL)
 
