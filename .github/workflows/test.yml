@@ -1,0 +1,38 @@
+# Install Python deps, run tests thru pytest and report combined coverage
+
+name: tvrip-test-suite
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version:
+          - "3.5"
+          - "3.6"
+          - "3.7"
+          - "3.8"
+          - "3.9"
+          - pypy-3.6
+          - pypy-3.7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          sudo apt install exuberant-ctags
+          make develop
+      - name: Run tests
+        run: make test
