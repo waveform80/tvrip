@@ -23,15 +23,19 @@ what the name of that multi-part episode should be.
 
 
 def prefix(episodes):
-    "Finds the number of multipart episodes at the start of *episodes*"
+    """
+    Given a sequence of *episodes*, return the number of multi-part episodes
+    at the start of the sequence. If the episodes do not start with a
+    multi-parter, the result is 1.
+    """
     # A crude heuristic based on episode titles ending in " - Part n", "(n)",
-    # the subsequent episode titles being simply '"'
+    # or subsequent episode titles being simply '"' (ditto)
     first_name = episodes[0].name
     part = 1
     for part, episode in enumerate(episodes[1:], start=2):
         if episode.name == '"': # ditto (continuation of prior episode)
             continue
-        elif episode.name.endswith('Part %d' % part):
+        if episode.name.endswith('Part %d' % part):
             if episode.name[:-6] == first_name[:-6]:
                 continue
         elif episode.name.endswith('(%d)' % part):
@@ -43,6 +47,10 @@ def prefix(episodes):
 
 
 def name(episodes):
+    """
+    Given a sequence of multi-part *episodes*, return the episode title minus
+    any part suffix.
+    """
     if len(episodes) == 1:
         return episodes[0].name
     elif all(e.name == '"' for e in episodes[1:]):

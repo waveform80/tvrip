@@ -51,14 +51,6 @@ AUDIO_ENCODING_ORDER = {
 class Disc():
     "Represents a DVD disc"
 
-    error1_re = re.compile(
-        r"libdvdread: Can't open .* for reading", re.UNICODE)
-    error2_re = re.compile(
-        r'libdvdnav: vm: failed to open/read the DVD', re.UNICODE)
-    disc_name_re = re.compile(r'^libdvdnav: DVD Title: (?P<name>.*)$')
-    disc_serial_re = re.compile(
-        r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
-
     def __init__(self, config, titles=None):
         super().__init__()
         self.match = None
@@ -77,16 +69,16 @@ class Disc():
     def _generate_ident(self):
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
-        h = hashlib.sha1()
-        h.update(self.serial.encode())
-        h.update(str(len(self.titles)).encode())
+        ident_hash = hashlib.sha1()
+        ident_hash.update(self.serial.encode())
+        ident_hash.update(str(len(self.titles)).encode())
         for title in self.titles:
-            h.update(str(title.duration).encode())
-            h.update(str(len(title.chapters)).encode())
+            ident_hash.update(str(title.duration).encode())
+            ident_hash.update(str(len(title.chapters)).encode())
             for chapter in title.chapters:
-                h.update(str(chapter.start).encode())
-                h.update(str(chapter.duration).encode())
-        return '$H1$' + h.hexdigest()
+                ident_hash.update(str(chapter.start).encode())
+                ident_hash.update(str(chapter.duration).encode())
+        return '$H1$' + ident_hash.hexdigest()
 
     def _mark_duplicates(self):
         # Mark duplicate titles (adjacent titles with equal durations) as such;
@@ -96,7 +88,7 @@ class Disc():
         # * first: this title is the first in a run of duplicates
         # * yes:   this title is in the middle of a run of duplicates
         # * last:  this title is the last in a run of duplicates
-        previous = None
+        title = previous = None
         for title in self.titles:
             if previous is not None:
                 if previous.duration == title.duration:
@@ -107,7 +99,7 @@ class Disc():
                     if previous.duplicate == 'yes':
                         previous.duplicate = 'last'
             previous = title
-        if title.duplicate == 'yes':
+        if title is not None and title.duplicate == 'yes':
             title.duplicate = 'last'
 
     def _mark_best(self):
@@ -135,14 +127,6 @@ class Disc():
 
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
-
-        # This is a simple utility method to make the pattern matching below a
-        # bit simpler. It returns the result of the match as a bool and stores
-        # the result as an instance attribute for later extraction of groups
-        def _match(pattern, line):
-            self.match = pattern.match(line)
-            return bool(self.match)
-
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,      # specify the input device
@@ -150,25 +134,49 @@ class Disc():
             '--min-duration', '300',  # only scan titles >5 minutes
             '--scan',                 # scan only
             '--json',                 # JSON output
-            ]
+        ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
         result = proc.run(cmdline, stdout=proc.PIPE, stderr=proc.PIPE,
                           check=True, encoding='utf-8', errors='replace')
-        for line in result.stderr.splitlines():
-            if _match(self.error1_re, line) or _match(self.error2_re, line):
+        self._parse_scan_stderr(config, result.stderr)
+        self._parse_scan_stdout(config, result.stdout)
+
+    def _parse_scan_stderr(self, config, output):
+        # This is a simple utility method to make the pattern matching below a
+        # bit simpler. It returns the result of the match as a bool and stores
+        # the result as an instance attribute for later extraction of groups
+        disc_name_re = re.compile(
+            r'^libdvdnav: DVD Title: (?P<name>.*)$')
+        disc_serial_re = re.compile(
+            r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
+        error1_re = re.compile(
+            r"libdvdread: Can't open .* for reading", re.UNICODE)
+        error2_re = re.compile(
+            r'libdvdnav: vm: failed to open/read the DVD', re.UNICODE)
+
+        match = None
+
+        def get_match(pattern, line):
+            nonlocal match
+            match = pattern.match(line)
+            return bool(match)
+
+        for line in output.splitlines():
+            if get_match(error1_re, line) or get_match(error2_re, line):
                 raise IOError(
                     'Unable to read disc in {}'.format(config.source))
-            elif _match(self.disc_name_re, line):
-                self.name = self.match.group('name')
-            elif _match(self.disc_serial_re, line):
-                self.serial = self.match.group('serial')
+            if get_match(disc_name_re, line):
+                self.name = match.group('name')
+            elif get_match(disc_serial_re, line):
+                self.serial = match.group('serial')
+
+    def _parse_scan_stdout(self, config, output):
         try:
-            json_start = result.stdout.rindex('JSON Title Set:')
+            json_start = output.rindex('JSON Title Set:')
         except ValueError:
             raise IOError('Unable to find JSON data in HandBrake output')
-        json_disc = json.loads(
-            result.stdout[json_start + len('JSON Title Set:'):])
+        json_disc = json.loads(output[json_start + len('JSON Title Set:'):])
 
         title = None
         for json_title in json_disc['TitleList']:
@@ -223,10 +231,12 @@ class Disc():
         if title_or_chapter is None:
             mrl = 'dvd://{source}'.format(source=config.source)
         elif isinstance(title_or_chapter, Title):
+            assert title_or_chapter.disc is self
             mrl = 'dvd://{source}#{title}'.format(
                 source=config.source,
                 title=title_or_chapter.number)
         elif isinstance(title_or_chapter, Chapter):
+            assert title_or_chapter.title.disc is self
             mrl = 'dvd://{source}#{title}:{chapter}'.format(
                 source=config.source,
                 title=title_or_chapter.title.number,

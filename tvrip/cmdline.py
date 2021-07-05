@@ -83,7 +83,8 @@ class Cmd(cmd.Cmd):
         self.color_prompt = color_prompt
         self.base_prompt = self.prompt
 
-    def parse_bool(self, value, default=None):
+    @staticmethod
+    def parse_bool(value, default=None):
         """
         Parse a string containing a boolean value.
 
@@ -101,7 +102,8 @@ class Cmd(cmd.Cmd):
             raise ValueError(
                 'Invalid boolean expression {}'.format(value))
 
-    def parse_number_range(self, s):
+    @staticmethod
+    def parse_number_range(s):
         """
         Parse a dash-separated number range.
 
@@ -111,13 +113,14 @@ class Cmd(cmd.Cmd):
         try:
             start, finish = (int(i) for i in s.split('-', 1))
         except ValueError as exc:
-            raise CmdSyntaxError(exc)
+            raise CmdSyntaxError(exc) from None
         if finish < start:
             raise CmdSyntaxError(
                 '{}-{} range goes backwards'.format(start, finish))
         return start, finish
 
-    def parse_number_list(self, s):
+    @staticmethod
+    def parse_number_list(s):
         """
         Parse a comma-separated list of dash-separated number ranges.
 
@@ -128,13 +131,13 @@ class Cmd(cmd.Cmd):
         result = []
         for i in s.split(','):
             if '-' in i:
-                start, finish = self.parse_number_range(i)
+                start, finish = Cmd.parse_number_range(i)
                 result.extend(range(start, finish + 1))
             else:
                 try:
                     result.append(int(i))
                 except ValueError as exc:
-                    raise CmdSyntaxError(exc)
+                    raise CmdSyntaxError(exc) from None
         return result
 
     def parse_docstring(self, docstring):
@@ -159,15 +162,6 @@ class Cmd(cmd.Cmd):
         if not result[-1]:
             result = result[:-1]
         return result
-
-    def complete_path(self, text, line, start, finish):
-        "Utility routine used by path completion methods"
-        path, _ = os.path.split(line)
-        return [
-            item
-            for item in os.listdir(os.path.expanduser(path))
-            if item.startswith(text)
-        ]
 
     def default(self, line):
         raise CmdSyntaxError('Syntax error: {}'.format(line))
@@ -206,12 +200,25 @@ class Cmd(cmd.Cmd):
             return cmd.Cmd.onecmd(self, line)
         except CmdError as exc:
             self.pprint(str(exc) + '\n')
+            return False
 
     whitespace_re = re.compile(r'\s+$')
 
-    def wrap(self, s, newline=True, wrap=True, initial_indent='',
+    def wrap(self, s, *, wrap=True, newline=True, initial_indent='',
              subsequent_indent=''):
-        "Wraps a paragraph of text to the terminal"
+        """
+        Wraps the string *s* for output.
+
+        If *wrap* is :data:`True` (which is the default), the string will be
+        wrapped to the terminal's width (determined automatically). If
+        *newline* is :data:`True`, a newline character will be added to the
+        output, if it does not already have one.
+
+        The *initial_indent* is the string used to prefix the first line of
+        the output. This defaults to a blank string. The *subsequent_indent*
+        is the string used to prefix all subsequent wrapped lines of output.
+        This is useful for generating properly-aligned list output.
+        """
         suffix = ''
         if newline:
             suffix = '\n'
@@ -239,6 +246,10 @@ class Cmd(cmd.Cmd):
         return result
 
     def input_number(self, valid, prompt=''):
+        """
+        Prompts and reads numeric input (from a limited set of *valid* inputs)
+        from the user.
+        """
         suffix = '[{min}-{max}]'.format(
             min=min(valid), max=max(valid))
         prompt = '{prompt} {suffix} '.format(prompt=prompt, suffix=suffix)
@@ -253,17 +264,23 @@ class Cmd(cmd.Cmd):
                         'Invalid input. Please enter a number {suffix} '
                         ''.format(suffix=suffix)))
                     if result not in valid:
-                        raise ValueError('out of range')
+                        raise ValueError('out of range') from None
                 except ValueError:
                     pass
                 else:
                     break
         return result
 
-    def pprint(self, s, newline=True, wrap=True, initial_indent='',
+    def pprint(self, s, *, newline=True, wrap=True, initial_indent='',
                subsequent_indent=''):
-        "Pretty-prints text to the terminal"
-        s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
+        """
+        Pretty-prints *s* to the terminal.
+
+        The various keyword arguments are passed verbatim to :meth:`wrap`.
+        """
+        s = self.wrap(s, newline=newline, wrap=wrap,
+                      initial_indent=initial_indent,
+                      subsequent_indent=subsequent_indent)
         self.stdout.write(s)
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
