@@ -101,21 +101,29 @@ class EpisodeMap(MutableMapping):
 
     def __setitem__(self, key, value):
         # Ensures values are either a Title or a (Chapter, Chapter) tuple.
-        assert isinstance(key, Episode)
+        if not isinstance(key, Episode):
+            raise ValueError('mapping key is not an Episode')
         try:
             start, finish = value
-            assert isinstance(start, Chapter)
-            assert isinstance(finish, Chapter)
-            assert start.title is finish.title
+            if not (isinstance(start, Chapter) and isinstance(finish, Chapter)):
+                raise ValueError('mapping values are not Chapters')
+            if start.title is not finish.title:
+                raise ValueError(
+                    'start chapter is in different title to finish chapter')
+            if finish.number < start.number:
+                raise ValueError(
+                    'start chapter is earlier than finish chapter')
         except (TypeError, ValueError):
-            assert isinstance(value, Title)
+            if not isinstance(value, Title):
+                raise ValueError(
+                    'mapping value is not a Title or two Chapters') from None
         self._mapping[key] = value
 
     def __delitem__(self, key):
         del self._mapping[key]
 
     def automap(
-            self, titles, episodes, duration_min, duration_max, *,
+            self, episodes, titles, duration_min, duration_max, *,
             strict_mapping=False, permit_multipart=True, choose_mapping=None):
         """
         Attempt to automatically populate the mapping to cover the *episode*
@@ -154,7 +162,7 @@ class EpisodeMap(MutableMapping):
         form of user interaction to determine the "real" start of an episode.
         """
         self.update(automap(
-            titles, episodes, duration_min, duration_max,
+            episodes, titles, duration_min, duration_max,
             strict_mapping=strict_mapping, permit_multipart=permit_multipart,
             choose_mapping=choose_mapping))
 
@@ -167,7 +175,6 @@ def valid(mapping, chapters, episodes, duration_min, duration_max):
     *episodes*, and that the sequences of *chapters* fit within the range of
     *duration_min* to *duration_max*.
     """
-    assert duration_max >= duration_min
     return (
         # Check the mapping covers all the specified episodes
         (len(mapping) == len(episodes)) and
@@ -191,7 +198,7 @@ def valid(mapping, chapters, episodes, duration_min, duration_max):
 
 
 def automap(
-        titles, episodes, duration_min, duration_max, *,
+        episodes, titles, duration_min, duration_max, *,
         strict_mapping=False, permit_multipart=True, choose_mapping=None):
     """
     Attempt (via various strategies) to map all *episodes* to some set of the
@@ -215,27 +222,29 @@ def automap(
     """
     if not episodes:
         raise NoEpisodesError('No episodes available for mapping (new season?)')
+    if duration_max < duration_min:
+        raise ValueError('max duration must be at least min duration')
     try:
         logging.debug('Trying title-based mapping')
         return automap_titles(
-            titles, episodes, duration_min, duration_max,
+            episodes, titles, duration_min, duration_max,
             permit_multipart=permit_multipart,
             strict_mapping=strict_mapping)
     except NoMappingError:
         try:
             logging.debug('Trying chapter-based algorithm with longest title')
             return automap_chapters_longest(
-                titles, episodes, duration_min, duration_max,
+                episodes, titles, duration_min, duration_max,
                 choose_mapping=choose_mapping)
         except NoSolutionsError:
             logging.debug('Trying chapter-based algorithm with all titles')
             return automap_chapters_all(
-                titles, episodes, duration_min, duration_max,
+                episodes, titles, duration_min, duration_max,
                 choose_mapping=choose_mapping)
 
 
 def automap_titles(
-        titles, episodes, duration_min, duration_max, *,
+        episodes, titles, duration_min, duration_max, *,
         strict_mapping=False, permit_multipart=True):
     "Auto-mapping using a title-based algorithm"
     result = EpisodeMap()
@@ -270,7 +279,7 @@ def automap_titles(
 
 
 def automap_chapters_longest(
-        titles, episodes, duration_min, duration_max, *,
+        episodes, titles, duration_min, duration_max, *,
         choose_mapping=None):
     "Auto-mapping with chapters from the longest title in the selecteion"
     longest_title = sorted(titles, key=attrgetter('duration'))[-1]
@@ -280,26 +289,25 @@ def automap_chapters_longest(
         longest_title.number, longest_title.duration,
         len(longest_title.chapters))
     return automap_chapters(
-        longest_title.chapters, episodes, duration_min, duration_max,
+        episodes, longest_title.chapters, duration_min, duration_max,
         choose_mapping=choose_mapping)
 
 
 def automap_chapters_all(
-        titles, episodes, duration_min, duration_max, *,
+        episodes, titles, duration_min, duration_max, *,
         choose_mapping=None):
     "Auto-mapping with chapters from all titles in the selection"
     return automap_chapters(
-        [chapter for title in titles for chapter in title.chapters],
-        episodes, duration_min, duration_max,
-        choose_mapping=choose_mapping)
+        episodes, [chapter for title in titles for chapter in title.chapters],
+        duration_min, duration_max, choose_mapping=choose_mapping)
 
 
 def automap_chapters(
-        chapters, episodes, duration_min, duration_max, *,
+        episodes, chapters, duration_min, duration_max, *,
         choose_mapping=None):
     "Auto-mapping with a chapter-based algorithm"
     # XXX Remove trailing empty chapters
-    solutions = calculate(chapters, episodes, duration_min, duration_max)
+    solutions = calculate(episodes, chapters, duration_min, duration_max)
     logging.debug(
         'Found %d chapter mapping solution(s)', len(solutions))
     if not solutions:
@@ -319,7 +327,7 @@ def automap_chapters(
 
 
 def calculate(
-        chapters, episodes, duration_min, duration_max, *,
+        episodes, chapters, duration_min, duration_max, *,
         mapping=None, solutions=None):
     "Recursive function for calculating mapping solutions"
     if mapping is None:
@@ -350,7 +358,7 @@ def calculate(
             # the start of a valid mapping), recursively call ourselves with
             # the new group appended to the mapping
             calculate(
-                chapters, episodes, duration_min, duration_max,
+                episodes, chapters, duration_min, duration_max,
                 mapping=new_map, solutions=solutions)
     if mapping:
         return None

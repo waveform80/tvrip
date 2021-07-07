@@ -1578,7 +1578,7 @@ class RipCmd(Cmd):
             titles = [
                 title for title in self.disc.titles
                 if title not in self.episode_map.values()
-                ]
+            ]
         else:
             titles = self.parse_title_list(titles)
         self.map_ripped()
@@ -1587,21 +1587,21 @@ class RipCmd(Cmd):
         episodes = [
             episode for episode in episodes
             if episode not in self.episode_map
-            ]
+        ]
         titles = [
             title for title in titles
             if title not in self.episode_map.values()
-            ]
+        ]
         # Filter out duplicate titles on the disc
         titles = [
             title for title in titles
             if title.duplicate == 'no' or
             self.config.duplicates == 'all' or
             self.config.duplicates == title.duplicate
-            ]
+        ]
         try:
             self.episode_map.automap(
-                titles, episodes, self.config.duration_min,
+                episodes, titles, self.config.duration_min,
                 self.config.duration_max,
                 strict_mapping=strict_mapping,
                 choose_mapping=self.choose_mapping)
@@ -1650,7 +1650,7 @@ class RipCmd(Cmd):
             mappings = [
                 mapping for mapping in mappings
                 if mapping[episode][0] == chapter
-                ]
+            ]
         assert len(mappings) == 1
         return mappings[0]
 
