@@ -40,13 +40,13 @@ def test_program(db, with_program):
     assert repr(with_program) == "<Program('Foo & Bar')>"
 
 
-def test_season(db, with_season):
-    assert repr(with_season) == "<Season('Foo & Bar', 1)>"
+def test_season(db, with_program):
+    assert repr(with_program.seasons[0]) == "<Season('Foo & Bar', 1)>"
 
 
-def test_episode(db, with_episode):
-    ep = with_episode
-    assert repr(ep) == "<Episode('Foo & Bar', 1, 1, 'Pilot')>"
+def test_episode(db, with_program):
+    ep = with_program.seasons[0].episodes[0]
+    assert repr(ep) == "<Episode('Foo & Bar', 1, 1, 'Foo')>"
     assert not ep.ripped
     ep.disc_id = 'foobarbaz'
     ep.disc_title = 1

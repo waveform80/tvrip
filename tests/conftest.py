@@ -46,39 +46,14 @@ def with_program(request, db, with_config):
     prog = database.Program('Foo & Bar')
     db.add(prog)
     cfg.program = prog
-    cfg.season = None
-    yield prog
-
-
-@pytest.fixture()
-def with_season(request, db, with_config, with_program):
-    cfg = with_config
-    prog = with_program
-    season = database.Season(prog, 1)
-    db.add(season)
-    cfg.season = season
-    yield season
-
-
-@pytest.fixture()
-def with_episode(request, db, with_config, with_season):
-    cfg = with_config
-    season = with_season
-    ep = database.Episode(season, 1, 'Pilot')
-    db.add(ep)
-    yield ep
-
-
-@pytest.fixture()
-def with_all_episodes(request, db, with_config, with_program):
-    cfg = with_config
-    prog = with_program
     data = [
         (1, 1, 'Foo'),
         (1, 2, 'Bar'),
         (1, 3, 'Baz'),
-        (2, 1, 'Quux'),
-        (2, 2, 'Xyzzy'),
+        (1, 4, 'Quux'),
+        (1, 5, 'Xyzzy'),
+        (2, 1, 'Foo Bar'),
+        (2, 2, 'Foo Baz'),
     ]
     for (season_num,), episodes in groupby(data, key=lambda row: row[:1]):
         season = database.Season(prog, season_num)
@@ -114,9 +89,15 @@ def with_proc(request):
         (1, 1),
         (1, 1),
     ]
-    # Make the first track the concatenation of tracks 1-7
-    durations[:0] = [sum(durations[:7], timedelta(0))]
-    chapters[:0] = [sum(chapters[:7], ())]
+    chapters = [
+        tuple(
+            title_duration * scale / sum(title_chapters)
+            for scale in title_chapters
+        )
+        for title_duration, title_chapters in zip(durations, chapters)
+    ]
+    # Make the first track the concatenation of tracks 1, 3-7
+    chapters[:0] = [sum((chapters[i] for i in range(7) if i != 1), ())]
 
     disc_data = {
         'TitleList': [
@@ -153,8 +134,7 @@ def with_proc(request):
                             'Ticks': duration.total_seconds() * 90000,
                         },
                     }
-                    for chapter, scale in enumerate(title_chapters, start=1)
-                    for duration in (title_duration * scale / sum(title_chapters),)
+                    for chapter, duration in enumerate(title_chapters, start=1)
                 ],
                 'Crop': [0, 0, 0, 0],
                 'Duration': {
@@ -175,8 +155,8 @@ def with_proc(request):
                 'Index': title_track,
                 'InterlaceDetected': False,
             }
-            for title_track, (title_chapters, title_duration)
-            in enumerate(zip(chapters, durations), start=1)
+            for title_track, title_chapters in enumerate(chapters, start=1)
+            for title_duration in (sum(title_chapters, timedelta(0)),)
         ]
     }
 
