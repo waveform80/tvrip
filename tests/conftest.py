@@ -52,8 +52,10 @@ def with_program(request, db, with_config):
         (1, 3, 'Baz'),
         (1, 4, 'Quux'),
         (1, 5, 'Xyzzy'),
-        (2, 1, 'Foo Bar'),
-        (2, 2, 'Foo Baz'),
+        (2, 1, 'Foo Bar - Part 1'),
+        (2, 2, 'Foo Bar - Part 2'),
+        (2, 3, 'Foo Baz'),
+        (2, 4, 'Foo Quux'),
     ]
     for (season_num,), episodes in groupby(data, key=lambda row: row[:1]):
         season = database.Season(prog, season_num)
@@ -66,13 +68,13 @@ def with_program(request, db, with_config):
 
 
 @pytest.fixture()
-def with_proc(request):
+def disc1(request):
     durations = [
         timedelta(minutes=30),
         timedelta(minutes=30),
         timedelta(minutes=30),
         timedelta(minutes=30, seconds=5),
-        timedelta(minutes=30, seconds=2),
+        timedelta(minutes=30, seconds=1),
         timedelta(minutes=30, seconds=1),
         timedelta(minutes=31, seconds=20),
         timedelta(minutes=5, seconds=3),
@@ -84,7 +86,7 @@ def with_proc(request):
         (8, 7, 4, 1, 1), # track 3 duplicates track 2
         (6, 8, 4, 2, 1),
         (6, 6, 8, 1),
-        (6, 6, 8, 1),
+        (6, 6, 8, 1), # track 6 duplicates track 5
         (8, 2, 5, 5, 1),
         (1, 1),
         (1, 1),
@@ -96,10 +98,10 @@ def with_proc(request):
         )
         for title_duration, title_chapters in zip(durations, chapters)
     ]
-    # Make the first track the concatenation of tracks 1, 3-7
-    chapters[:0] = [sum((chapters[i] for i in range(7) if i != 1), ())]
+    # Make the first track the concatenation of the non-duplicate tracks
+    chapters[:0] = [sum((chapters[i] for i in (0, 1, 3, 4, 6)), ())]
 
-    disc_data = {
+    return {
         'TitleList': [
             {
                 'AudioList': [
@@ -160,6 +162,9 @@ def with_proc(request):
         ]
     }
 
+
+@pytest.fixture()
+def drive(request):
     def mock_vlc(cmdline, **kwargs):
         path = cmdline[-1]
         match = re.match(r'dvd://(?P<source>[^#]+)(?:#(?P<title>\d+)(?::(?P<chapter>\d+))?)?', path)
@@ -169,12 +174,12 @@ def with_proc(request):
         source = match.group('source')
         if match.group('title'):
             title = int(match.group('title')) - 1
-            if not 0 <= title < len(disc_data['TitleList']):
+            if not 0 <= title < len(proc.disc['TitleList']):
                 return mock.Mock(
                     args=cmdline, returncode=1, stdout='', stderr='bad title')
             if match.group('chapter'):
                 chapter = int(match.group('chapter')) - 1
-                if not 0 <= chapter < len(disc_data['TitleList'][title]['ChapterList']):
+                if not 0 <= chapter < len(proc.disc['TitleList'][title]['ChapterList']):
                     return mock.Mock(
                         args=cmdline, returncode=1, stdout='', stderr='bad chapter')
         return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
@@ -191,16 +196,16 @@ def with_proc(request):
                          stderr='Tagging {target}'.format(target=target))
 
     def mock_handbrake(cmdline, **kwargs):
-        data = disc_data.copy()
-        source = cmdline[cmdline.index('-i') + 1]
-        if source == '/dev/badsource':
+        if proc.disc is None:
             if '--no-dvdnav' in cmdline:
                 error = "libdvdread: Can't open {source} for reading".format(source=source)
             else:
                 error = "libdvdnav: vm: failed to open/read the DVD"
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr=error)
-        elif source == '/dev/badjson':
+        source = cmdline[cmdline.index('-i') + 1]
+        if source != '/dev/dvd':
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
+        data = proc.disc.copy()
         if '-t' in cmdline:
             title = int(cmdline[cmdline.index('-t') + 1])
             if title != 0:
@@ -260,6 +265,7 @@ JSON Title Set: {json}
                 result.returncode, cmdline[0], result.stdout, result.stderr)
 
     with mock.patch('tvrip.ripper.proc') as proc:
+        proc.disc = None
         proc.run.side_effect = mock_run
         proc.check_call.side_effect = mock_check_call
         yield proc

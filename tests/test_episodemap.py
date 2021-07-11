@@ -6,10 +6,11 @@ from tvrip.ripper import Disc
 from tvrip.episodemap import *
 
 
-def test_episodemap_init(db, with_config, with_program, with_proc):
+def test_episodemap_init(db, with_config, with_program, drive, disc1):
     epmap = EpisodeMap()
     assert len(epmap) == 0
 
+    drive.disc = disc1
     disc = Disc(with_config)
     epmap = EpisodeMap({
         ep: title
@@ -24,7 +25,8 @@ def test_episodemap_init(db, with_config, with_program, with_proc):
     assert len(epmap) == len(with_program.seasons[0].episodes)
 
 
-def test_episodemap_iter(db, with_config, with_program, with_proc):
+def test_episodemap_iter(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -41,7 +43,8 @@ def test_episodemap_iter(db, with_config, with_program, with_proc):
     ]
 
 
-def test_episodemap_oper(db, with_config, with_program, with_proc):
+def test_episodemap_oper(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -68,7 +71,8 @@ def test_episodemap_oper(db, with_config, with_program, with_proc):
         epmap[episodes[0]] = titles[0].chapters[-1], titles[0].chapters[1]
 
 
-def test_automap_errors(db, with_config, with_program, with_proc):
+def test_automap_errors(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -80,7 +84,8 @@ def test_automap_errors(db, with_config, with_program, with_proc):
         epmap.automap([], titles, timedelta(minutes=29), timedelta(minutes=31))
 
 
-def test_automap_titles(db, with_config, with_program, with_proc):
+def test_automap_titles(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -94,3 +99,31 @@ def test_automap_titles(db, with_config, with_program, with_proc):
         (episodes[3], titles[4]),
         (episodes[4], titles[5]),
     ]
+
+
+def test_automap_chapters(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
+    disc = Disc(with_config)
+    episodes = with_program.seasons[0].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    epmap.automap(episodes, [titles[0]], timedelta(minutes=29), timedelta(minutes=32))
+    assert list(epmap.items()) == [
+        (episodes[0], (titles[0].chapters[0], titles[0].chapters[4])),
+        (episodes[1], (titles[0].chapters[5], titles[0].chapters[9])),
+        (episodes[2], (titles[0].chapters[10], titles[0].chapters[14])),
+        (episodes[3], (titles[0].chapters[15], titles[0].chapters[18])),
+        (episodes[4], (titles[0].chapters[19], titles[0].chapters[23])),
+    ]
+
+
+def test_automap_fail(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
+    disc = Disc(with_config)
+    episodes = with_program.seasons[0].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    with pytest.raises(NoSolutionsError):
+        epmap.automap(episodes, [titles[0]], timedelta(minutes=29), timedelta(minutes=30))
