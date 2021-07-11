@@ -67,40 +67,23 @@ def with_program(request, db, with_config):
     yield prog
 
 
-@pytest.fixture()
-def disc1(request):
-    durations = [
-        timedelta(minutes=30),
-        timedelta(minutes=30),
-        timedelta(minutes=30),
-        timedelta(minutes=30, seconds=5),
-        timedelta(minutes=30, seconds=1),
-        timedelta(minutes=30, seconds=1),
-        timedelta(minutes=31, seconds=20),
-        timedelta(minutes=5, seconds=3),
-        timedelta(minutes=7, seconds=1),
-    ]
-    chapters = [
-        (5, 5, 5, 5, 1),
-        (8, 7, 4, 1, 1),
-        (8, 7, 4, 1, 1), # track 3 duplicates track 2
-        (6, 8, 4, 2, 1),
-        (6, 6, 8, 1),
-        (6, 6, 8, 1), # track 6 duplicates track 5
-        (8, 2, 5, 5, 1),
-        (1, 1),
-        (1, 1),
-    ]
+def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
+              subtitle_tracks=('eng', 'eng', 'fra')):
     chapters = [
         tuple(
             title_duration * scale / sum(title_chapters)
             for scale in title_chapters
         )
-        for title_duration, title_chapters in zip(durations, chapters)
+        for title_duration, title_chapters in tracks
     ]
-    # Make the first track the concatenation of the non-duplicate tracks
-    chapters[:0] = [sum((chapters[i] for i in (0, 1, 3, 4, 6)), ())]
+    if play_all_tracks is not None:
+        # Make the first track the concatenation of the non-duplicate tracks
+        chapters[:0] = [sum((chapters[i] for i in play_all_tracks), ())]
 
+    languages = {
+        'eng': 'English',
+        'fra': 'Francais',
+    }
     return {
         'TitleList': [
             {
@@ -109,22 +92,21 @@ def disc1(request):
                         'BitRate': 192000,
                         'ChannelLayoutName': 'stereo',
                         'CodecName': 'ac3',
-                        'Language': 'English',
-                        'LanguageCode': 'eng',
+                        'Language': languages[lang],
+                        'LanguageCode': lang,
                         'SampleRate': 48000,
                         'TrackNumber': audio_track,
                     }
-                    for audio_track in (1, 2)
+                    for audio_track, lang in enumerate(audio_tracks, start=1)
                 ],
                 'SubtitleList': [
                     {
                         'SourceName': 'VOBSUB',
-                        'Language': '{lang} (16:9) [VOBSUB]'.format(
-                            lang={'eng': 'English', 'fra': 'Francais'}[lang]),
+                        'Language': '{lang} (16:9) [VOBSUB]'.format(lang=languages[lang]),
                         'LanguageCode': lang,
                         'TrackNumber': sub_track,
                     }
-                    for sub_track, lang in enumerate(('eng', 'eng', 'fra'), start=1)
+                    for sub_track, lang in enumerate(subtitle_tracks, start=1)
                 ],
                 'ChapterList': [
                     {
@@ -161,6 +143,60 @@ def disc1(request):
             for title_duration in (sum(title_chapters, timedelta(0)),)
         ]
     }
+
+
+@pytest.fixture()
+def disc1(request):
+    durations = [
+        timedelta(minutes=30),
+        timedelta(minutes=30),
+        timedelta(minutes=30),
+        timedelta(minutes=30, seconds=5),
+        timedelta(minutes=30, seconds=1),
+        timedelta(minutes=30, seconds=1),
+        timedelta(minutes=31, seconds=20),
+        timedelta(minutes=5, seconds=3),
+        timedelta(minutes=7, seconds=1),
+    ]
+    chapters = [
+        (5, 5, 5, 5, 1),
+        (8, 7, 4, 1, 1),
+        (8, 7, 4, 1, 1), # track 3 duplicates track 2
+        (6, 8, 4, 2, 1),
+        (6, 6, 8, 1),
+        (6, 6, 8, 1), # track 6 duplicates track 5
+        (8, 2, 5, 5, 1),
+        (1, 1),
+        (1, 1),
+    ]
+    return make_disc(
+        tracks=zip(durations, chapters),
+        play_all_tracks=(0, 1, 3, 4, 6),
+        audio_tracks=('eng', 'eng'),
+        subtitle_tracks=('eng', 'eng', 'fra'),
+    )
+
+
+@pytest.fixture()
+def disc2(request):
+    durations = [
+        timedelta(minutes=31, seconds=10),
+        timedelta(minutes=30, seconds=2),
+        timedelta(minutes=30, seconds=5),
+        timedelta(minutes=30, seconds=1),
+    ]
+    chapters = [
+        (5, 5, 5, 5, 1),
+        (5, 7, 4, 1, 1),
+        (8, 8, 8, 8, 1),
+        (6, 6, 8, 1),
+    ]
+    return make_disc(
+        tracks=zip(durations, chapters),
+        play_all_tracks=range(4),
+        audio_tracks=('eng', 'eng'),
+        subtitle_tracks=('eng', 'eng', 'fra'),
+    )
 
 
 @pytest.fixture()
