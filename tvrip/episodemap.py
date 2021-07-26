@@ -85,6 +85,17 @@ class EpisodeMap(MutableMapping):
             for key, value in data:
                 self[key] = value
 
+    def __repr__(self):
+        return '{self.__class__.__name__}({{\n{content}\n}})'.format(
+            self=self, content='\n'.join(
+                (
+                    '{episode}: {title},' if isinstance(title, Title) else
+                    '{episode}: {title[0].title}-{title[0]}..{title[1]},'
+                ).format(episode=episode, title=title)
+                for episode, title in self.items()
+            )
+        )
+
     def __len__(self):
         return len(self._mapping)
 

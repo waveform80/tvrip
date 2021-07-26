@@ -118,6 +118,34 @@ def test_automap_chapters(db, with_config, with_program, drive, disc1):
     ]
 
 
+def test_automap_chapters_multipart(db, with_config, with_program, drive, disc2):
+    drive.disc = disc2
+    disc = Disc(with_config)
+    episodes = with_program.seasons[1].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    def chapter_lengths(mapping):
+        return tuple(
+            end.number - start.number + 1
+            for start, end in mapping.values()
+        )
+    def choose_mapping(all_mappings):
+        for m in all_mappings:
+            print(repr(m))
+            if chapter_lengths(m) == (4, 5, 5, 4):
+                return m
+        raise RuntimeError('no matching mapping found')
+    epmap.automap(episodes, [titles[0]], timedelta(minutes=29),
+                  timedelta(minutes=32), choose_mapping=choose_mapping)
+    assert list(epmap.items()) == [
+        (episodes[0], (titles[0].chapters[0], titles[0].chapters[3])),
+        (episodes[1], (titles[0].chapters[4], titles[0].chapters[8])),
+        (episodes[2], (titles[0].chapters[9], titles[0].chapters[13])),
+        (episodes[3], (titles[0].chapters[14], titles[0].chapters[17])),
+    ]
+
+
 def test_automap_fail(db, with_config, with_program, drive, disc1):
     drive.disc = disc1
     disc = Disc(with_config)

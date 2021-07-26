@@ -180,20 +180,18 @@ def disc1(request):
 @pytest.fixture()
 def disc2(request):
     durations = [
-        timedelta(minutes=31, seconds=10),
-        timedelta(minutes=30, seconds=2),
+        timedelta(minutes=61, seconds=12),
         timedelta(minutes=30, seconds=5),
         timedelta(minutes=30, seconds=1),
     ]
     chapters = [
-        (5, 5, 5, 5, 1),
-        (5, 7, 4, 1, 1),
+        (5, 5, 5, 5, 5, 7, 4, 2, 1),
         (8, 8, 8, 8, 1),
         (6, 6, 8, 1),
     ]
     return make_disc(
         tracks=zip(durations, chapters),
-        play_all_tracks=range(4),
+        play_all_tracks=range(3),
         audio_tracks=('eng', 'eng'),
         subtitle_tracks=('eng', 'eng', 'fra'),
     )
