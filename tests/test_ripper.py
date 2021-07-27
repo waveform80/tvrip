@@ -21,7 +21,7 @@ def test_disc(db, with_config, drive, disc1):
     drive.disc = disc1
     d = Disc(with_config)
     assert repr(d) == '<Disc()>'
-    assert len(d.titles) == 10
+    assert len(d.titles) == 11
 
 
 def test_titles(db, with_config, drive, disc1):
@@ -71,8 +71,8 @@ def test_scan_whole_disc(db, with_config, with_program, drive, disc1):
     assert repr(d) == '<Disc()>'
     assert d.name == 'FOO AND BAR'
     assert d.serial == '123456789'
-    assert d.ident == '$H1$12356414bb76c832f3686ed922c93f13a8a2e4ce'
-    assert len(d.titles) == 10
+    assert d.ident == '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+    assert len(d.titles) == 11
 
 
 def test_scan_one_title(db, with_config, with_program, drive, disc1):

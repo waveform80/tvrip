@@ -23,6 +23,14 @@ def test_episodemap_init(db, with_config, with_program, drive, disc1):
         for ep, title in zip(with_program.seasons[0].episodes, disc.titles)
     ])
     assert len(epmap) == len(with_program.seasons[0].episodes)
+    assert repr(epmap) == """\
+EpisodeMap({
+<Episode('Foo & Bar', 1, 1, 'Foo')>: <Title(1)>,
+<Episode('Foo & Bar', 1, 2, 'Bar')>: <Title(2)>,
+<Episode('Foo & Bar', 1, 3, 'Baz')>: <Title(3)>,
+<Episode('Foo & Bar', 1, 4, 'Quux')>: <Title(4)>,
+<Episode('Foo & Bar', 1, 5, 'Xyzzy')>: <Title(5)>,
+})"""
 
 
 def test_episodemap_iter(db, with_config, with_program, drive, disc1):
@@ -101,6 +109,52 @@ def test_automap_titles(db, with_config, with_program, drive, disc1):
     ]
 
 
+def test_automap_titles_partial(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
+    disc = Disc(with_config)
+    episodes = with_program.seasons[0].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    epmap.automap(episodes, [titles[i] for i in (1, 2, 4, 5, 8, 9, 10)],
+                  timedelta(minutes=29), timedelta(minutes=32))
+    assert list(epmap.items()) == [
+        (episodes[0], titles[1]),
+        (episodes[1], titles[2]),
+        (episodes[2], titles[4]),
+        (episodes[3], titles[5]),
+        (episodes[4], titles[10]),
+    ]
+
+
+def test_automap_titles_strict(db, with_config, with_program, drive, disc1):
+    drive.disc = disc1
+    disc = Disc(with_config)
+    episodes = with_program.seasons[0].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    with pytest.raises(MapError):
+        epmap.automap(episodes, titles[:5], timedelta(minutes=29),
+                      timedelta(minutes=31), strict_mapping=True)
+
+
+def test_automap_titles_multipart(db, with_config, with_program, drive, disc2):
+    drive.disc = disc2
+    disc = Disc(with_config)
+    episodes = with_program.seasons[1].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    epmap.automap(episodes, titles[1:], timedelta(minutes=29), timedelta(minutes=32))
+    assert list(epmap.items()) == [
+        (episodes[0], titles[1]),
+        (episodes[1], titles[1]),
+        (episodes[2], titles[2]),
+        (episodes[3], titles[3]),
+    ]
+
+
 def test_automap_chapters(db, with_config, with_program, drive, disc1):
     drive.disc = disc1
     disc = Disc(with_config)
@@ -118,7 +172,19 @@ def test_automap_chapters(db, with_config, with_program, drive, disc1):
     ]
 
 
-def test_automap_chapters_multipart(db, with_config, with_program, drive, disc2):
+def test_automap_chapters_many_solutions(db, with_config, with_program, drive, disc2):
+    drive.disc = disc2
+    disc = Disc(with_config)
+    episodes = with_program.seasons[1].episodes
+    titles = disc.titles
+
+    epmap = EpisodeMap()
+    with pytest.raises(MultipleSolutionsError):
+        epmap.automap(episodes, [titles[0]], timedelta(minutes=29),
+                      timedelta(minutes=32))
+
+
+def test_automap_chapters_pick_solution(db, with_config, with_program, drive, disc2):
     drive.disc = disc2
     disc = Disc(with_config)
     episodes = with_program.seasons[1].episodes
@@ -132,7 +198,6 @@ def test_automap_chapters_multipart(db, with_config, with_program, drive, disc2)
         )
     def choose_mapping(all_mappings):
         for m in all_mappings:
-            print(repr(m))
             if chapter_lengths(m) == (4, 5, 5, 4):
                 return m
         raise RuntimeError('no matching mapping found')

@@ -157,6 +157,7 @@ def disc1(request):
         timedelta(minutes=31, seconds=20),
         timedelta(minutes=5, seconds=3),
         timedelta(minutes=7, seconds=1),
+        timedelta(minutes=31, seconds=30),
     ]
     chapters = [
         (5, 5, 5, 5, 1),
@@ -168,6 +169,7 @@ def disc1(request):
         (8, 2, 5, 5, 1),
         (1, 1),
         (1, 1),
+        (8, 8, 1),
     ]
     return make_disc(
         tracks=zip(durations, chapters),

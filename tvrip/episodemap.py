@@ -261,10 +261,11 @@ def automap_titles(
     result = EpisodeMap()
     episodes = list(episodes)
     for title in titles:
+        if not episodes:
+            logging.debug('Out of episodes for auto-mapping')
+            break
         if duration_min <= title.duration <= duration_max:
             result[episodes.pop(0)] = title
-            if not episodes:
-                break
         elif title.duration > duration_max and permit_multipart:
             parts = multipart.prefix(episodes)
             if parts > 1 and (
@@ -272,8 +273,6 @@ def automap_titles(
                 while parts:
                     result[episodes.pop(0)] = title
                     parts -= 1
-                if not episodes:
-                    break
             else:
                 logging.debug(
                     'Title %d is not an episode or multipart episode '
@@ -324,17 +323,15 @@ def automap_chapters(
     if not solutions:
         raise NoSolutionsError('No chapter mappings found')
     if len(solutions) == 1:
-        solution = EpisodeMap(
+        return EpisodeMap(
             zip(episodes, partition_ends(chapters, solutions[0])))
-    elif len(solutions) > 1:
-        if not choose_mapping:
-            raise MultipleSolutionsError(
-                'Multiple possible chapter mappings found')
-        solution = choose_mapping([
-            EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
-            for solution in solutions
-        ])
-    return solution
+    if not choose_mapping:
+        raise MultipleSolutionsError(
+            'Multiple possible chapter mappings found')
+    return choose_mapping([
+        EpisodeMap(zip(episodes, partition_ends(chapters, solution)))
+        for solution in solutions
+    ])
 
 
 def calculate(
