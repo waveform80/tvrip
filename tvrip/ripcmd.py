@@ -1223,7 +1223,7 @@ class RipCmd(Cmd):
         return new_season
 
     def new_season(self, number):
-        new_season = Season(self.config.program, arg)
+        new_season = Season(self.config.program, number)
         self.session.add(new_season)
         count = self.input_number(
             range(100),
