@@ -73,12 +73,11 @@ class CmdSyntaxError(CmdError):
 
 class Cmd(cmd.Cmd):
     "An enhanced version of the standard Cmd command line processor"
-    use_rawinput = True
     history_file = None
     history_size = 1000  # <0 implies infinite history
 
-    def __init__(self, color_prompt=True):
-        super().__init__()
+    def __init__(self, color_prompt=True, stdin=None, stdout=None):
+        super().__init__(stdin=stdin, stdout=stdout)
         self._wrapper = TextWrapper()
         self.color_prompt = color_prompt
         self.base_prompt = self.prompt
