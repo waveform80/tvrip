@@ -1,10 +1,12 @@
 import re
 import json
+import struct
 import subprocess
 from pathlib import Path
 from datetime import timedelta
 from itertools import groupby
 from unittest import mock
+from ctypes import create_string_buffer
 
 import pytest
 
@@ -65,6 +67,26 @@ def with_program(request, db, with_config):
             episode = database.Episode(season, episode_num, episode_name)
             db.add(episode)
     yield prog
+
+
+@pytest.fixture()
+def term_size(request):
+    with mock.patch('tvrip.terminal.posix.fcntl') as fnctl, \
+            mock.patch('tvrip.terminal.win.ctypes') as ctypes:
+        width, height = 80, 24
+        def unix_patch(handle, ctrl, buf):
+            return struct.pack('hhhh', height, width, 0, 0)
+        def win_patch(*args):
+            buf[:] = struct.pack('hhhhHhhhhhh', 0, 0, 0, 0, 0, 0, 0, 0, 0, width - 1, height - 1, 0, 0)
+            return True
+        fnctl.ioctl.side_effect = unix_patch
+        ctypes.create_string_buffer = create_string_buffer
+        ctypes.windll.kernel32.GetConsoleScreenBufferInfo.side_effect = win_patch
+        def change(new_width, new_height):
+            nonlocal width, height
+            width = new_width
+            height = new_height
+        yield change
 
 
 def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),

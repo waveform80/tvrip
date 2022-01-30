@@ -127,6 +127,7 @@ class TableWrapper:
 
     .. automethod:: fill
     """
+
     def __init__(self, width=70, header_rows=1, footer_rows=0,
                  cell_separator=' ', internal_line='-', internal_separator=' ',
                  borders=('', '', '', ''), corners=('', '', '', ''),
@@ -155,6 +156,12 @@ class TableWrapper:
         self.format = format
 
     def fit_widths(self, widths):
+        """
+        Internal method which, given the sequence of *widths* (the calculated
+        maximum width of each column), reduces those widths until they fit in
+        the specified :attr:`width` limit, taking into account the implied
+        width of column separators, borders, etc.
+        """
         min_width = sum((
             len(self.borders[0]),
             len(self.borders[2]),
@@ -194,6 +201,10 @@ class TableWrapper:
         return [w for i, w in sorted((i, w) for w, i in widths)]
 
     def wrap_lines(self, data, widths):
+        """
+        Internal method responsible for wrapping the contents of each cell in
+        each row in *data* to the specified column *widths*.
+        """
         # Construct wrappers for each column width
         wrappers = [TextWrapper(width=width) for width in widths]
         for y, row in enumerate(data):
@@ -284,10 +295,25 @@ class TableWrapper:
 
 # Some prettier defaults for TableWrapper
 pretty_table = {
-    'cell_separator': ' │ ',
-    'internal_line': '═',
-    'internal_separator': '═╪═',
-    'borders': ('│ ', '─', ' │', '─'),
-    'corners': ('╭─', '─╮', '─╯', '╰─'),
-    'internal_borders': ('╞═', '─┬─', '═╡', '─┴─'),
+    'cell_separator': ' | ',
+    'internal_line': '-',
+    'internal_separator': '-+-',
+    'borders': ('| ', '-', ' |', '-'),
+    'corners': ('+-', '-+', '-+', '+-'),
+    'internal_borders': ('|-', '-+-', '-|', '-+-'),
 }
+
+curvy_table = pretty_table.copy()
+curvy_table['corners'] = (',-', '-.', "-'", '`-')
+
+unicode_table = {
+    'cell_separator': ' │ ',
+    'internal_line': '─',
+    'internal_separator': '─┼─',
+    'borders': ('│ ', '─', ' │', '─'),
+    'corners': ('┌─', '─┐', '─┘', '└─'),
+    'internal_borders': ('├─', '─┬─', '─┤', '─┴─'),
+}
+
+curvy_unicode_table = unicode_table.copy()
+curvy_unicode_table['corners'] = ('╭─', '─╮', '─╯', '╰─')

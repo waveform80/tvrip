@@ -56,11 +56,15 @@ COLOR_CYAN    = '\033[36m'
 COLOR_WHITE   = '\033[37m'
 COLOR_RESET   = '\033[0m'
 
-__all__ = [
-    'CmdError',
-    'CmdSyntaxError',
-    'Cmd',
-    ]
+# Some prettier defaults for TableWrapper
+table_style = {
+    'cell_separator': ' │ ',
+    'internal_line': '═',
+    'internal_separator': '═╪═',
+    'borders': ('│ ', '─', ' │', '─'),
+    'corners': ('╭─', '─╮', '─╯', '╰─'),
+    'internal_borders': ('╞═', '─┬─', '═╡', '─┴─'),
+}
 
 
 class CmdError(Exception):
@@ -144,20 +148,19 @@ class Cmd(cmd.Cmd):
         lines = [line.strip() for line in docstring.strip().splitlines()]
         result = ['']
         for line in lines:
-            if result:
-                if line:
-                    if line.startswith(self.base_prompt):
-                        if result[-1]:
-                            result.append(line)
-                        else:
-                            result[-1] = line
+            if line:
+                if line.startswith(self.base_prompt):
+                    if result[-1]:
+                        result.append(line)
                     else:
-                        if result[-1]:
-                            result[-1] += ' ' + line
-                        else:
-                            result[-1] = line
+                        result[-1] = line
                 else:
-                    result.append('')
+                    if result[-1]:
+                        result[-1] += ' ' + line
+                    else:
+                        result[-1] = line
+            else:
+                result.append('')
         if not result[-1]:
             result = result[:-1]
         return result
@@ -172,7 +175,10 @@ class Cmd(cmd.Cmd):
     def preloop(self):
         if self.color_prompt:
             self.prompt = COLOR_BOLD + COLOR_GREEN + self.prompt + COLOR_RESET
-        if self.history_file and os.path.exists(self.history_file):
+        if (
+            self.use_rawinput and self.history_file and
+            os.path.exists(self.history_file)
+        ):
             readline.read_history_file(self.history_file)
 
     def precmd(self, line):
@@ -189,8 +195,9 @@ class Cmd(cmd.Cmd):
         return stop
 
     def postloop(self):
-        readline.set_history_length(self.history_size)
-        readline.write_history_file(self.history_file)
+        if self.use_rawinput:
+            readline.set_history_length(self.history_size)
+            readline.write_history_file(self.history_file)
 
     def onecmd(self, line):
         # Just catch and report CmdError's; don't terminate execution because
@@ -238,37 +245,35 @@ class Cmd(cmd.Cmd):
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
         self.stdout.write(s)
-        result = input(prompt).strip()
-        # Strip the history from readline (we only want commands in the
-        # history)
-        readline.remove_history_item(readline.get_current_history_length() - 1)
+        if self.use_rawinput:
+            result = input(prompt).strip()
+            # Strip the history from readline (we only want commands in the
+            # history)
+            readline.remove_history_item(
+                readline.get_current_history_length() - 1)
+        else:
+            self.stdout.write(prompt)
+            result = self.stdin.readline().strip()
         return result
 
     def input_number(self, valid, prompt=''):
         """
-        Prompts and reads numeric input (from a limited set of *valid* inputs)
-        from the user.
+        Prompts and reads numeric input (from a limited set of *valid* inputs,
+        which can be any iterable supporting "in") from the user.
         """
         suffix = '[{min}-{max}]'.format(
             min=min(valid), max=max(valid))
         prompt = '{prompt} {suffix} '.format(prompt=prompt, suffix=suffix)
-        try:
-            result = int(self.input(prompt))
-            if result not in valid:
-                raise ValueError('out of range')
-        except ValueError:
-            while True:
-                try:
-                    result = int(self.input(
-                        'Invalid input. Please enter a number {suffix} '
-                        ''.format(suffix=suffix)))
-                    if result not in valid:
-                        raise ValueError('out of range') from None
-                except ValueError:
-                    pass
-                else:
-                    break
-        return result
+        while True:
+            try:
+                result = int(self.input(prompt))
+                if result not in valid:
+                    raise ValueError('out of range')
+            except ValueError:
+                self.stdout.write('Invalid input\n')
+                continue
+            else:
+                return result
 
     def pprint(self, s, *, newline=True, wrap=True, initial_indent='',
                subsequent_indent=''):
@@ -277,16 +282,16 @@ class Cmd(cmd.Cmd):
 
         The various keyword arguments are passed verbatim to :meth:`wrap`.
         """
-        s = self.wrap(s, newline=newline, wrap=wrap,
+        self.stdout.write(
+            self.wrap(s, newline=newline, wrap=wrap,
                       initial_indent=initial_indent,
-                      subsequent_indent=subsequent_indent)
-        self.stdout.write(s)
+                      subsequent_indent=subsequent_indent))
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
         "Pretty-prints a table of data"
         wrapper = TableWrapper(
             width=min(120, term_size()[0] - 2), header_rows=header_rows,
-            footer_rows=footer_rows, **pretty_table)
+            footer_rows=footer_rows, **table_style)
         for row in wrapper.wrap(data):
             self.stdout.write(row + '\n')
 

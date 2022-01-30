@@ -41,8 +41,7 @@ def prefix(episodes):
         elif episode.name.endswith('(%d)' % part):
             if episode.name[:-3] == first_name[:-3]:
                 continue
-        else:
-            return part - 1
+        return part - 1
     return part
 
 
@@ -53,7 +52,7 @@ def name(episodes):
     """
     if len(episodes) == 1:
         return episodes[0].name
-    elif all(e.name == '"' for e in episodes[1:]):
+    elif all(e.name == '"' for e in episodes[1:]):  # ditto
         return episodes[0].name
     elif episodes[0].name.endswith('(1)'):
         return episodes[0].name[:-3].rstrip(' -,:')
