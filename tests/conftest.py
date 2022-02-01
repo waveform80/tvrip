@@ -2,11 +2,15 @@ import re
 import json
 import struct
 import subprocess
+import datetime as dt
 from pathlib import Path
-from datetime import timedelta
-from itertools import groupby
 from unittest import mock
+from threading import Thread
+from itertools import groupby
 from ctypes import create_string_buffer
+from socketserver import ThreadingMixIn
+from urllib.parse import urlparse, parse_qs, unquote
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -162,7 +166,7 @@ def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
                 'InterlaceDetected': False,
             }
             for title_track, title_chapters in enumerate(chapters, start=1)
-            for title_duration in (sum(title_chapters, timedelta(0)),)
+            for title_duration in (sum(title_chapters, dt.timedelta(0)),)
         ]
     }
 
@@ -170,16 +174,16 @@ def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
 @pytest.fixture()
 def disc1(request):
     durations = [
-        timedelta(minutes=30),
-        timedelta(minutes=30),
-        timedelta(minutes=30),
-        timedelta(minutes=30, seconds=5),
-        timedelta(minutes=30, seconds=1),
-        timedelta(minutes=30, seconds=1),
-        timedelta(minutes=31, seconds=20),
-        timedelta(minutes=5, seconds=3),
-        timedelta(minutes=7, seconds=1),
-        timedelta(minutes=31, seconds=30),
+        dt.timedelta(minutes=30),
+        dt.timedelta(minutes=30),
+        dt.timedelta(minutes=30),
+        dt.timedelta(minutes=30, seconds=5),
+        dt.timedelta(minutes=30, seconds=1),
+        dt.timedelta(minutes=30, seconds=1),
+        dt.timedelta(minutes=31, seconds=20),
+        dt.timedelta(minutes=5, seconds=3),
+        dt.timedelta(minutes=7, seconds=1),
+        dt.timedelta(minutes=31, seconds=30),
     ]
     chapters = [
         (5, 5, 5, 5, 1),
@@ -204,9 +208,9 @@ def disc1(request):
 @pytest.fixture()
 def disc2(request):
     durations = [
-        timedelta(minutes=61, seconds=12),
-        timedelta(minutes=30, seconds=5),
-        timedelta(minutes=30, seconds=1),
+        dt.timedelta(minutes=61, seconds=12),
+        dt.timedelta(minutes=30, seconds=5),
+        dt.timedelta(minutes=30, seconds=1),
     ]
     chapters = [
         (5, 5, 5, 5, 5, 7, 4, 2, 1),
@@ -327,3 +331,148 @@ JSON Title Set: {json}
         proc.run.side_effect = mock_run
         proc.check_call.side_effect = mock_check_call
         yield proc
+
+
+class MockTVDBHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        if url.path == '/search/series':
+            self.handle_search(query['name'][0])
+            return
+        elif url.path.startswith('/series/'):
+            try:
+                quoted_id = url.path.split('/')[2]
+                program_id = unquote(quoted_id)
+                program = self.server.programs[program_id]
+            except KeyError:
+                pass
+            else:
+                if url.path == '/series/{id}/episodes/summary'.format(id=quoted_id):
+                    self.handle_summary(program_id, program)
+                    return
+                elif url.path == '/series/{id}/episodes/query'.format(id=quoted_id):
+                    self.handle_query(program_id, program, query)
+                    return
+        self.send_error(404, 'Not found')
+
+    def do_POST(self):
+        if self.path == '/login':
+            assert self.headers['Accept'] == 'application/vnd.thetvdb.v3'
+            assert self.headers['Content-Type'] == 'application/json'
+            body_len = int(self.headers.get('Content-Length', 0))
+            assert body_len > 0
+            body = json.loads(self.rfile.read(body_len))
+            if body['apikey'] == self.server.key:
+                self.send_json({'token': 'foo'})
+            else:
+                self.send_error(401, 'Not authorized')
+            return
+        self.send_error(404, 'Not found')
+
+    def send_json(self, data):
+        buf = json.dumps(data).encode('utf-8')
+        self.send_response(200, 'OK')
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', len(buf))
+        self.end_headers()
+        self.wfile.write(buf)
+
+    def handle_search(self, name):
+        try:
+            self.server.programs[name]
+        except KeyError:
+            result = {'data': []}
+        else:
+            result = {'data': [
+                {
+                    'id': name,
+                    'seriesName': name,
+                    'firstAired': dt.datetime(
+                        2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
+                    'status': 'Ended',
+                    'overview': 'A completely made up show',
+                }
+            ]}
+        self.send_json(result)
+
+    def handle_summary(self, name, program):
+        self.send_json({
+            'data': {
+                'airedSeasons': [str(season) for season in program]
+            }
+        })
+
+    def handle_query(self, name, program, query):
+        season = int(query['airedSeason'][0])
+        page = int(query['page'][0])
+        episodes = sorted(program.get(season, {}).items())
+        self.send_json({
+            'links': {'last': (len(episodes) // 5) + 1},
+            'data': [
+                {
+                    'airedEpisodeNumber': ep_num,
+                    'episodeName': ep_name,
+                }
+                for ep_num, ep_name in episodes[(page - 1) * 5:page * 5]
+            ],
+        })
+
+
+class MockTVDBServer(ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+
+    def __init__(self, url, key='s3cret'):
+        self.url = url
+        self.key = key
+        self.programs = {
+            'Up North': {
+                1: {
+                    1: "Free Willy",
+                    2: "Dog Day Afternoon",
+                    3: "Manhunter",
+                    4: "They Shoot Horses, Don't They?",
+                },
+                2: {
+                    1: "Up",
+                    2: "Pole",
+                    3: "Silent",
+                    4: "Two in the Bush",
+                },
+
+            },
+            'Foo': {
+                1: {
+                    1: 'Foo',
+                    2: 'Bar',
+                    3: 'Baz',
+                    4: 'Quux',
+                    5: 'Xyzzy',
+                    6: 'Foo Bar',
+                    7: 'Foo Bar Baz',
+                    8: 'Octopus!',
+                },
+                2: {
+                    0: 'Temp',
+                    1: None,
+                },
+            },
+            'No Seasons': {},
+        }
+        p = urlparse(url)
+        if p.scheme != 'http':
+            raise ValueError('Cannot mock anything but basic http')
+        super().__init__((p.hostname, p.port), MockTVDBHandler)
+
+
+@pytest.fixture()
+def tvdb(request):
+    server = MockTVDBServer('http://127.0.0.1:8000/')
+    server_thread = Thread(target=server.serve_forever)
+    server_thread.daemon = True
+    server_thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
