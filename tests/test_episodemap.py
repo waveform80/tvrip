@@ -6,11 +6,11 @@ from tvrip.ripper import Disc
 from tvrip.episodemap import *
 
 
-def test_episodemap_init(db, with_config, with_program, drive, disc1):
+def test_episodemap_init(db, with_config, with_program, drive, foo_disc1):
     epmap = EpisodeMap()
     assert len(epmap) == 0
 
-    drive.disc = disc1
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     epmap = EpisodeMap({
         ep: title
@@ -33,8 +33,8 @@ EpisodeMap({
 })"""
 
 
-def test_episodemap_iter(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_episodemap_iter(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -51,8 +51,8 @@ def test_episodemap_iter(db, with_config, with_program, drive, disc1):
     ]
 
 
-def test_episodemap_oper(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_episodemap_oper(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -79,8 +79,8 @@ def test_episodemap_oper(db, with_config, with_program, drive, disc1):
         epmap[episodes[0]] = titles[0].chapters[-1], titles[0].chapters[1]
 
 
-def test_automap_errors(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_errors(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -92,8 +92,8 @@ def test_automap_errors(db, with_config, with_program, drive, disc1):
         epmap.automap([], titles, timedelta(minutes=29), timedelta(minutes=31))
 
 
-def test_automap_titles(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_titles(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -109,8 +109,8 @@ def test_automap_titles(db, with_config, with_program, drive, disc1):
     ]
 
 
-def test_automap_titles_partial(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_titles_partial(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -127,8 +127,8 @@ def test_automap_titles_partial(db, with_config, with_program, drive, disc1):
     ]
 
 
-def test_automap_titles_strict(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_titles_strict(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -139,8 +139,8 @@ def test_automap_titles_strict(db, with_config, with_program, drive, disc1):
                       timedelta(minutes=31), strict_mapping=True)
 
 
-def test_automap_titles_multipart(db, with_config, with_program, drive, disc2):
-    drive.disc = disc2
+def test_automap_titles_multipart(db, with_config, with_program, drive, foo_disc2):
+    drive.disc = foo_disc2
     disc = Disc(with_config)
     episodes = with_program.seasons[1].episodes
     titles = disc.titles
@@ -155,8 +155,8 @@ def test_automap_titles_multipart(db, with_config, with_program, drive, disc2):
     ]
 
 
-def test_automap_chapters(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_chapters(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles
@@ -172,8 +172,8 @@ def test_automap_chapters(db, with_config, with_program, drive, disc1):
     ]
 
 
-def test_automap_chapters_many_solutions(db, with_config, with_program, drive, disc2):
-    drive.disc = disc2
+def test_automap_chapters_many_solutions(db, with_config, with_program, drive, foo_disc2):
+    drive.disc = foo_disc2
     disc = Disc(with_config)
     episodes = with_program.seasons[1].episodes
     titles = disc.titles
@@ -184,8 +184,8 @@ def test_automap_chapters_many_solutions(db, with_config, with_program, drive, d
                       timedelta(minutes=32))
 
 
-def test_automap_chapters_pick_solution(db, with_config, with_program, drive, disc2):
-    drive.disc = disc2
+def test_automap_chapters_pick_solution(db, with_config, with_program, drive, foo_disc2):
+    drive.disc = foo_disc2
     disc = Disc(with_config)
     episodes = with_program.seasons[1].episodes
     titles = disc.titles
@@ -211,8 +211,8 @@ def test_automap_chapters_pick_solution(db, with_config, with_program, drive, di
     ]
 
 
-def test_automap_fail(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_automap_fail(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     disc = Disc(with_config)
     episodes = with_program.seasons[0].episodes
     titles = disc.titles

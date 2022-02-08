@@ -172,7 +172,12 @@ def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
 
 
 @pytest.fixture()
-def disc1(request):
+def blank_disc(request):
+    return make_disc([])
+
+
+@pytest.fixture()
+def foo_disc1(request):
     durations = [
         dt.timedelta(minutes=30),
         dt.timedelta(minutes=30),
@@ -206,7 +211,7 @@ def disc1(request):
 
 
 @pytest.fixture()
-def disc2(request):
+def foo_disc2(request):
     durations = [
         dt.timedelta(minutes=61, seconds=12),
         dt.timedelta(minutes=30, seconds=5),

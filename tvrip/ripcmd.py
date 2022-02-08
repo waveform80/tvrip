@@ -44,8 +44,8 @@ class RipCmd(Cmd):
 
     prompt = '(tvrip) '
 
-    def __init__(self, session):
-        super().__init__()
+    def __init__(self, session, *, color_prompt=True, stdin=None, stdout=None):
+        super().__init__(color_prompt=color_prompt, stdin=stdin, stdout=stdout)
         self.discs = {}
         self.episode_map = EpisodeMap()
         self.session = session

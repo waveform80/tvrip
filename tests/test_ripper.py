@@ -17,15 +17,15 @@ class Cmdline(list):
             return super().__contains__(item)
 
 
-def test_disc(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_disc(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     assert repr(d) == '<Disc()>'
     assert len(d.titles) == 11
 
 
-def test_titles(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_titles(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     assert repr(d.titles[0]) == '<Title(1)>'
     assert isinstance(d.titles[0], Title)
@@ -36,8 +36,8 @@ def test_titles(db, with_config, drive, disc1):
     assert d.titles[-1].next is None
 
 
-def test_chapters(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_chapters(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     agg_title = d.titles[0]
     src_titles = [t for t in d.titles if t.number in (2, 3, 5, 6, 8)]
@@ -57,16 +57,16 @@ def test_chapters(db, with_config, drive, disc1):
     assert t.chapters[-1].next is None
 
 
-def test_subtracks(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_subtracks(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     t = d.titles[0]
     assert repr(t.audio_tracks[0]) == "<AudioTrack(1, 'English')>"
     assert repr(t.subtitle_tracks[0]) == "<SubtitleTrack(1, 'English (16:9) [VOBSUB]')>"
 
 
-def test_scan_whole_disc(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_scan_whole_disc(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     assert repr(d) == '<Disc()>'
     assert d.name == 'FOO AND BAR'
@@ -75,8 +75,8 @@ def test_scan_whole_disc(db, with_config, with_program, drive, disc1):
     assert len(d.titles) == 11
 
 
-def test_scan_one_title(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_scan_one_title(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config, titles=[1, 2, 3])
     assert d.name == 'FOO AND BAR'
     assert d.serial == '123456789'
@@ -87,8 +87,8 @@ def test_scan_one_title(db, with_config, with_program, drive, disc1):
     assert '--no-dvdnav' not in cmdline
 
 
-def test_scan_with_dvdread(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_scan_with_dvdread(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.dvdnav = False
     d = Disc(with_config, titles=[1, 2, 3])
     assert d.name == 'FOO AND BAR'
@@ -106,15 +106,15 @@ def test_scan_wrong_source(db, with_config, drive):
         Disc(with_config)
 
 
-def test_scan_bad_handbrake(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_scan_bad_handbrake(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.source = '/dev/badjson'
     with pytest.raises(IOError):
         Disc(with_config)
 
 
-def test_play_disc(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_play_disc(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config)
     cmdline = drive.check_call.call_args.args[0]
@@ -122,8 +122,8 @@ def test_play_disc(db, with_config, drive, disc1):
     assert 'dvd:///dev/dvd' in cmdline
 
 
-def test_play_disc_with_title(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_play_disc_with_title(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config, d.titles[0])
     cmdline = drive.check_call.call_args.args[0]
@@ -131,8 +131,8 @@ def test_play_disc_with_title(db, with_config, drive, disc1):
     assert 'dvd:///dev/dvd#1' in cmdline
 
 
-def test_play_disc_with_chapter(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_play_disc_with_chapter(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config, d.titles[0].chapters[0])
     cmdline = drive.check_call.call_args.args[0]
@@ -140,8 +140,8 @@ def test_play_disc_with_chapter(db, with_config, drive, disc1):
     assert 'dvd:///dev/dvd#1:1' in cmdline
 
 
-def test_play_first_title(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_play_first_title(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.titles[0].play(with_config)
     cmdline = drive.check_call.call_args.args[0]
@@ -149,8 +149,8 @@ def test_play_first_title(db, with_config, drive, disc1):
     assert 'dvd:///dev/dvd#1' in cmdline
 
 
-def test_play_first_title_first_chapter(db, with_config, drive, disc1):
-    drive.disc = disc1
+def test_play_first_title_first_chapter(db, with_config, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.titles[0].chapters[0].play(with_config)
     cmdline = drive.check_call.call_args.args[0]
@@ -158,16 +158,16 @@ def test_play_first_title_first_chapter(db, with_config, drive, disc1):
     assert 'dvd:///dev/dvd#1:1' in cmdline
 
 
-def test_rip_bad_args(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_bad_args(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     with pytest.raises(ValueError):
         d.rip(with_config, [with_program.seasons[0].episodes[0]],
                  d.titles[0], [d.titles[1].audio_tracks[0]], [])
 
 
-def test_rip_with_defaults(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_defaults(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
@@ -188,8 +188,8 @@ def test_rip_with_defaults(db, with_config, with_program, drive, disc1):
     assert ['--TVEpisodeNum', '1'] in ap_cmdline
 
 
-def test_rip_with_deinterlace(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_deinterlace(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.decomb = 'on'
     d = Disc(with_config)
     d.rip(
@@ -202,8 +202,8 @@ def test_rip_with_deinterlace(db, with_config, with_program, drive, disc1):
     assert ['-d', 'slow'] in hb_cmdline
 
 
-def test_rip_with_decomb(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_decomb(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.decomb = 'auto'
     d = Disc(with_config)
     d.rip(
@@ -216,8 +216,8 @@ def test_rip_with_decomb(db, with_config, with_program, drive, disc1):
     assert '-5' in hb_cmdline
 
 
-def test_rip_with_subtitles(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_subtitles(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.subtitle_format = 'vobsub'
     with_config.subtitle_default = False
     d = Disc(with_config)
@@ -232,8 +232,8 @@ def test_rip_with_subtitles(db, with_config, with_program, drive, disc1):
     assert '--subtitle-default' not in hb_cmdline
 
 
-def test_rip_with_default_subtitles(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_default_subtitles(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.subtitle_format = 'vobsub'
     with_config.subtitle_default = True
     d = Disc(with_config)
@@ -248,8 +248,8 @@ def test_rip_with_default_subtitles(db, with_config, with_program, drive, disc1)
     assert ['--subtitle-default', '1'] in hb_cmdline
 
 
-def test_rip_animation(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_animation(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.video_style = 'animation'
     d = Disc(with_config)
     d.rip(
@@ -262,8 +262,8 @@ def test_rip_animation(db, with_config, with_program, drive, disc1):
     assert ['--encoder-tune', 'animation'] in hb_cmdline
 
 
-def test_rip_with_dvdread(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_with_dvdread(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     with_config.dvdnav = False
     d = Disc(with_config)
     d.rip(
@@ -276,8 +276,8 @@ def test_rip_with_dvdread(db, with_config, with_program, drive, disc1):
     assert '--no-dvdnav' in hb_cmdline
 
 
-def test_rip_chapter(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_chapter(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[0],
@@ -292,8 +292,8 @@ def test_rip_chapter(db, with_config, with_program, drive, disc1):
     assert ['-c', '1'] in hb_cmdline
 
 
-def test_rip_chapters(db, with_config, with_program, drive, disc1):
-    drive.disc = disc1
+def test_rip_chapters(db, with_config, with_program, drive, foo_disc1):
+    drive.disc = foo_disc1
     d = Disc(with_config)
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[0],
