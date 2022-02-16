@@ -5,6 +5,7 @@ from contextlib import closing
 
 import pytest
 
+from tvrip.ripper import *
 from tvrip.ripcmd import *
 
 
@@ -96,6 +97,58 @@ def test_parse_title(drive, blank_disc, foo_disc1, ripcmd):
         ripcmd.parse_title('1')
     drive.disc = foo_disc1
     ripcmd.do_scan('')
+    with pytest.raises(CmdError):
+        ripcmd.parse_title('foo')
+    with pytest.raises(CmdError):
+        ripcmd.parse_title('4400')
+    with pytest.raises(CmdError):
+        ripcmd.parse_title('50')
     title = ripcmd.parse_title('1')
     assert isinstance(title, Title)
     assert title.number == 1
+
+
+def test_parse_title_range(drive, foo_disc1, ripcmd):
+    with pytest.raises(CmdError):
+        ripcmd.parse_title_range('1')
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    start, finish = ripcmd.parse_title_range('1-5')
+    assert isinstance(start, Title)
+    assert start.number == 1
+    assert isinstance(finish, Title)
+    assert finish.number == 5
+
+
+def test_parse_title_list(drive, foo_disc1, ripcmd):
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    titles = ripcmd.parse_title_list('1,3-5')
+    assert len(titles) == 4
+    assert [t.number for t in titles] == [1, 3, 4, 5]
+
+
+def test_parse_chapter(drive, foo_disc1, ripcmd):
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    title = ripcmd.disc.titles[1]
+    with pytest.raises(CmdError):
+        ripcmd.parse_chapter(title, 'foo')
+    with pytest.raises(CmdError):
+        ripcmd.parse_chapter(title, '10')
+    chapter = ripcmd.parse_chapter(title, '1')
+    assert chapter.number == 1
+    assert chapter.title is title
+
+
+def test_parse_chapter_range(drive, foo_disc1, ripcmd):
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    title = ripcmd.disc.titles[1]
+    with pytest.raises(CmdError):
+        ripcmd.parse_chapter_range(title, '1')
+    start, finish = ripcmd.parse_chapter_range(title, '1-4')
+    assert isinstance(start, Chapter)
+    assert start.number == 1
+    assert isinstance(finish, Chapter)
+    assert finish.number == 4
