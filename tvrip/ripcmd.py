@@ -80,6 +80,7 @@ class RipCmd(Cmd):
             'dvdnav':           self.set_bool,
             'handbrake':        self.set_executable,
             'id_template':      self.set_id_template,
+            'max_resolution':   self.set_max_resolution,
             'output_format':    self.set_output_format,
             'source':           self.set_device,
             'subtitle_all':     self.set_bool,
@@ -511,6 +512,9 @@ class RipCmd(Cmd):
         self.pprint('template         = {}'.format(self.config.template))
         self.pprint('id_template      = {}'.format(self.config.id_template))
         self.pprint('output_format    = {}'.format(self.config.output_format))
+        self.pprint('max_resolution   = {width}x{height}'.format(
+            width=self.config.width_max,
+            height=self.config.height_max))
         self.pprint('decomb           = {}'.format(self.config.decomb))
         self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
         self.pprint('audio_all        = {}'.format(
@@ -740,7 +744,7 @@ class RipCmd(Cmd):
         self.config.video_style = value
 
     def set_complete_video_style(self, text, line, start, finish):
-        return self.set_complete_simple(
+        return self.set_complete_one(
             line, start, {'tv', 'television', 'film', 'animation'})
 
     set_video_style.complete = set_complete_video_style
@@ -939,6 +943,41 @@ class RipCmd(Cmd):
                 'The new id_template contains an error: {}'.format(exc))
         self.config.id_template = value
 
+    def set_max_resolution(self, var, value):
+        """
+        The maximum resolution of the output file. Smaller sources will be
+        unaffected; larger sources will be scaled with their aspect ratio
+        respected.
+        """
+        assert var == 'max_resolution'
+        try:
+            width, height = (int(i) for i in value.split('x', 1))
+        except (TypeError, ValueError):
+            raise CmdError(
+                'The new resolution must be specified as WxH')
+        else:
+            if width < 32 or height < 32:
+                raise CmdError('The new resolution is too small')
+        self.config.width_max = width
+        self.config.height_max = height
+
+    def set_complete_max_resolution(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {
+                '640x480',   # NTSC
+                '768x576',   # PAL
+                '854x480',   # NTSC DVD (anamorphic)
+                '1024x576',  # PAL DVD (anamorphic)
+                '1280x720',  # HD 720p
+                '1920x1080', # "Full" HD 1080p
+                '2560x1440', # 2K QHD
+                '3840x2160', # 4K UHD
+                '5120x2880', # 5K UHD
+                '7680x4320', # 8K UHD
+            })
+
+    set_max_resolution.complete = set_complete_max_resolution
+
     def set_output_format(self, var, value):
         """
         This configuration option specifies the video output format. Valid
@@ -956,8 +995,9 @@ class RipCmd(Cmd):
         self.config.output_format = value
 
     def set_complete_output_format(self, text, line, start, finish):
-        return self.set_complete_one(
-            line, start, {'mp4', 'mkv'})
+        return self.set_complete_one(line, start, {'mp4', 'mkv'})
+
+    set_output_format.complete = set_complete_output_format
 
     def set_api_key(self, var, value):
         assert var == 'api_key'

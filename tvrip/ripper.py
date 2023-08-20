@@ -297,6 +297,8 @@ class Disc:
             '-f', f'av_{config.output_format}',
             '-O',            # optimize for streaming
             '-m',            # include chapter markers
+            '-X', str(config.width_max),
+            '-Y', str(config.height_max),
             '--encoder', 'x264',
             '--encoder-preset', 'medium',
             '--encoder-profile', 'high',

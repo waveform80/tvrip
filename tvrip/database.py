@@ -232,6 +232,8 @@ class Configuration(DeclarativeBase):
     output_format = Column(Unicode(3),
                            CheckConstraint("output_format in ('mp4', 'mkv')"),
                            nullable=False, default='mp4')
+    width_max = Column(Integer, nullable=False, default=1920)
+    height_max = Column(Integer, nullable=False, default=1080)
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
     season = relationship('Season',
@@ -257,6 +259,10 @@ class Configuration(DeclarativeBase):
 
     duration_max = synonym('_duration_max',
                            descriptor=property(_get_duration_max, _set_duration_max))
+
+    @property
+    def max_resolution(self):
+        return (self.width_max, self.height_max)
 
     def in_audio_langs(self, lang):
         """Returns True if lang is a selected audio language"""
