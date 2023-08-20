@@ -80,6 +80,7 @@ class RipCmd(Cmd):
             'dvdnav':           self.set_bool,
             'handbrake':        self.set_executable,
             'id_template':      self.set_id_template,
+            'output_format':    self.set_output_format,
             'source':           self.set_device,
             'subtitle_all':     self.set_bool,
             'subtitle_default': self.set_bool,
@@ -338,6 +339,7 @@ class RipCmd(Cmd):
         "Prints the details of the currently scanned disc"
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
+        self.pprint('Disc type: {}'.format(self.disc.type))
         self.pprint('Disc identifier: {}'.format(self.disc.ident))
         self.pprint('Disc serial: {}'.format(self.disc.serial))
         self.pprint('Disc name: {}'.format(self.disc.name))
@@ -508,6 +510,7 @@ class RipCmd(Cmd):
         self.pprint('temp             = {}'.format(self.config.temp))
         self.pprint('template         = {}'.format(self.config.template))
         self.pprint('id_template      = {}'.format(self.config.id_template))
+        self.pprint('output_format    = {}'.format(self.config.output_format))
         self.pprint('decomb           = {}'.format(self.config.decomb))
         self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
         self.pprint('audio_all        = {}'.format(
@@ -738,7 +741,7 @@ class RipCmd(Cmd):
 
     def set_complete_video_style(self, text, line, start, finish):
         return self.set_complete_simple(
-            line, start, {'tv', 'television', 'film', 'anim', 'animation'})
+            line, start, {'tv', 'television', 'film', 'animation'})
 
     set_video_style.complete = set_complete_video_style
 
@@ -849,7 +852,8 @@ class RipCmd(Cmd):
     def set_subtitle_format(self, var, value):
         """
         This configuration option specifies a subtitle format. Valid values
-        are "none", "vobsub", "cc", and "all".
+        are "none", "vobsub", "pgs", "cc", and "all". Typically, you want
+        "vobsub" for DVDs and "pgs" for Blu-rays.
         """
         assert var == 'subtitle_format'
         try:
@@ -860,6 +864,7 @@ class RipCmd(Cmd):
                 'vobsub': 'vobsub',
                 'bmp':    'vobsub',
                 'bitmap': 'vobsub',
+                'pgs':    'pgs',
                 'cc':     'cc',
                 'text':   'cc',
                 'any':    'any',
@@ -874,7 +879,8 @@ class RipCmd(Cmd):
     def set_complete_subtitle_format(self, text, line, start, finish):
         return self.set_complete_one(
             line, start,
-            {'off', 'none', 'vobsub', 'bitmap', 'cc', 'text', 'all', 'both'})
+            {'off', 'none', 'vobsub', 'pgs', 'bitmap', 'cc', 'text', 'all',
+             'both'})
 
     set_subtitle_format.complete = set_complete_subtitle_format
 
@@ -906,6 +912,7 @@ class RipCmd(Cmd):
                 id='1x01',
                 name='Foo Bar',
                 now=datetime.now(),
+                ext='mp4',
                 )
         except KeyError as exc:
             raise CmdError(
@@ -931,6 +938,26 @@ class RipCmd(Cmd):
             raise CmdError(
                 'The new id_template contains an error: {}'.format(exc))
         self.config.id_template = value
+
+    def set_output_format(self, var, value):
+        """
+        This configuration option specifies the video output format. Valid
+        values are "mp4" and "mkv". "mp4" is more widely supported, but "mkv"
+        is the more advanced format, and is the only format to support things
+        like PGS subtitle pass-through on Blu-ray.
+
+        The output format affects the {ext} substitution in the template.
+        """
+        assert var == 'output_format'
+        valid = ('mp4', 'mkv')
+        if value not in valid:
+            raise CmdError('The new output_format must be one of {}'.format(
+                ', '.join(valid)))
+        self.config.output_format = value
+
+    def set_complete_output_format(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {'mp4', 'mkv'})
 
     def set_api_key(self, var, value):
         assert var == 'api_key'

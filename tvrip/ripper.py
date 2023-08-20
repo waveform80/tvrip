@@ -48,12 +48,14 @@ AUDIO_ENCODING_ORDER = {
 }
 
 
-class Disc():
-    "Represents a DVD disc"
+class Disc:
+    """
+    Represents an optical disc, typically either a DVD or a Blu-ray disc.
+    """
 
     def __init__(self, config, titles=None):
         super().__init__()
-        self.match = None
+        self.type = ''
         self.titles = []
         self.name = ''
         self.serial = ''
@@ -146,6 +148,8 @@ class Disc():
         # This is a simple utility method to make the pattern matching below a
         # bit simpler. It returns the result of the match as a bool and stores
         # the result as an instance attribute for later extraction of groups
+        disc_type_re = re.compile(
+            r'scan: (?P<type>BD|DVD) has (?:\d+) title\(s\)', re.UNICODE)
         disc_name_re = re.compile(
             r'^libdvdnav: DVD Title: (?P<name>.*)$')
         disc_serial_re = re.compile(
@@ -153,7 +157,7 @@ class Disc():
         error1_re = re.compile(
             r"libdvdread: Can't open .* for reading", re.UNICODE)
         error2_re = re.compile(
-            r'libdvdnav: vm: failed to open/read the DVD', re.UNICODE)
+            r'libdvdnav: vm: failed to open/read the .*', re.UNICODE)
 
         match = None
 
@@ -170,6 +174,11 @@ class Disc():
                 self.name = match.group('name')
             elif get_match(disc_serial_re, line):
                 self.serial = match.group('serial')
+            elif get_match(disc_type_re, line):
+                self.type = {
+                    'DVD': 'DVD',
+                    'BD': 'Blu-ray',
+                }[match.group('type')]
 
     def _parse_scan_stdout(self, config, output):
         try:
@@ -284,7 +293,7 @@ class Disc():
             '-i', config.source,
             '-t', str(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'av_mp4',  # output an MP4 container
+            '-f', f'av_{config.output_format}',
             '-O',            # optimize for streaming
             '-m',            # include chapter markers
             '--encoder', 'x264',
@@ -329,7 +338,7 @@ class Disc():
             else:
                 end_chapter = start_chapter
                 cmdline.append(str(start_chapter.number))
-        if config.subtitle_format == 'vobsub' and subtitle_defs:
+        if config.subtitle_format in ('vobsub', 'pgs') and subtitle_defs:
             cmdline.append('-s')
             cmdline.append(','.join(str(num) for (num, _, _) in subtitle_defs))
             if config.subtitle_default:

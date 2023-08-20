@@ -200,14 +200,14 @@ class Configuration(DeclarativeBase):
     source = Column(Unicode(300), nullable=False, default='/dev/dvd')
     target = Column(Unicode(300), nullable=False, default=os.path.expanduser('~/Videos'))
     temp = Column(Unicode(300), nullable=False, default=tempfile.gettempdir())
-    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.mp4')
+    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.{ext}')
     id_template = Column(Unicode(100), nullable=False, default='{season}x{episode:02d}')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)
     _duration_max = Column('duration_max', Integer, nullable=False, default=50)
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(Unicode(6),
-                             CheckConstraint("subtitle_format in ('none', 'vobsub', 'cc', 'any')"),
+                             CheckConstraint("subtitle_format in ('none', 'vobsub', 'pgs', 'cc', 'any')"),
                              nullable=False, default='none')
     audio_mix = Column(Unicode(6),
                        CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
@@ -229,6 +229,9 @@ class Configuration(DeclarativeBase):
                         nullable=False, default='all')
     api_key = Column(Unicode(128), nullable=False, default='')
     api_url = Column(Unicode(300), nullable=False, default='https://api.thetvdb.com/')
+    output_format = Column(Unicode(3),
+                           CheckConstraint("output_format in ('mp4', 'mkv')"),
+                           nullable=False, default='mp4')
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
     season = relationship('Season',
