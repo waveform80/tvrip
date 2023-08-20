@@ -356,41 +356,42 @@ class Disc:
         with (Path(config.temp) / 'tvrip.log').open('a') as log:
             proc.check_call(cmdline, stdout=log, stderr=log)
         # Tag the resulting file
-        tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
-        try:
-            cmdline = [
-                config.get_path('atomicparsley'),
-                os.path.join(config.target, filename),
-                '-o', tmpfile,
-                '--stik', 'TV Show',
-                # set tags for TV shows
-                '--TVShowName',   episodes[0].season.program.name,
-                '--TVSeasonNum',  str(episodes[0].season.number),
-                '--TVEpisodeNum', str(episodes[0].number),
-                '--TVEpisode',    multipart.name(episodes),
-                # also set tags for music files as these have wider support
-                '--artist',       episodes[0].season.program.name,
-                '--album',        'Season {}'.format(episodes[0].season.number),
-                '--tracknum',     str(episodes[0].number),
-                '--title',        multipart.name(episodes),
-            ]
-            with (Path(config.temp) / 'tvrip.log').open('a') as log:
-                proc.check_call(cmdline, stdout=log, stderr=log)
-            os.chmod(
-                tmpfile,
-                os.stat(os.path.join(config.target, filename)).st_mode)
-            shutil.move(tmpfile, os.path.join(config.target, filename))
-        finally:
-            os.close(tmphandle)
-        for episode in episodes:
-            episode.disc_id = title.disc.ident
-            episode.disc_title = title.number
-            if start_chapter:
-                episode.start_chapter = start_chapter.number
-                episode.end_chapter = end_chapter.number
-            else:
-                episode.start_chapter = None
-                episode.end_chapter = None
+        if config.output_format == 'mp4':
+            tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
+            try:
+                cmdline = [
+                    config.get_path('atomicparsley'),
+                    os.path.join(config.target, filename),
+                    '-o', tmpfile,
+                    '--stik', 'TV Show',
+                    # set tags for TV shows
+                    '--TVShowName',   episodes[0].season.program.name,
+                    '--TVSeasonNum',  str(episodes[0].season.number),
+                    '--TVEpisodeNum', str(episodes[0].number),
+                    '--TVEpisode',    multipart.name(episodes),
+                    # also set tags for music files as these have wider support
+                    '--artist',       episodes[0].season.program.name,
+                    '--album',        'Season {}'.format(episodes[0].season.number),
+                    '--tracknum',     str(episodes[0].number),
+                    '--title',        multipart.name(episodes),
+                ]
+                with (Path(config.temp) / 'tvrip.log').open('a') as log:
+                    proc.check_call(cmdline, stdout=log, stderr=log)
+                os.chmod(
+                    tmpfile,
+                    os.stat(os.path.join(config.target, filename)).st_mode)
+                shutil.move(tmpfile, os.path.join(config.target, filename))
+            finally:
+                os.close(tmphandle)
+            for episode in episodes:
+                episode.disc_id = title.disc.ident
+                episode.disc_title = title.number
+                if start_chapter:
+                    episode.start_chapter = start_chapter.number
+                    episode.end_chapter = end_chapter.number
+                else:
+                    episode.start_chapter = None
+                    episode.end_chapter = None
 
 
 class Title():
