@@ -276,6 +276,7 @@ class Disc:
             id=file_id,
             name=multipart.name(episodes),
             now=dt.datetime.now(),
+            ext=config.output_format,
         )
         # Replace invalid characters in the filename with -
         filename = re.sub(r'[\/:]', '-', filename)
