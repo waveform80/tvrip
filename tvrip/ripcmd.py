@@ -322,13 +322,6 @@ class RipCmd(Cmd):
         else:
             return self.parse_title(s)
 
-    def clear_seasons(self, program=None):
-        "Removes all seasons from the specified program"
-        if program is None:
-            program = self.config.program
-        for season in self.session.query(Season).filter((Season.program == program)):
-            self.session.delete(season)
-
     def clear_episodes(self, season=None):
         "Removes all episodes from the specified season"
         if season is None:
