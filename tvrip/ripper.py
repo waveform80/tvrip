@@ -385,15 +385,16 @@ class Disc:
                 shutil.move(tmpfile, os.path.join(config.target, filename))
             finally:
                 os.close(tmphandle)
-            for episode in episodes:
-                episode.disc_id = title.disc.ident
-                episode.disc_title = title.number
-                if start_chapter:
-                    episode.start_chapter = start_chapter.number
-                    episode.end_chapter = end_chapter.number
-                else:
-                    episode.start_chapter = None
-                    episode.end_chapter = None
+        # Update the database with the ripped titles
+        for episode in episodes:
+            episode.disc_id = title.disc.ident
+            episode.disc_title = title.number
+            if start_chapter:
+                episode.start_chapter = start_chapter.number
+                episode.end_chapter = end_chapter.number
+            else:
+                episode.start_chapter = None
+                episode.end_chapter = None
 
 
 class Title():
