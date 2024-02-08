@@ -66,18 +66,20 @@ def completions(cmd, line):
 
 @pytest.fixture(scope='function')
 def _ripcmd(request, db):
-    ri, wi = os.pipe()
-    ro, wo = os.pipe()
-    with \
-            closing(os.fdopen(ri, 'r', buffering=1, encoding='utf-8')) as stdin_r, \
-            closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w, \
-            closing(os.fdopen(ro, 'r', buffering=1, encoding='utf-8')) as stdout_r, \
-            closing(os.fdopen(wo, 'w', buffering=1, encoding='utf-8')) as stdout_w:
-        stdout_w.reconfigure(write_through=True)
-        stdin_w.reconfigure(write_through=True)
-        test_ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
-        test_ripcmd.use_rawinput = False
-        yield stdin_w, stdout_r, test_ripcmd
+    with mock.patch('tvrip.cmdline.term_size') as term_size:
+        term_size.return_value = (100, 50)
+        ri, wi = os.pipe()
+        ro, wo = os.pipe()
+        with \
+                closing(os.fdopen(ri, 'r', buffering=1, encoding='utf-8')) as stdin_r, \
+                closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w, \
+                closing(os.fdopen(ro, 'r', buffering=1, encoding='utf-8')) as stdout_r, \
+                closing(os.fdopen(wo, 'w', buffering=1, encoding='utf-8')) as stdout_w:
+            stdout_w.reconfigure(write_through=True)
+            stdin_w.reconfigure(write_through=True)
+            test_ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
+            test_ripcmd.use_rawinput = False
+            yield stdin_w, stdout_r, test_ripcmd
 
 @pytest.fixture()
 def ripcmd(request, _ripcmd):
@@ -95,7 +97,7 @@ def stdout(request, _ripcmd):
     yield stdout
 
 @pytest.fixture()
-def readout(request, stdout, tmp_path):
+def readout(request, stdout):
     thread = Reader(stdout)
     thread.start()
     try:
@@ -544,31 +546,32 @@ def test_do_help(ripcmd, readout):
     ripcmd.stdout.close()
     readout.wait(10)
     assert ''.join(readout.lines) == """\
-╭───────────┬──────────────────────────────────────────────────────────────────────────────────────────╮
-│ Command   │ Description                                                                              │
-╞═══════════╪══════════════════════════════════════════════════════════════════════════════════════════╡
-│ automap   │ Maps episodes to titles or chapter ranges automatically.                                 │
-│ config    │ Shows the current set of configuration options.                                          │
-│ disc      │ Displays information about the last scanned disc.                                        │
-│ duplicate │ Manually specifies duplicated titles on a disc.                                          │
-│ episode   │ Modifies a single episode in the current season.                                         │
-│ episodes  │ Gets or sets the episodes for the current season.                                        │
-│ exit      │ Exits from the application.                                                              │
-│ help      │ Displays the available commands or help on a specified command or configuration setting. │
-│ map       │ Maps episodes to titles or chapter ranges.                                               │
-│ play      │ Plays the specified episode.                                                             │
-│ program   │ Sets the name of the program.                                                            │
-│ programs  │ Shows the defined programs.                                                              │
-│ quit      │ Exits from the application.                                                              │
-│ rip       │ Starts the ripping and transcoding process.                                              │
-│ scan      │ Scans the source device for episodes.                                                    │
-│ season    │ Sets which season of the program the disc contains.                                      │
-│ seasons   │ Shows the defined seasons of the current program.                                        │
-│ set       │ Sets a configuration option.                                                             │
-│ title     │ Displays information about the specified title(s).                                       │
-│ unmap     │ Removes an episode mapping.                                                              │
-│ unrip     │ Changes the status of the specified episode to unripped.                                 │
-╰───────────┴──────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────┬────────────────────────────────────────────────────────────────────────────────────╮
+│ Command   │ Description                                                                        │
+╞═══════════╪════════════════════════════════════════════════════════════════════════════════════╡
+│ automap   │ Maps episodes to titles or chapter ranges automatically.                           │
+│ config    │ Shows the current set of configuration options.                                    │
+│ disc      │ Displays information about the last scanned disc.                                  │
+│ duplicate │ Manually specifies duplicated titles on a disc.                                    │
+│ episode   │ Modifies a single episode in the current season.                                   │
+│ episodes  │ Gets or sets the episodes for the current season.                                  │
+│ exit      │ Exits from the application.                                                        │
+│ help      │ Displays the available commands or help on a specified command or configuration    │
+│           │ setting.                                                                           │
+│ map       │ Maps episodes to titles or chapter ranges.                                         │
+│ play      │ Plays the specified episode.                                                       │
+│ program   │ Sets the name of the program.                                                      │
+│ programs  │ Shows the defined programs.                                                        │
+│ quit      │ Exits from the application.                                                        │
+│ rip       │ Starts the ripping and transcoding process.                                        │
+│ scan      │ Scans the source device for episodes.                                              │
+│ season    │ Sets which season of the program the disc contains.                                │
+│ seasons   │ Shows the defined seasons of the current program.                                  │
+│ set       │ Sets a configuration option.                                                       │
+│ title     │ Displays information about the specified title(s).                                 │
+│ unmap     │ Removes an episode mapping.                                                        │
+│ unrip     │ Changes the status of the specified episode to unripped.                           │
+╰───────────┴────────────────────────────────────────────────────────────────────────────────────╯
 """
 
 
@@ -580,9 +583,10 @@ def test_do_help_config(ripcmd, readout):
     ripcmd.stdout.close()
     readout.wait(10)
     assert ''.join(readout.lines) == """\
-This configuration option can be set to "all", "first", or "last". When "all", duplicate titles will be treated
-individually and will all be considered for auto-mapping. When "first" only the first of a set of duplicates will be
-considered for auto-mapping, and conversely when "last" only the last of a set of duplicates will be used.
+This configuration option can be set to "all", "first", or "last". When "all", duplicate titles
+will be treated individually and will all be considered for auto-mapping. When "first" only the
+first of a set of duplicates will be considered for auto-mapping, and conversely when "last" only
+the last of a set of duplicates will be used.
 
 """
 
