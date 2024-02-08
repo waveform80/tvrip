@@ -64,6 +64,8 @@ class RipCmd(Cmd):
             self.session.add(
                 ConfigPath(self.config, 'atomicparsley', 'AtomicParsley'))
             self.session.add(
+                ConfigPath(self.config, 'mkvpropedit', 'mkvpropedit'))
+            self.session.add(
                 ConfigPath(self.config, 'vlc', 'vlc'))
             self.session.commit()
         self.set_api()
@@ -81,6 +83,7 @@ class RipCmd(Cmd):
             'handbrake':        self.set_executable,
             'id_template':      self.set_id_template,
             'max_resolution':   self.set_max_resolution,
+            'mkvpropedit':      self.set_executable,
             'output_format':    self.set_output_format,
             'source':           self.set_device,
             'subtitle_all':     self.set_bool,
