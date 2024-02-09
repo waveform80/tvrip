@@ -619,13 +619,13 @@ class RipCmd(Cmd):
         for item in path.iterdir():
             if str(item).startswith(value):
                 if item.is_dir():
-                    yield str(item)[start - match.end():] + '/'
+                    yield f'/{item.name}/'
                 elif not is_dir:
                     if is_exec and not os.access(item, os.X_OK):
                         continue
                     elif is_block_device and not item.is_block_device():
                         continue
-                    yield str(item)[start - match.end():]
+                    yield f'/{item.name}'
 
     def set_executable(self, var, value):
         """
@@ -682,7 +682,10 @@ class RipCmd(Cmd):
         """
         This configuration option is either "on" or "off".
         """
-        setattr(self.config, var, self.parse_bool(value))
+        try:
+            setattr(self.config, var, self.parse_bool(value))
+        except ValueError:
+            raise CmdError(f'Value {value} must be on/off/no/yes')
 
     def set_complete_bool(self, text, line, start, finish):
         return self.set_complete_one(
@@ -896,7 +899,7 @@ class RipCmd(Cmd):
             if value == 'auto':
                 self.config.decomb = 'auto'
             else:
-                raise
+                raise CmdError(f'{value} must be off/on/auto')
 
     def set_complete_decomb(self, text, line, start, finish):
         return self.set_complete_one(

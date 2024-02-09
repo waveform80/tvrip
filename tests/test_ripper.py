@@ -119,7 +119,7 @@ def test_play_disc(db, with_config, drive, foo_disc1):
     d.play(with_config)
     cmdline = drive.check_call.call_args.args[0]
     assert cmdline[0] == 'vlc'
-    assert 'dvd:///dev/dvd' in cmdline
+    assert f'dvd://{with_config.source}' in cmdline
 
 
 def test_play_disc_with_title(db, with_config, drive, foo_disc1):
@@ -128,7 +128,7 @@ def test_play_disc_with_title(db, with_config, drive, foo_disc1):
     d.play(with_config, d.titles[0])
     cmdline = drive.check_call.call_args.args[0]
     assert cmdline[0] == 'vlc'
-    assert 'dvd:///dev/dvd#1' in cmdline
+    assert f'dvd://{with_config.source}#1' in cmdline
 
 
 def test_play_disc_with_chapter(db, with_config, drive, foo_disc1):
@@ -137,7 +137,7 @@ def test_play_disc_with_chapter(db, with_config, drive, foo_disc1):
     d.play(with_config, d.titles[0].chapters[0])
     cmdline = drive.check_call.call_args.args[0]
     assert cmdline[0] == 'vlc'
-    assert 'dvd:///dev/dvd#1:1' in cmdline
+    assert f'dvd://{with_config.source}#1:1' in cmdline
 
 
 def test_play_first_title(db, with_config, drive, foo_disc1):
@@ -146,7 +146,7 @@ def test_play_first_title(db, with_config, drive, foo_disc1):
     d.titles[0].play(with_config)
     cmdline = drive.check_call.call_args.args[0]
     assert cmdline[0] == 'vlc'
-    assert 'dvd:///dev/dvd#1' in cmdline
+    assert f'dvd://{with_config.source}#1' in cmdline
 
 
 def test_play_first_title_first_chapter(db, with_config, drive, foo_disc1):
@@ -155,7 +155,7 @@ def test_play_first_title_first_chapter(db, with_config, drive, foo_disc1):
     d.titles[0].chapters[0].play(with_config)
     cmdline = drive.check_call.call_args.args[0]
     assert cmdline[0] == 'vlc'
-    assert 'dvd:///dev/dvd#1:1' in cmdline
+    assert f'dvd://{with_config.source}#1:1' in cmdline
 
 
 def test_rip_bad_args(db, with_config, with_program, drive, foo_disc1):
@@ -176,7 +176,7 @@ def test_rip_with_defaults(db, with_config, with_program, drive, foo_disc1):
     hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
     ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
     assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', '/dev/dvd'] in hb_cmdline
+    assert ['-i', with_config.source] in hb_cmdline
     assert ['-t', '2'] in hb_cmdline
     assert ['-d', 'slow'] not in hb_cmdline
     assert '-5' not in hb_cmdline
@@ -287,7 +287,7 @@ def test_rip_chapter(db, with_config, with_program, drive, foo_disc1):
     hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
     ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
     assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', '/dev/dvd'] in hb_cmdline
+    assert ['-i', with_config.source] in hb_cmdline
     assert ['-t', '1'] in hb_cmdline
     assert ['-c', '1'] in hb_cmdline
 
@@ -304,6 +304,6 @@ def test_rip_chapters(db, with_config, with_program, drive, foo_disc1):
     hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
     ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
     assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', '/dev/dvd'] in hb_cmdline
+    assert ['-i', with_config.source] in hb_cmdline
     assert ['-t', '1'] in hb_cmdline
     assert ['-c', '1-5'] in hb_cmdline

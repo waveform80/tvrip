@@ -1,6 +1,8 @@
 import io
 import os
 import select
+import datetime as dt
+from pathlib import Path
 from unittest import mock
 from contextlib import closing, contextmanager
 from threading import Thread, Event
@@ -52,9 +54,10 @@ def suppress_stdout(cmd):
 
 def completions(cmd, line):
     if ' ' in line:
-        command, text = line.lstrip().split(' ', 1)
-        start = len(command) + 1
+        prefix, text = line.lstrip().rsplit(' ', 1)
+        start = len(prefix) + 1
         finish = len(line)
+        command, *args = prefix.split(' ')
         completer = getattr(cmd, f'complete_{command}')
     else:
         text = line
@@ -157,7 +160,7 @@ def test_parse_episode_list(db, with_program, ripcmd):
         eps = ripcmd.parse_episode_list('foo')
 
 
-def test_parse_title(drive, blank_disc, foo_disc1, ripcmd):
+def test_parse_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd):
     with pytest.raises(CmdError):
         ripcmd.parse_title('1')
     drive.disc = blank_disc
@@ -177,7 +180,7 @@ def test_parse_title(drive, blank_disc, foo_disc1, ripcmd):
     assert title.number == 1
 
 
-def test_parse_title_range(drive, foo_disc1, ripcmd):
+def test_parse_title_range(db, with_config, drive, foo_disc1, ripcmd):
     with pytest.raises(CmdError):
         ripcmd.parse_title_range('1')
     drive.disc = foo_disc1
@@ -189,7 +192,7 @@ def test_parse_title_range(drive, foo_disc1, ripcmd):
     assert finish.number == 5
 
 
-def test_parse_title_list(drive, foo_disc1, ripcmd):
+def test_parse_title_list(db, with_config, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     titles = ripcmd.parse_title_list('1,3-5')
@@ -197,7 +200,7 @@ def test_parse_title_list(drive, foo_disc1, ripcmd):
     assert [t.number for t in titles] == [1, 3, 4, 5]
 
 
-def test_parse_chapter(drive, foo_disc1, ripcmd):
+def test_parse_chapter(db, with_config, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     title = ripcmd.disc.titles[1]
@@ -210,7 +213,7 @@ def test_parse_chapter(drive, foo_disc1, ripcmd):
     assert chapter.title is title
 
 
-def test_parse_chapter_range(drive, foo_disc1, ripcmd):
+def test_parse_chapter_range(db, with_config, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     title = ripcmd.disc.titles[1]
@@ -223,7 +226,7 @@ def test_parse_chapter_range(drive, foo_disc1, ripcmd):
     assert finish.number == 4
 
 
-def test_parse_title_or_chapter(drive, foo_disc1, ripcmd):
+def test_parse_title_or_chapter(db, with_config, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     result = ripcmd.parse_title_or_chapter('1')
@@ -236,7 +239,7 @@ def test_parse_title_or_chapter(drive, foo_disc1, ripcmd):
     assert result.number == 3
 
 
-def test_parse_title_or_chapter_range(drive, foo_disc1, ripcmd):
+def test_parse_title_or_chapter_range(db, with_config, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     result = ripcmd.parse_title_or_chapter_range('1')
@@ -286,7 +289,7 @@ def test_clear_episodes(db, with_program, ripcmd):
     assert not ripcmd.config.season.episodes
 
 
-def test_pprint_disc(drive, foo_disc1, ripcmd, readout):
+def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
     with pytest.raises(CmdError):
         ripcmd.pprint_disc()
     drive.disc = foo_disc1
@@ -321,7 +324,7 @@ Disc has 11 titles
 """
 
 
-def test_pprint_title(drive, blank_disc, foo_disc1, ripcmd, readout):
+def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, readout):
     with pytest.raises(CmdError):
         ripcmd.pprint_title(None)
     drive.disc = blank_disc
@@ -495,7 +498,7 @@ vlc              = vlc
 
 Scanning Configuration:
 
-source           = /dev/dvd
+source           = {tmp_path}/dvd
 duration         = 40.0-50.0 (mins)
 duplicates       = all
 
@@ -633,3 +636,192 @@ def test_complete_set_directory(db, with_config, ripcmd, tmp_path):
     assert completions(ripcmd, f'set target {tmp_path}/f') == []
     assert completions(ripcmd, f'set target {tmp_path}/b') == []
     assert completions(ripcmd, f'set target {tmp_path}/tar') == ['/target/']
+
+
+def test_set_device(db, with_config, ripcmd, tmp_path):
+    with mock.patch('tvrip.ripcmd.Path.is_block_device') as is_block_device:
+        (tmp_path / 'null').touch(mode=0o644)
+        (tmp_path / 'sr0').touch(mode=0o644)
+        (tmp_path / 'sr1').touch(mode=0o644)
+        is_block_device.return_value = True
+        assert ripcmd.config.source == str(tmp_path / 'dvd')
+        ripcmd.do_set(f'source {tmp_path}/sr0')
+        assert ripcmd.config.source == str(tmp_path / 'sr0')
+        is_block_device.return_value = False
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'source {tmp_path}/null')
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'source {tmp_path}/foo')
+
+
+def test_complete_set_device(db, with_config, ripcmd, tmp_path):
+    with mock.patch('tvrip.ripcmd.Path.is_block_device') as is_block_device:
+        (tmp_path / 'null').touch(mode=0o644)
+        (tmp_path / 'sr0').touch(mode=0o644)
+        (tmp_path / 'sr1').touch(mode=0o644)
+        is_block_device.return_value = True
+        assert completions(ripcmd, f'set source {tmp_path}/f') == []
+        assert set(completions(ripcmd, f'set source {tmp_path}/s')) == {'/sr0', '/sr1'}
+        is_block_device.return_value = False
+        assert completions(ripcmd, f'set source {tmp_path}/s') == []
+
+
+def test_set_duplicates(db, with_config, ripcmd):
+    assert ripcmd.config.duplicates == 'all'
+    ripcmd.do_set('duplicates first')
+    assert ripcmd.config.duplicates == 'first'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('duplicates foo')
+
+
+def test_complete_set_duplicates(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set duplicates b') == []
+    assert completions(ripcmd, 'set duplicates f') == ['first']
+    assert set(completions(ripcmd, 'set duplicates ')) == {'all', 'first', 'last'}
+
+
+def test_set_dvdnav(db, with_config, ripcmd):
+    assert ripcmd.config.dvdnav
+    ripcmd.do_set('dvdnav off')
+    assert not ripcmd.config.dvdnav
+    with pytest.raises(CmdError):
+        ripcmd.do_set('dvdnav foo')
+
+
+def test_complete_set_dvdnav(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set dvdnav b') == []
+    assert completions(ripcmd, 'set dvdnav f') == ['false']
+    assert completions(ripcmd, 'set dvdnav y') == ['yes']
+    assert set(completions(ripcmd, 'set dvdnav o')) == {'off', 'on'}
+
+
+def test_set_duration(db, with_config, ripcmd):
+    assert ripcmd.config.duration_min == dt.timedelta(minutes=40)
+    assert ripcmd.config.duration_max == dt.timedelta(minutes=50)
+    ripcmd.do_set('duration 25-35')
+    assert ripcmd.config.duration_min == dt.timedelta(minutes=25)
+    assert ripcmd.config.duration_max == dt.timedelta(minutes=35)
+    with pytest.raises(CmdError):
+        ripcmd.do_set('duration 20')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('duration 20-abc')
+
+
+def test_set_video_style(db, with_config, ripcmd):
+    assert ripcmd.config.video_style == 'tv'
+    ripcmd.do_set('video_style anim')
+    assert ripcmd.config.video_style == 'animation'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('video_style noir')
+
+
+def test_complete_set_video_style(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set video_style b') == []
+    assert completions(ripcmd, 'set video_style a') == ['animation']
+    assert set(completions(ripcmd, 'set video_style t')) == {'tv', 'television'}
+
+
+def test_set_langs(db, with_config, ripcmd):
+    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng'}
+    ripcmd.do_set('audio_langs eng fra jpn')
+    ripcmd.session.commit()
+    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng', 'fra', 'jpn'}
+    ripcmd.do_set('audio_langs eng jpn')
+    ripcmd.session.commit()
+    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng', 'jpn'}
+
+
+def test_complete_set_langs(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set audio_langs 1') == []
+    assert completions(ripcmd, 'set audio_langs aa') == ['aar']
+    assert set(completions(ripcmd, 'set audio_langs fra ro')) == {'roh', 'rom', 'ron'}
+
+
+def test_set_audio_mix(db, with_config, ripcmd):
+    assert ripcmd.config.audio_mix == 'dpl2'
+    ripcmd.do_set('audio_mix stereo')
+    assert ripcmd.config.audio_mix == 'stereo'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('audio_mix foo')
+
+
+def test_complete_set_audio_mix(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set audio_mix f') == []
+    assert completions(ripcmd, 'set audio_mix m') == ['mono']
+    assert set(completions(ripcmd, 'set audio_mix s')) == {'stereo', 'surround'}
+
+
+def test_set_subtitle_format(db, with_config, ripcmd):
+    assert ripcmd.config.subtitle_format == 'none'
+    ripcmd.do_set('subtitle_format vobsub')
+    assert ripcmd.config.subtitle_format == 'vobsub'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('subtitle_format foo')
+
+
+def test_complete_set_subtitle_format(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set subtitle_format f') == []
+    assert completions(ripcmd, 'set subtitle_format v') == ['vobsub']
+    assert set(completions(ripcmd, 'set subtitle_format b')) == {'bitmap', 'both'}
+
+
+def test_set_decomb(db, with_config, ripcmd):
+    assert ripcmd.config.decomb == 'off'
+    ripcmd.do_set('decomb auto')
+    assert ripcmd.config.decomb == 'auto'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('decomb foo')
+
+
+def test_complete_set_decomb(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set decomb v') == []
+    assert completions(ripcmd, 'set decomb a') == ['auto']
+    assert set(completions(ripcmd, 'set decomb o')) == {'on', 'off'}
+
+
+def test_set_template(db, with_config, ripcmd):
+    assert ripcmd.config.template == '{program} - {id} - {name}.{ext}'
+    ripcmd.do_set('template {program}_{id}_{name}.{ext}')
+    assert ripcmd.config.template == '{program}_{id}_{name}.{ext}'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('template {foo}.{ext}')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('template {foo')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('template {{now:%k}')
+
+
+def test_set_id_template(db, with_config, ripcmd):
+    assert ripcmd.config.id_template == '{season}x{episode:02d}'
+    ripcmd.do_set('id_template S{season:02d}E{episode:02d}')
+    assert ripcmd.config.id_template == 'S{season:02d}E{episode:02d}'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('id_template {foo}')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('id_template {{season}')
+
+
+def test_set_max_resolution(db, with_config, ripcmd):
+    assert ripcmd.config.width_max == 1920
+    assert ripcmd.config.height_max == 1080
+    ripcmd.do_set('max_resolution 1280x720')
+    assert ripcmd.config.width_max == 1280
+    assert ripcmd.config.height_max == 720
+    with pytest.raises(CmdError):
+        ripcmd.do_set('max_resolution foo')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('max_resolution 10x10')
+
+
+def test_complete_set_max_resolution(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set max_resolution foo') == []
+    assert completions(ripcmd, 'set max_resolution 6') == ['640x480']
+    assert set(completions(ripcmd, 'set max_resolution 1')) == {'1024x576', '1280x720', '1920x1080'}
+
+
+def test_set_output_format(db, with_config, ripcmd):
+    assert ripcmd.config.output_format == 'mp4'
+    ripcmd.do_set('output_format mkv')
+    assert ripcmd.config.output_format == 'mkv'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('output_format foo')

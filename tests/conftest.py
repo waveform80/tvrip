@@ -36,6 +36,9 @@ def with_config(request, db, tmp_path):
     target = tmp_path / 'videos'
     target.mkdir()
     cfg.target = str(target)
+    source = tmp_path / 'dvd'
+    source.touch(mode=0o644)
+    cfg.source = str(source)
     db.add(cfg)
     db.add(database.AudioLanguage(cfg, 'eng'))
     db.add(database.SubtitleLanguage(cfg, 'eng'))
@@ -231,7 +234,7 @@ def foo_disc2(request):
 
 
 @pytest.fixture()
-def drive(request):
+def drive(request, tmp_path):
     def mock_vlc(cmdline, **kwargs):
         path = cmdline[-1]
         match = re.match(r'dvd://(?P<source>[^#]+)(?:#(?P<title>\d+)(?::(?P<chapter>\d+))?)?', path)
@@ -270,7 +273,7 @@ def drive(request):
                 error = "libdvdnav: vm: failed to open/read the DVD"
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr=error)
         source = cmdline[cmdline.index('-i') + 1]
-        if source != '/dev/dvd':
+        if source != str(tmp_path / 'dvd'):
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
         data = proc.disc.copy()
         if '-t' in cmdline:
