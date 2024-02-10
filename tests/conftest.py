@@ -239,18 +239,18 @@ def drive(request, tmp_path):
         path = cmdline[-1]
         match = re.match(r'dvd://(?P<source>[^#]+)(?:#(?P<title>\d+)(?::(?P<chapter>\d+))?)?', path)
         if not match:
-            return mock.Mock(
+            return subprocess.CompletedProcess(
                 args=cmdline, returncode=1, stdout='', stderr='invalid source')
         source = match.group('source')
         if match.group('title'):
             title = int(match.group('title')) - 1
             if not 0 <= title < len(proc.disc['TitleList']):
-                return mock.Mock(
+                return subprocess.CompletedProcess(
                     args=cmdline, returncode=1, stdout='', stderr='bad title')
             if match.group('chapter'):
                 chapter = int(match.group('chapter')) - 1
                 if not 0 <= chapter < len(proc.disc['TitleList'][title]['ChapterList']):
-                    return mock.Mock(
+                    return subprocess.CompletedProcess(
                         args=cmdline, returncode=1, stdout='', stderr='bad chapter')
         return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
 
@@ -262,8 +262,9 @@ def drive(request, tmp_path):
                 target_file.write(source_file.read())
             target_file.write(json.dumps(cmdline))
             target_file.write('\n')
-        return mock.Mock(args=cmdline, returncode=0, stdout='',
-                         stderr='Tagging {target}'.format(target=target))
+        return subprocess.CompletedProcess(
+            args=cmdline, returncode=0,
+            stdout='', stderr='Tagging {target}'.format(target=target))
 
     def mock_handbrake(cmdline, **kwargs):
         if proc.disc is None:
@@ -274,7 +275,8 @@ def drive(request, tmp_path):
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr=error)
         source = cmdline[cmdline.index('-i') + 1]
         if source != str(tmp_path / 'dvd'):
-            return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
+            return subprocess.CompletedProcess(
+                args=cmdline, returncode=0, stdout='', stderr='')
         data = proc.disc.copy()
         if '-t' in cmdline:
             title = int(cmdline[cmdline.index('-t') + 1])
@@ -313,20 +315,24 @@ JSON Title Set: {json}
             stdout = ''
             stderr = 'Ripping to {target}'.format(target=target)
             target.write_text(json.dumps(cmdline) + '\n')
-        return mock.Mock(args=cmdline, returncode=0,
-                         stdout=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(
+            args=cmdline, returncode=0, stdout=stdout, stderr=stderr)
 
     def mock_run(cmdline, **kwargs):
         if cmdline[0] == 'HandBrakeCLI':
-            return mock_handbrake(cmdline, **kwargs)
+            result = mock_handbrake(cmdline, **kwargs)
         elif cmdline[0] == 'vlc':
-            return mock_vlc(cmdline, **kwargs)
+            result = mock_vlc(cmdline, **kwargs)
         elif cmdline[0] == 'AtomicParsley':
-            return mock_atomicparsley(cmdline, **kwargs)
+            result = mock_atomicparsley(cmdline, **kwargs)
         else:
-            return mock.Mock(
+            result = subprocess.CompletedProcess(
                 args=cmdline, returncode=127, stdout='',
                 stderr='Command {cmdline[0]} not found'.format(cmdline=cmdline))
+        if kwargs.get('check') and result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode, cmdline[0], result.stdout, result.stderr)
+        return result
 
     def mock_check_call(cmdline, **kwargs):
         result = mock_run(cmdline, **kwargs)
