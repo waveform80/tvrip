@@ -117,7 +117,7 @@ def test_play_disc(db, with_config, drive, foo_disc1):
     drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config)
-    cmdline = drive.check_call.call_args.args[0]
+    cmdline = drive.run.call_args.args[0]
     assert cmdline[0] == 'vlc'
     assert f'dvd://{with_config.source}' in cmdline
 
@@ -126,7 +126,7 @@ def test_play_disc_with_title(db, with_config, drive, foo_disc1):
     drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config, d.titles[0])
-    cmdline = drive.check_call.call_args.args[0]
+    cmdline = drive.run.call_args.args[0]
     assert cmdline[0] == 'vlc'
     assert f'dvd://{with_config.source}#1' in cmdline
 
@@ -135,7 +135,7 @@ def test_play_disc_with_chapter(db, with_config, drive, foo_disc1):
     drive.disc = foo_disc1
     d = Disc(with_config)
     d.play(with_config, d.titles[0].chapters[0])
-    cmdline = drive.check_call.call_args.args[0]
+    cmdline = drive.run.call_args.args[0]
     assert cmdline[0] == 'vlc'
     assert f'dvd://{with_config.source}#1:1' in cmdline
 
@@ -144,7 +144,7 @@ def test_play_first_title(db, with_config, drive, foo_disc1):
     drive.disc = foo_disc1
     d = Disc(with_config)
     d.titles[0].play(with_config)
-    cmdline = drive.check_call.call_args.args[0]
+    cmdline = drive.run.call_args.args[0]
     assert cmdline[0] == 'vlc'
     assert f'dvd://{with_config.source}#1' in cmdline
 
@@ -153,7 +153,7 @@ def test_play_first_title_first_chapter(db, with_config, drive, foo_disc1):
     drive.disc = foo_disc1
     d = Disc(with_config)
     d.titles[0].chapters[0].play(with_config)
-    cmdline = drive.check_call.call_args.args[0]
+    cmdline = drive.run.call_args.args[0]
     assert cmdline[0] == 'vlc'
     assert f'dvd://{with_config.source}#1:1' in cmdline
 

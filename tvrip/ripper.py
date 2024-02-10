@@ -253,7 +253,7 @@ class Disc:
         else:
             assert False
         cmdline = [config.get_path('vlc'), '--quiet', '--avcodec-hw', 'none', mrl]
-        proc.check_call(cmdline, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
+        proc.run(cmdline, check=True, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
     def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
