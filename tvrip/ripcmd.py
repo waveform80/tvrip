@@ -1370,13 +1370,10 @@ class RipCmd(Cmd):
     def find_program_entry(self, name):
 
         def format_overview(s):
-            if not s:
-                return '-'
-            else:
-                s = s.splitlines()[0]
-                if len(s) > 200:
-                    s = s[:197] + '...'
-                return s
+            s = (s.splitlines() or [''])[0]
+            if len(s) > 200:
+                s = s[:197] + '...'
+            return s
 
         if not self.api:
             raise CmdError('api_key or api_url not configured')
