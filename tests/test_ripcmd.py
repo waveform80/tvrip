@@ -1058,7 +1058,7 @@ def test_do_season(db, with_program, ripcmd, writein):
 
 def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writein):
     ripcmd.config.api_key = 's3cret'
-    ripcmd.config.api_url = 'http://127.0.0.1:8000/'
+    ripcmd.config.api_url = tvdb.url
     ripcmd.set_api()
     ripcmd.session.commit()
 

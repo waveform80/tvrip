@@ -431,7 +431,9 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
 
     def __init__(self, url, key='s3cret'):
-        self.url = url
+        super().__init__(('127.0.0.1', 0), MockTVDBHandler)
+        hostname, port, *other = self.server_address
+        self.url = f'http://{hostname}:{port}/'
         self.key = key
         self.programs = {
             'Up North': {
@@ -471,10 +473,6 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
             },
             'No Seasons': {},
         }
-        p = urlparse(url)
-        if p.scheme != 'http':
-            raise ValueError('Cannot mock anything but basic http')
-        super().__init__((p.hostname, p.port), MockTVDBHandler)
 
 
 @pytest.fixture()
