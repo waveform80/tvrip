@@ -356,7 +356,7 @@ class Disc:
         elif config.decomb == 'auto':
             cmdline.append('-5')
         with (Path(config.temp) / 'tvrip.log').open('a') as log:
-            proc.check_call(cmdline, stdout=log, stderr=log)
+            proc.run(cmdline, check=True, stdout=log, stderr=log)
         # Tag the resulting file
         if config.output_format == 'mp4':
             tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
@@ -378,7 +378,7 @@ class Disc:
                     '--title',        multipart.name(episodes),
                 ]
                 with (Path(config.temp) / 'tvrip.log').open('a') as log:
-                    proc.check_call(cmdline, stdout=log, stderr=log)
+                    proc.run(cmdline, check=True, stdout=log, stderr=log)
                 os.chmod(
                     tmpfile,
                     os.stat(os.path.join(config.target, filename)).st_mode)

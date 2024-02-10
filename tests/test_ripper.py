@@ -172,17 +172,18 @@ def test_rip_with_defaults(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in hb_cmdline
-    assert ['-t', '2'] in hb_cmdline
-    assert ['-d', 'slow'] not in hb_cmdline
-    assert '-5' not in hb_cmdline
-    assert '-s' not in hb_cmdline
-    assert '-c' not in hb_cmdline
-    assert '--no-dvdnav' not in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-t', '2'] in rip_cmdline
+    assert ['-d', 'slow'] not in rip_cmdline
+    assert '-5' not in rip_cmdline
+    assert '-s' not in rip_cmdline
+    assert '-c' not in rip_cmdline
+    assert '--no-dvdnav' not in rip_cmdline
     assert ap_cmdline[0] == 'AtomicParsley'
     assert ['--TVShowName', 'Foo & Bar'] in ap_cmdline
     assert ['--TVEpisodeNum', '1'] in ap_cmdline
@@ -195,11 +196,12 @@ def test_rip_with_deinterlace(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-d', 'slow'] in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-d', 'slow'] in rip_cmdline
 
 
 def test_rip_with_decomb(db, with_config, with_program, drive, foo_disc1):
@@ -209,11 +211,12 @@ def test_rip_with_decomb(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert '-5' in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert '-5' in rip_cmdline
 
 
 def test_rip_with_subtitles(db, with_config, with_program, drive, foo_disc1):
@@ -224,12 +227,13 @@ def test_rip_with_subtitles(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, d.titles[1].subtitle_tracks)
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-s', '1,2,3'] in hb_cmdline
-    assert '--subtitle-default' not in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-s', '1,2,3'] in rip_cmdline
+    assert '--subtitle-default' not in rip_cmdline
 
 
 def test_rip_with_default_subtitles(db, with_config, with_program, drive, foo_disc1):
@@ -240,12 +244,13 @@ def test_rip_with_default_subtitles(db, with_config, with_program, drive, foo_di
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, d.titles[1].subtitle_tracks)
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-s', '1,2,3'] in hb_cmdline
-    assert ['--subtitle-default', '1'] in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-s', '1,2,3'] in rip_cmdline
+    assert ['--subtitle-default', '1'] in rip_cmdline
 
 
 def test_rip_animation(db, with_config, with_program, drive, foo_disc1):
@@ -255,11 +260,12 @@ def test_rip_animation(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, [])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['--encoder-tune', 'animation'] in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['--encoder-tune', 'animation'] in rip_cmdline
 
 
 def test_rip_with_dvdread(db, with_config, with_program, drive, foo_disc1):
@@ -269,11 +275,12 @@ def test_rip_with_dvdread(db, with_config, with_program, drive, foo_disc1):
     d.rip(
         with_config, [with_program.seasons[0].episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert '--no-dvdnav' in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert '--no-dvdnav' in rip_cmdline
 
 
 def test_rip_chapter(db, with_config, with_program, drive, foo_disc1):
@@ -283,13 +290,14 @@ def test_rip_chapter(db, with_config, with_program, drive, foo_disc1):
         with_config, [with_program.seasons[0].episodes[0]], d.titles[0],
         [d.titles[0].audio_tracks[0]], [],
         start_chapter=d.titles[0].chapters[0])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in hb_cmdline
-    assert ['-t', '1'] in hb_cmdline
-    assert ['-c', '1'] in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-t', '1'] in rip_cmdline
+    assert ['-c', '1'] in rip_cmdline
 
 
 def test_rip_chapters(db, with_config, with_program, drive, foo_disc1):
@@ -300,10 +308,11 @@ def test_rip_chapters(db, with_config, with_program, drive, foo_disc1):
         [d.titles[0].audio_tracks[0]], [],
         start_chapter=d.titles[0].chapters[0],
         end_chapter=d.titles[0].chapters[4])
-    assert len(drive.check_call.call_args_list) == 2
-    hb_cmdline = Cmdline(drive.check_call.call_args_list[0].args[0])
-    ap_cmdline = Cmdline(drive.check_call.call_args_list[1].args[0])
-    assert hb_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in hb_cmdline
-    assert ['-t', '1'] in hb_cmdline
-    assert ['-c', '1-5'] in hb_cmdline
+    assert len(drive.run.call_args_list) == 3
+    scan_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
+    rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
+    ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
+    assert rip_cmdline[0] == 'HandBrakeCLI'
+    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-t', '1'] in rip_cmdline
+    assert ['-c', '1-5'] in rip_cmdline
