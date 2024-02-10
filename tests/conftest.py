@@ -449,20 +449,24 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
                 },
 
             },
-            'Foo': {
+            'Foo & Bar': {
                 1: {
                     1: 'Foo',
                     2: 'Bar',
                     3: 'Baz',
                     4: 'Quux',
                     5: 'Xyzzy',
-                    6: 'Foo Bar',
-                    7: 'Foo Bar Baz',
-                    8: 'Octopus!',
                 },
                 2: {
-                    0: 'Temp',
-                    1: None,
+                    1: 'Foo Bar - Part 1',
+                    2: 'Foo Bar - Part 2',
+                    3: 'Foo Baz',
+                    4: 'Foo Quux',
+                },
+                3: {
+                    1: 'Foo for Thought',
+                    2: 'Raising the Bar',
+                    3: 'Baz the Undefeated',
                 },
             },
             'No Seasons': {},

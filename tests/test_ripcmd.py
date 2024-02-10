@@ -13,6 +13,37 @@ from tvrip.ripper import *
 from tvrip.ripcmd import *
 
 
+class Writer(Thread):
+    def __init__(self, pipe):
+        super().__init__(target=self.write, daemon=True)
+        self.pipe = pipe
+        self.stop = Event()
+        self.lines = []
+        self.exc = None
+
+    def write(self):
+        try:
+            poll = select.poll()
+            poll.register(self.pipe, select.POLLOUT)
+            while not self.stop.wait(0.01):
+                if poll.poll(10):
+                    try:
+                        line = self.lines.pop(0)
+                    except IndexError:
+                        pass
+                    else:
+                        self.pipe.write(line)
+        except Exception as exc:
+            self.exc = exc
+
+    def wait(self, timeout=None):
+        self.join(timeout)
+        if self.is_alive():
+            raise RuntimeError('thread failed to stop before timeout')
+        if self.exc is not None:
+            raise self.exc
+
+
 class Reader(Thread):
     def __init__(self, pipe):
         super().__init__(target=self.read, daemon=True)
@@ -102,6 +133,16 @@ def stdout(request, _ripcmd):
 @pytest.fixture()
 def readout(request, stdout):
     thread = Reader(stdout)
+    thread.start()
+    try:
+        yield thread
+    finally:
+        thread.stop.set()
+        thread.wait(10)
+
+@pytest.fixture()
+def writein(request, stdin):
+    thread = Writer(stdin)
     thread.start()
     try:
         yield thread
@@ -825,3 +866,269 @@ def test_set_output_format(db, with_config, ripcmd):
     assert ripcmd.config.output_format == 'mkv'
     with pytest.raises(CmdError):
         ripcmd.do_set('output_format foo')
+
+
+def test_complete_set_output_format(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set output_format foo') == []
+    assert completions(ripcmd, 'set output_format mp') == ['mp4']
+    assert set(completions(ripcmd, 'set output_format m')) == {'mkv', 'mp4'}
+
+
+def test_set_api_key(db, with_config, ripcmd):
+    assert ripcmd.config.api_key == ''
+    ripcmd.do_set('api_key 12345678deadd00d12345678beefface')
+    assert ripcmd.config.api_key == '12345678deadd00d12345678beefface'
+    with pytest.raises(CmdError):
+        ripcmd.do_set('api_key foo')
+    with pytest.raises(CmdError):
+        ripcmd.do_set('api_key 12345678')
+
+
+def test_set_api_url(db, with_config, ripcmd):
+    assert ripcmd.config.api_url == 'https://api.thetvdb.com/'
+    ripcmd.do_set('api_url https://example.com/')
+    assert ripcmd.config.api_url == 'https://example.com/'
+
+
+def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, readout):
+    drive.disc = foo_disc1
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
+
+    assert ripcmd.disc.titles[2].duplicate == 'first'
+    assert ripcmd.disc.titles[3].duplicate == 'last'
+    ripcmd.do_duplicate('3')
+    assert ripcmd.disc.titles[2].duplicate == 'no'
+    assert ripcmd.disc.titles[3].duplicate == 'no'
+
+    ripcmd.do_duplicate('3-5')
+    assert ripcmd.disc.titles[2].duplicate == 'first'
+    assert ripcmd.disc.titles[3].duplicate == 'yes'
+    assert ripcmd.disc.titles[4].duplicate == 'last'
+
+    ripcmd.do_duplicate('1-3')
+    assert ripcmd.disc.titles[0].duplicate == 'first'
+    assert ripcmd.disc.titles[1].duplicate == 'yes'
+    assert ripcmd.disc.titles[2].duplicate == 'last'
+    assert ripcmd.disc.titles[3].duplicate == 'first'
+    assert ripcmd.disc.titles[4].duplicate == 'last'
+
+    assert ripcmd.disc.titles[9].duplicate == 'no'
+    assert ripcmd.disc.titles[10].duplicate == 'no'
+    ripcmd.do_duplicate('10-11')
+    assert ripcmd.disc.titles[9].duplicate == 'first'
+    assert ripcmd.disc.titles[10].duplicate == 'last'
+
+
+def test_do_episode(db, with_program, ripcmd):
+    prog = with_program
+
+    ripcmd.config.program = prog
+    ripcmd.config.season = None
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_episode('delete 4')
+
+    ripcmd.config.season = prog.seasons[1]
+    ripcmd.session.commit()
+    assert len(ripcmd.config.season.episodes) == 4
+    assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
+
+    ripcmd.do_episode('insert 4 Foo Bar Baz')
+    ripcmd.session.commit()
+    assert len(ripcmd.config.season.episodes) == 5
+    assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
+    assert ripcmd.config.season.episodes[4].name == 'Foo Quux'
+
+    ripcmd.do_episode('delete 4')
+    ripcmd.session.commit()
+    assert len(ripcmd.config.season.episodes) == 4
+    assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
+
+    ripcmd.do_episode('update 4 Foo Bar Baz')
+    ripcmd.session.commit()
+    assert len(ripcmd.config.season.episodes) == 4
+    assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
+
+    with pytest.raises(CmdError):
+        ripcmd.do_episode('foo')
+    with pytest.raises(CmdError):
+        ripcmd.do_episode('insert 2')
+    with pytest.raises(CmdError):
+        ripcmd.do_episode('insert two Foo Bar')
+    with pytest.raises(CmdError):
+        ripcmd.do_episode('foo two Foo Bar')
+
+
+def test_do_episodes(db, with_program, ripcmd, writein):
+    prog = with_program
+
+    ripcmd.config.program = prog
+    ripcmd.config.season = None
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_episodes('5')
+
+    ripcmd.config.season = prog.seasons[1]
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_episodes('five')
+    with pytest.raises(CmdError):
+        ripcmd.do_episodes('-5')
+    with pytest.raises(CmdError):
+        ripcmd.do_episodes('1000000000')
+
+    assert [e.name for e in ripcmd.config.season.episodes] == [
+        'Foo Bar - Part 1', 'Foo Bar - Part 2', 'Foo Baz', 'Foo Quux']
+    writein.lines.append('Foo for Thought\n')
+    writein.lines.append('Raising the Bar\n')
+    writein.lines.append('Baz the Magnificent\n')
+    ripcmd.do_episodes('3')
+    ripcmd.session.commit()
+    assert [e.name for e in ripcmd.config.season.episodes] == [
+        'Foo for Thought', 'Raising the Bar', 'Baz the Magnificent']
+
+    writein.lines.append('Foo for Thought\n')
+    writein.lines.append('Raising the Bar\n')
+    writein.lines.append('Baz the Terrible\n')
+    writein.lines.append('\n') # terminate early
+    ripcmd.do_episodes('5')
+    ripcmd.session.commit()
+    assert [e.name for e in ripcmd.config.season.episodes] == [
+        'Foo for Thought', 'Raising the Bar', 'Baz the Terrible']
+
+
+def test_do_episodes_print(db, with_program, ripcmd, readout):
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.session.commit()
+    ripcmd.do_episodes('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == """\
+Episodes for season 1 of program Foo & Bar
+
+╭─────┬───────┬────────╮
+│ Num │ Title │ Ripped │
+╞═════╪═══════╪════════╡
+│ 1   │ Foo   │        │
+│ 2   │ Bar   │        │
+│ 3   │ Baz   │        │
+│ 4   │ Quux  │        │
+│ 5   │ Xyzzy │        │
+╰─────┴───────┴────────╯
+"""
+
+
+def test_do_season(db, with_program, ripcmd, writein):
+    prog = with_program
+
+    ripcmd.config.program = None
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_season('1')
+
+    ripcmd.config.program = prog
+    ripcmd.config.season = prog.seasons[1]
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_season('three')
+    with pytest.raises(CmdError):
+        ripcmd.do_season('-3')
+
+    ripcmd.do_season('1')
+    ripcmd.session.commit()
+    assert ripcmd.config.season == prog.seasons[0]
+
+    writein.lines.append('3\n')
+    writein.lines.append('Foo for Thought\n')
+    writein.lines.append('Raising the Bar\n')
+    writein.lines.append('Baz the Imperfect\n')
+    ripcmd.do_season('3')
+    ripcmd.session.commit()
+    assert ripcmd.config.season.number == 3
+    assert ripcmd.config.season.episodes[0].name == 'Foo for Thought'
+
+    writein.lines.append('0\n')
+    ripcmd.do_season('4')
+    ripcmd.session.commit()
+    assert ripcmd.config.season.number == 4
+    assert len(ripcmd.config.season.episodes) == 0
+
+
+def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writein):
+    ripcmd.config.api_key = 's3cret'
+    ripcmd.config.api_url = 'http://127.0.0.1:8000/'
+    ripcmd.set_api()
+    ripcmd.session.commit()
+
+    assert len(ripcmd.config.program.seasons) == 2
+    writein.lines.append('1\n') # select program 1 from results table
+    ripcmd.do_season('3')
+    assert len(ripcmd.config.program.seasons) == 3
+    ripcmd.session.commit()
+
+    writein.lines.append('1\n') # select program 1 from results table
+    writein.lines.append('0\n') # don't define episodes
+    ripcmd.do_season('4')
+    assert len(ripcmd.config.program.seasons) == 4
+    assert len(ripcmd.config.season.episodes) == 0
+
+
+def test_complete_do_season(db, with_program, ripcmd):
+    assert completions(ripcmd, 'season foo') == []
+    assert set(completions(ripcmd, 'season ')) == {'1', '2'}
+
+
+def test_do_seasons(db, with_program, ripcmd, readout):
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.session.commit()
+    ripcmd.do_seasons('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == """\
+Seasons for program Foo & Bar
+
+╭─────┬──────────┬────────╮
+│ Num │ Episodes │ Ripped │
+╞═════╪══════════╪════════╡
+│ 1   │ 5        │   0.0% │
+│ 2   │ 4        │   0.0% │
+╰─────┴──────────┴────────╯
+"""
+
+
+def test_do_program(db, with_config, ripcmd, writein):
+    with pytest.raises(CmdError):
+        ripcmd.do_program('')
+
+    assert ripcmd.config.program is None
+    writein.lines.append('2\n') # define 2 seasons
+    writein.lines.append('5\n') # define 5 episodes of season 1
+    writein.lines.append('Foo\n')
+    writein.lines.append('Bar\n')
+    writein.lines.append('Baz\n')
+    writein.lines.append('Quux\n')
+    writein.lines.append('Xyzzy\n')
+    writein.lines.append('4\n') # define 4 episodes of season 2
+    writein.lines.append('Foo Bar - Part 1\n')
+    writein.lines.append('Foo Bar - Part 2\n')
+    writein.lines.append('Foo Baz\n')
+    writein.lines.append('Foo Quux\n')
+    ripcmd.do_program('Foo & Bar')
+    assert ripcmd.config.program.name == 'Foo & Bar'
+    assert len(ripcmd.config.program.seasons) == 2
+    assert ripcmd.config.season.number == 1
+    assert len(ripcmd.config.season.episodes) == 5
+
+
+def test_do_program_existing(db, with_program, ripcmd):
+    ripcmd.config.program = None
+    ripcmd.do_program('Foo & Bar')
+    assert ripcmd.config.program.name == 'Foo & Bar'
+
+
+def test_complete_do_program(db, with_program, ripcmd):
+    assert completions(ripcmd, 'program blah') == []
+    assert completions(ripcmd, 'program Fo') == ['Foo & Bar']

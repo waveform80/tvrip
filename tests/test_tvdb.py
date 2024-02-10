@@ -34,10 +34,10 @@ def test_tvdb_episodes(tvdb):
 
 def test_tvdb_episodes_ignore(tvdb):
     api = TVDB(key='s3cret', url=tvdb.url)
-    assert list(api.episodes(api.search('Foo')[0].id, 2)) == []
+    assert list(api.episodes(api.search('Foo & Bar')[0].id, 4)) == []
 
 
 def test_tvdb_episodes_pages(tvdb):
     api = TVDB(key='s3cret', url=tvdb.url)
-    assert list(api.episodes(api.search('Foo')[0].id, 1)) == sorted(
-        tvdb.programs['Foo'][1].items())
+    assert list(api.episodes(api.search('Foo & Bar')[0].id, 1)) == sorted(
+        tvdb.programs['Foo & Bar'][1].items())

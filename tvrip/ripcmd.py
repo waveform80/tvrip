@@ -1173,21 +1173,6 @@ class RipCmd(Cmd):
                 season=season.number,
                 program=season.program.name))
 
-    def create_episodes(self, count, season=None):
-        "Creates the specified number of episodes in the current season"
-        if season is None:
-            season = self.config.season
-        self.pprint('Please enter the names of the episodes. Leave a '
-                    'name blank if you wish to terminate entry early:')
-        self.clear_episodes()
-        for number in range(1, count + 1):
-            name = self.input('{:2d}: '.format(number))
-            if not name:
-                self.pprint('Terminating episode name entry')
-                break
-            episode = Episode(season, number, name)
-            self.session.add(episode)
-
     def do_episodes(self, arg):
         """
         Gets or sets the episodes for the current season.
@@ -1224,6 +1209,19 @@ class RipCmd(Cmd):
             self.episode_map.clear()
         else:
             self.pprint_episodes()
+
+    def create_episodes(self, count):
+        "Creates the specified number of episodes in the current season"
+        self.pprint('Please enter the names of the episodes. Leave a '
+                    'name blank if you wish to terminate entry early:')
+        self.clear_episodes()
+        for number in range(1, count + 1):
+            name = self.input('{:2d}: '.format(number))
+            if not name:
+                self.pprint('Terminating episode name entry')
+                break
+            episode = Episode(self.config.season, number, name)
+            self.session.add(episode)
 
     def do_season(self, arg, program_id=None):
         """
@@ -1272,7 +1270,8 @@ class RipCmd(Cmd):
                     Season
                 ).filter(
                     (Season.program == self.config.program) &
-                    ("SUBSTR(CAST(season AS TEXT), 1, :length) = :season")
+                    sa.sql.text(
+                        "SUBSTR(CAST(seasons.number AS TEXT), 1, :length) = :season")
                 ).params(
                     length=len(text),
                     season=text
