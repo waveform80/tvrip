@@ -393,34 +393,32 @@ class MockTVDBHandler(BaseHTTPRequestHandler):
         self.wfile.write(buf)
 
     def handle_search(self, name):
-        try:
-            self.server.programs[name]
-        except KeyError:
-            result = {'data': []}
-        else:
-            result = {'data': [
+        self.send_json(
+            {'data': [
                 {
-                    'id': name,
-                    'seriesName': name,
+                    'id': key,
+                    'seriesName': key,
                     'firstAired': dt.datetime(
                         2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
                     'status': 'Ended',
-                    'overview': 'A completely made up show',
+                    'overview': data['description'],
                 }
+                for key, data in self.server.programs.items()
+                if name in key
             ]}
-        self.send_json(result)
+        )
 
     def handle_summary(self, name, program):
         self.send_json({
             'data': {
-                'airedSeasons': [str(season) for season in program]
+                'airedSeasons': [str(season) for season in program['seasons']]
             }
         })
 
     def handle_query(self, name, program, query):
         season = int(query['airedSeason'][0])
         page = int(query['page'][0])
-        episodes = sorted(program.get(season, {}).items())
+        episodes = sorted(program['seasons'].get(season, {}).items())
         self.send_json({
             'links': {'last': (len(episodes) // 5) + 1},
             'data': [
@@ -443,41 +441,58 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
         self.key = key
         self.programs = {
             'Up North': {
-                1: {
-                    1: "Free Willy",
-                    2: "Dog Day Afternoon",
-                    3: "Manhunter",
-                    4: "They Shoot Horses, Don't They?",
-                },
-                2: {
-                    1: "Up",
-                    2: "Pole",
-                    3: "Silent",
-                    4: "Two in the Bush",
-                },
+                'description':
+                    "A completely made up show that has absolutely nothing to "
+                    "do with Due South. At all. No, really...",
+                'seasons': {
+                    1: {
+                        1: "Free Willy",
+                        2: "Dog Day Afternoon",
+                        3: "Manhunter",
+                        4: "They Shoot Horses, Don't They?",
+                    },
+                    2: {
+                        1: "Up",
+                        2: "Pole",
+                        3: "Silent",
+                        4: "Two in the Bush",
+                    },
 
+                },
             },
             'Foo & Bar': {
-                1: {
-                    1: 'Foo',
-                    2: 'Bar',
-                    3: 'Baz',
-                    4: 'Quux',
-                    5: 'Xyzzy',
-                },
-                2: {
-                    1: 'Foo Bar - Part 1',
-                    2: 'Foo Bar - Part 2',
-                    3: 'Foo Baz',
-                    4: 'Foo Quux',
-                },
-                3: {
-                    1: 'Foo for Thought',
-                    2: 'Raising the Bar',
-                    3: 'Baz the Undefeated',
+                'description':
+                    "The adventures of Foo and Bar in Xyzzy-land",
+                'seasons': {
+                    1: {
+                        1: 'Foo',
+                        2: 'Bar',
+                        3: 'Baz',
+                        4: 'Quux',
+                        5: 'Xyzzy',
+                    },
+                    2: {
+                        1: 'Foo Bar - Part 1',
+                        2: 'Foo Bar - Part 2',
+                        3: 'Foo Baz',
+                        4: 'Foo Quux',
+                    },
+                    3: {
+                        1: 'Foo for Thought',
+                        2: 'Raising the Bar',
+                        3: 'Baz the Undefeated',
+                    },
                 },
             },
-            'No Seasons': {},
+            'The Worst Show in the World': {
+                'description':
+                    "Honestly ... it hasn't even got any episodes! You may "
+                    "think Galactica 1980 was bad, but at least it had some "
+                    "episodes. And a theme. And writers. Okay, bad ones, but "
+                    "it had some! Alright, that's probably enough waffle for "
+                    "testing purposes.",
+                'seasons': {},
+            },
         }
 
 
