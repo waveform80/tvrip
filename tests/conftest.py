@@ -237,11 +237,18 @@ def foo_disc2(request):
 def drive(request, tmp_path):
     def mock_vlc(cmdline, **kwargs):
         path = cmdline[-1]
-        match = re.match(r'dvd://(?P<source>[^#]+)(?:#(?P<title>\d+)(?::(?P<chapter>\d+))?)?', path)
+        match = re.match(
+            r'dvd://'
+            r'(?P<source>[^#]+)'
+            r'(?:#(?P<title>\d+)(?::(?P<chapter>\d+))?)?',
+            path)
         if not match:
             return subprocess.CompletedProcess(
                 args=cmdline, returncode=1, stdout='', stderr='invalid source')
         source = match.group('source')
+        if source != str(tmp_path / 'dvd'):
+            return subprocess.CompletedProcess(
+                args=cmdline, returncode=1, stdout='', stderr='bad device')
         if match.group('title'):
             title = int(match.group('title')) - 1
             if not 0 <= title < len(proc.disc['TitleList']):
@@ -251,7 +258,13 @@ def drive(request, tmp_path):
                 chapter = int(match.group('chapter')) - 1
                 if not 0 <= chapter < len(proc.disc['TitleList'][title]['ChapterList']):
                     return subprocess.CompletedProcess(
-                        args=cmdline, returncode=1, stdout='', stderr='bad chapter')
+                        args=cmdline, returncode=1,
+                        stdout='', stderr='bad chapter')
+            # Title 9 always fails to read (8 because title is -1 above)
+            if title == 8:
+                return subprocess.CompletedProcess(
+                    args=cmdline, returncode=1,
+                    stdout='', stderr='could not read disc')
         return mock.Mock(args=cmdline, returncode=0, stdout='', stderr='')
 
     def mock_atomicparsley(cmdline, **kwargs):
@@ -269,7 +282,8 @@ def drive(request, tmp_path):
     def mock_handbrake(cmdline, **kwargs):
         if proc.disc is None:
             if '--no-dvdnav' in cmdline:
-                error = "libdvdread: Can't open {source} for reading".format(source=source)
+                error = "libdvdread: Can't open {source} for reading".format(
+                    source=source)
             else:
                 error = "libdvdnav: vm: failed to open/read the DVD"
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr=error)
@@ -280,6 +294,11 @@ def drive(request, tmp_path):
         data = proc.disc.copy()
         if '-t' in cmdline:
             title = int(cmdline[cmdline.index('-t') + 1])
+            # Title 9 always fails
+            if title == 9:
+                return subprocess.CompletedProcess(
+                    args=cmdline, returncode=1,
+                    stdout='', stderr='libdvdnav: vm: failed to open/read the DVD')
             if title != 0:
                 data['TitleList'] = [
                     t for t in data['TitleList']

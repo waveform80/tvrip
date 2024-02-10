@@ -331,8 +331,11 @@ def test_clear_episodes(db, with_program, ripcmd):
 
 
 def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
+    # Can't print before scanning disc, and none is inserted
     with pytest.raises(CmdError):
         ripcmd.pprint_disc()
+
+    # Insert disc and scan it, then check printed output
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
@@ -366,13 +369,18 @@ Disc has 11 titles
 
 
 def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, readout):
+    # Can't print title prior to scan
     with pytest.raises(CmdError):
         ripcmd.pprint_title(None)
+
+    # Insert a blank disc and scan it; printing titles still raises error
     drive.disc = blank_disc
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
     with pytest.raises(CmdError):
         ripcmd.pprint_title(None)
+
+    # Insert a disc with titles and scan it; check title output
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
@@ -444,9 +452,12 @@ def test_pprint_programs(db, with_program, ripcmd, readout):
 
 
 def test_pprint_seasons(db, with_program, ripcmd, readout):
+    # Printing seasons with no program selected is an error
     ripcmd.config.program = None
     with pytest.raises(CmdError):
         ripcmd.pprint_seasons()
+
+    # Select program and try again; check printed output
     ripcmd.config.program = with_program
     ripcmd.pprint_seasons()
     ripcmd.stdout.flush()
@@ -465,6 +476,7 @@ Seasons for program Foo & Bar
 
 
 def test_pprint_seasons_specific(db, with_program, ripcmd, readout):
+    # Same test as above but with season explicitly specified in call
     ripcmd.pprint_seasons(with_program)
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
@@ -482,9 +494,12 @@ Seasons for program Foo & Bar
 
 
 def test_pprint_episodes(db, with_program, ripcmd, readout):
+    # Printing episodes with no season selected is an error
     ripcmd.config.season = None
     with pytest.raises(CmdError):
         ripcmd.pprint_episodes()
+
+    # Select a season and try again; check printed output
     ripcmd.config.season = with_program.seasons[0]
     ripcmd.pprint_episodes()
     ripcmd.stdout.flush()
@@ -506,6 +521,7 @@ Episodes for season 1 of program Foo & Bar
 
 
 def test_pprint_episodes_specific(db, with_program, ripcmd, readout):
+    # Same test as above but with an explicitly specified episode in the call
     ripcmd.pprint_episodes(with_program.seasons[0])
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
@@ -891,6 +907,10 @@ def test_set_api_url(db, with_config, ripcmd):
 
 
 def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, readout):
+    # Test various duplicate scenarios; several cases are tested here including
+    # defining new duplicate tracks where none previously existed, marking
+    # existing duplicates as non-duplicates, and overwriting the edges of an
+    # existing duplicate range with an overlapping definition
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
@@ -923,6 +943,7 @@ def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, readout):
 def test_do_episode(db, with_program, ripcmd):
     prog = with_program
 
+    # Cannot edit episodes without a season
     ripcmd.config.program = prog
     ripcmd.config.season = None
     ripcmd.session.commit()
@@ -934,22 +955,26 @@ def test_do_episode(db, with_program, ripcmd):
     assert len(ripcmd.config.season.episodes) == 4
     assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
 
+    # Test insertion of an episode in the middle of a season
     ripcmd.do_episode('insert 4 Foo Bar Baz')
     ripcmd.session.commit()
     assert len(ripcmd.config.season.episodes) == 5
     assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
     assert ripcmd.config.season.episodes[4].name == 'Foo Quux'
 
+    # Test deletion of the previously inserted episode
     ripcmd.do_episode('delete 4')
     ripcmd.session.commit()
     assert len(ripcmd.config.season.episodes) == 4
     assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
 
+    # Test re-writing an existing episode
     ripcmd.do_episode('update 4 Foo Bar Baz')
     ripcmd.session.commit()
     assert len(ripcmd.config.season.episodes) == 4
     assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
 
+    # Cover various syntax errors
     with pytest.raises(CmdError):
         ripcmd.do_episode('foo')
     with pytest.raises(CmdError):
@@ -963,12 +988,14 @@ def test_do_episode(db, with_program, ripcmd):
 def test_do_episodes(db, with_program, ripcmd, writein):
     prog = with_program
 
+    # Cannot re-define episodes without a season
     ripcmd.config.program = prog
     ripcmd.config.season = None
     ripcmd.session.commit()
     with pytest.raises(CmdError):
         ripcmd.do_episodes('5')
 
+    # Cover various syntax errors
     ripcmd.config.season = prog.seasons[1]
     ripcmd.session.commit()
     with pytest.raises(CmdError):
@@ -978,6 +1005,7 @@ def test_do_episodes(db, with_program, ripcmd, writein):
     with pytest.raises(CmdError):
         ripcmd.do_episodes('1000000000')
 
+    # Test manual re-definition of the episodes in a season
     assert [e.name for e in ripcmd.config.season.episodes] == [
         'Foo Bar - Part 1', 'Foo Bar - Part 2', 'Foo Baz', 'Foo Quux']
     writein.lines.append('Foo for Thought\n')
@@ -988,6 +1016,7 @@ def test_do_episodes(db, with_program, ripcmd, writein):
     assert [e.name for e in ripcmd.config.season.episodes] == [
         'Foo for Thought', 'Raising the Bar', 'Baz the Magnificent']
 
+    # Same test with early termination of episode entry
     writein.lines.append('Foo for Thought\n')
     writein.lines.append('Raising the Bar\n')
     writein.lines.append('Baz the Terrible\n')
@@ -1023,11 +1052,13 @@ Episodes for season 1 of program Foo & Bar
 def test_do_season(db, with_program, ripcmd, writein):
     prog = with_program
 
+    # Selecting season without a program is an error
     ripcmd.config.program = None
     ripcmd.session.commit()
     with pytest.raises(CmdError):
         ripcmd.do_season('1')
 
+    # Cover some syntax errors
     ripcmd.config.program = prog
     ripcmd.config.season = prog.seasons[1]
     ripcmd.session.commit()
@@ -1036,10 +1067,12 @@ def test_do_season(db, with_program, ripcmd, writein):
     with pytest.raises(CmdError):
         ripcmd.do_season('-3')
 
+    # Test selection of an existing season
     ripcmd.do_season('1')
     ripcmd.session.commit()
     assert ripcmd.config.season == prog.seasons[0]
 
+    # Test manual entry of episodes for new season
     writein.lines.append('3\n')
     writein.lines.append('Foo for Thought\n')
     writein.lines.append('Raising the Bar\n')
@@ -1049,6 +1082,7 @@ def test_do_season(db, with_program, ripcmd, writein):
     assert ripcmd.config.season.number == 3
     assert ripcmd.config.season.episodes[0].name == 'Foo for Thought'
 
+    # Test aborting manual entry of new season
     writein.lines.append('0\n')
     ripcmd.do_season('4')
     ripcmd.session.commit()
@@ -1062,12 +1096,15 @@ def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writein):
     ripcmd.set_api()
     ripcmd.session.commit()
 
+    # Test selecting new season from TVDB results
     assert len(ripcmd.config.program.seasons) == 2
     writein.lines.append('1\n') # select program 1 from results table
     ripcmd.do_season('3')
     assert len(ripcmd.config.program.seasons) == 3
     ripcmd.session.commit()
 
+    # Test fallback to manual entry (with abort) after requesting non-existing
+    # season from TVDB
     writein.lines.append('1\n') # select program 1 from results table
     writein.lines.append('0\n') # don't define episodes
     ripcmd.do_season('4')
@@ -1103,6 +1140,8 @@ def test_do_program(db, with_config, ripcmd, writein):
     with pytest.raises(CmdError):
         ripcmd.do_program('')
 
+    # Test manual definition of new program (note fixture is with_config, so
+    # the Foo & Bar program isn't defined)
     assert ripcmd.config.program is None
     writein.lines.append('2\n') # define 2 seasons
     writein.lines.append('5\n') # define 5 episodes of season 1
@@ -1124,11 +1163,345 @@ def test_do_program(db, with_config, ripcmd, writein):
 
 
 def test_do_program_existing(db, with_program, ripcmd):
+    # Test selection of existing program
     ripcmd.config.program = None
     ripcmd.do_program('Foo & Bar')
     assert ripcmd.config.program.name == 'Foo & Bar'
 
 
+def test_do_program_found_in_tvdb(db, with_program, ripcmd, writein, tvdb):
+    # Test selection of new program that exists in TVDB
+    ripcmd.config.api_key = 's3cret'
+    ripcmd.config.api_url = tvdb.url
+    ripcmd.set_api()
+    writein.lines.append('1\n')
+    ripcmd.do_program('Up')
+    assert ripcmd.config.program.name == 'Up North'
+    assert ripcmd.config.season.number == 1
+    assert len(ripcmd.config.program.seasons) == 2
+
+
+def test_do_program_found_ignored(db, with_program, ripcmd, writein, tvdb):
+    # Test ignoring TVDB results and performing manual entry (with abort)
+    ripcmd.config.api_key = 's3cret'
+    ripcmd.config.api_url = tvdb.url
+    ripcmd.set_api()
+    writein.lines.append('0\n')
+    writein.lines.append('0\n')
+    ripcmd.do_program('The Worst')
+    assert ripcmd.config.program.name == 'The Worst'
+    assert ripcmd.config.season is None
+    assert len(ripcmd.config.program.seasons) == 0
+
+
+def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writein, tvdb):
+    # Test selecting something not found in TVDB
+    ripcmd.config.api_key = 's3cret'
+    ripcmd.config.api_url = tvdb.url
+    ripcmd.set_api()
+    writein.lines.append('0\n')
+    ripcmd.do_program('Something New')
+    assert ripcmd.config.program.name == 'Something New'
+    assert ripcmd.config.season is None
+    assert len(ripcmd.config.program.seasons) == 0
+
+
 def test_complete_do_program(db, with_program, ripcmd):
     assert completions(ripcmd, 'program blah') == []
     assert completions(ripcmd, 'program Fo') == ['Foo & Bar']
+
+
+def test_do_programs(db, with_program, ripcmd, readout):
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.session.commit()
+    ripcmd.do_programs('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == """\
+╭───────────┬─────────┬──────────┬────────╮
+│ Program   │ Seasons │ Episodes │ Ripped │
+╞═══════════╪═════════╪══════════╪════════╡
+│ Foo & Bar │ 2       │ 9        │   0.0% │
+╰───────────┴─────────┴──────────┴────────╯
+"""
+
+
+def test_do_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
+    drive.disc = foo_disc1
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
+    ripcmd.do_disc('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == """\
+Disc type:
+Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
+Disc serial: 123456789
+Disc name: FOO AND BAR
+Disc has 11 titles
+
+╭───────┬──────────┬────────────────┬─────┬─────────╮
+│ Title │ Chapters │ Duration       │ Dup │ Audio   │
+╞═══════╪══════════╪════════════════╪═════╪═════════╡
+│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
+│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
+│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
+│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
+│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
+│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
+│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
+│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
+│ 9     │ 2        │ 0:05:03        │     │ eng eng │
+│ 10    │ 2        │ 0:07:01        │     │ eng eng │
+│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯
+"""
+
+
+def test_do_title(db, with_config, drive, foo_disc1, ripcmd, readout):
+    drive.disc = foo_disc1
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
+    ripcmd.do_title('1')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == """\
+Title 1, duration: 2:31:26.000006, duplicate: no
+
+╭─────────┬─────────────────┬─────────────────┬────────────────╮
+│ Chapter │ Start           │ Finish          │ Duration       │
+╞═════════╪═════════════════╪═════════════════╪════════════════╡
+│ 1       │ 00:00:00        │ 00:07:08.571429 │ 0:07:08.571429 │
+│ 2       │ 00:07:08.571429 │ 00:14:17.142858 │ 0:07:08.571429 │
+│ 3       │ 00:14:17.142858 │ 00:21:25.714287 │ 0:07:08.571429 │
+│ 4       │ 00:21:25.714287 │ 00:28:34.285716 │ 0:07:08.571429 │
+│ 5       │ 00:28:34.285716 │ 00:30:00.000002 │ 0:01:25.714286 │
+│ 6       │ 00:30:00.000002 │ 00:41:25.714288 │ 0:11:25.714286 │
+│ 7       │ 00:41:25.714288 │ 00:51:25.714288 │ 0:10:00        │
+│ 8       │ 00:51:25.714288 │ 00:57:08.571431 │ 0:05:42.857143 │
+│ 9       │ 00:57:08.571431 │ 00:58:34.285717 │ 0:01:25.714286 │
+│ 10      │ 00:58:34.285717 │ 01:00:00.000003 │ 0:01:25.714286 │
+│ 11      │ 01:00:00.000003 │ 01:08:35.714289 │ 0:08:35.714286 │
+│ 12      │ 01:08:35.714289 │ 01:20:03.333337 │ 0:11:27.619048 │
+│ 13      │ 01:20:03.333337 │ 01:25:47.142861 │ 0:05:43.809524 │
+│ 14      │ 01:25:47.142861 │ 01:28:39.047623 │ 0:02:51.904762 │
+│ 15      │ 01:28:39.047623 │ 01:30:05.000004 │ 0:01:25.952381 │
+│ 16      │ 01:30:05.000004 │ 01:38:39.571433 │ 0:08:34.571429 │
+│ 17      │ 01:38:39.571433 │ 01:47:14.142862 │ 0:08:34.571429 │
+│ 18      │ 01:47:14.142862 │ 01:58:40.238100 │ 0:11:26.095238 │
+│ 19      │ 01:58:40.238100 │ 02:00:06.000005 │ 0:01:25.761905 │
+│ 20      │ 02:00:06.000005 │ 02:12:02.190481 │ 0:11:56.190476 │
+│ 21      │ 02:12:02.190481 │ 02:15:01.238100 │ 0:02:59.047619 │
+│ 22      │ 02:15:01.238100 │ 02:22:28.857148 │ 0:07:27.619048 │
+│ 23      │ 02:22:28.857148 │ 02:29:56.476196 │ 0:07:27.619048 │
+│ 24      │ 02:29:56.476196 │ 02:31:26.000006 │ 0:01:29.523810 │
+╰─────────┴─────────────────┴─────────────────┴────────────────╯
+
+╭───────┬──────┬─────────┬──────────┬────────┬──────╮
+│ Audio │ Lang │ Name    │ Encoding │ Mix    │ Best │
+╞═══════╪══════╪═════════╪══════════╪════════╪══════╡
+│ 1     │ eng  │ English │ ac3      │ stereo │ ✓    │
+│ 2     │ eng  │ English │ ac3      │ stereo │      │
+╰───────┴──────┴─────────┴──────────┴────────┴──────╯
+
+╭──────────┬──────┬──────────────────────────┬────────┬──────╮
+│ Subtitle │ Lang │ Name                     │ Format │ Best │
+╞══════════╪══════╪══════════════════════════╪════════╪══════╡
+│ 1        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │ ✓    │
+│ 2        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │      │
+│ 3        │ fra  │ Francais (16:9) [VOBSUB] │ vobsub │      │
+╰──────────┴──────┴──────────────────────────┴────────┴──────╯
+"""
+    with pytest.raises(CmdError):
+        ripcmd.do_title('')
+
+
+def test_do_play(db, with_config, drive, foo_disc1, ripcmd):
+    with pytest.raises(CmdError):
+        ripcmd.do_play('')
+
+    drive.disc = foo_disc1
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
+
+    ripcmd.do_play('')
+    cmdline = drive.run.call_args.args[0]
+    assert cmdline[0] == 'vlc'
+    assert f'dvd://{with_config.source}' in cmdline
+
+    ripcmd.do_play('1')
+    cmdline = drive.run.call_args.args[0]
+    assert cmdline[0] == 'vlc'
+    assert f'dvd://{with_config.source}#1' in cmdline
+
+    with pytest.raises(CmdError):
+        # Title 9 is defined as one that plays badly in the drive mock
+        ripcmd.do_play('9')
+
+
+def test_do_scan_no_source(db, with_config, ripcmd):
+    ripcmd.config.source = ''
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_scan('')
+
+
+def test_do_scan_no_duration(db, with_config, ripcmd):
+    ripcmd.config.duration_min = dt.timedelta(0)
+    ripcmd.config.duration_max = dt.timedelta(0)
+    ripcmd.session.commit()
+    with pytest.raises(CmdError):
+        ripcmd.do_scan('')
+
+
+def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, readout):
+    drive.disc = foo_disc1
+    ripcmd.do_scan('1')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == f"""\
+Scanning disc in {tmp_path}/dvd
+Disc type:
+Disc identifier: $H1$6be864bc30cf66e5acb5adf3730fc60e2b4daa83
+Disc serial: 123456789
+Disc name: FOO AND BAR
+Disc has 1 titles
+
+╭───────┬──────────┬────────────────┬─────┬─────────╮
+│ Title │ Chapters │ Duration       │ Dup │ Audio   │
+╞═══════╪══════════╪════════════════╪═════╪═════════╡
+│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯
+"""
+
+
+def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, readout):
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert ''.join(readout.lines) == f"""\
+Scanning disc in {tmp_path}/dvd
+Disc type:
+Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
+Disc serial: 123456789
+Disc name: FOO AND BAR
+Disc has 11 titles
+
+╭───────┬──────────┬────────────────┬─────┬─────────╮
+│ Title │ Chapters │ Duration       │ Dup │ Audio   │
+╞═══════╪══════════╪════════════════╪═════╪═════════╡
+│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
+│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
+│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
+│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
+│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
+│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
+│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
+│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
+│ 9     │ 2        │ 0:05:03        │     │ eng eng │
+│ 10    │ 2        │ 0:07:01        │     │ eng eng │
+│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯
+"""
+
+
+def test_do_scan_bad_title(db, with_config, drive, foo_disc1, ripcmd):
+    drive.disc = foo_disc1
+    with pytest.raises(CmdError):
+        ripcmd.do_scan('9')
+
+
+def test_do_scan_already_ripped_title(db, with_program, drive, foo_disc1, ripcmd):
+    # Simulate already having ripped the first three episodes from this disc
+    season = ripcmd.config.season
+    for i in range(3):
+        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+        season.episodes[i].disc_title = i + 2
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    # After the scan the pre-ripped episodes are already mapped to their
+    # corresponding titles
+    assert len(ripcmd.episode_map) == 3
+    assert {e.number for e in ripcmd.episode_map.keys()} == {1, 2, 3}
+    assert {t.number for t in ripcmd.episode_map.values()} == {2, 3, 4}
+
+
+def test_do_scan_already_ripped_chapters(db, with_program, drive, foo_disc1, ripcmd):
+    # Simulate already having ripped the first three episodes from this disc
+    season = ripcmd.config.season
+    for i in range(3):
+        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+        season.episodes[i].disc_title = 1
+        season.episodes[i].start_chapter = (i * 2) + 1
+        season.episodes[i].end_chapter = (i * 2) + 2
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    # After the scan the pre-ripped episodes are already mapped to their
+    # corresponding chapters
+    assert len(ripcmd.episode_map) == 3
+    assert {e.number for e in ripcmd.episode_map.keys()} == {1, 2, 3}
+    assert {
+        (start.number, finish.number)
+        for start, finish in ripcmd.episode_map.values()
+    } == {(1, 2), (3, 4), (5, 6)}
+
+
+def test_do_scan_ripped_title_missing(db, with_program, drive, foo_disc1, ripcmd, readout):
+    # Simulate having ripped a title that doesn't exist
+    season = ripcmd.config.season
+    season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+    season.episodes[0].disc_title = 12
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    assert len(ripcmd.episode_map) == 0
+    assert 'Warning: previously ripped title 12 not found' in ''.join(readout.lines)
+
+
+def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, readout):
+    # Simulate having ripped a chapter that doesn't exist
+    season = ripcmd.config.season
+    season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+    season.episodes[0].disc_title = 1
+    season.episodes[0].start_chapter = 24
+    season.episodes[0].end_chapter = 26
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    ripcmd.stdout.flush()
+    ripcmd.stdout.close()
+    readout.wait(10)
+    # After the scan the pre-ripped episodes are already mapped
+    assert len(ripcmd.episode_map) == 0
+    assert 'Warning: previously ripped chapters 24, 26 not found' in ''.join(readout.lines)
+
+
+def test_do_automap_default(db, with_program, drive, foo_disc1, ripcmd):
+    ripcmd.config.duration_min = dt.timedelta(minutes=29)
+    ripcmd.config.duration_max = dt.timedelta(minutes=31)
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    assert not ripcmd.episode_map
+    ripcmd.do_scan('')
+    ripcmd.do_automap('')
+    assert {
+        (episode.number, title.number)
+        for episode, title in ripcmd.episode_map.items()
+    } == {(1, 2), (2, 3), (3, 4), (4, 5), (5, 6)}
