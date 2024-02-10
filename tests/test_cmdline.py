@@ -142,7 +142,7 @@ def test_raw_input(cmd, stdout, term_size):
         assert cmd.input('Give me a name: ') == 'foo'
         cmd.stdout.close()
         assert stdout.read() == ''
-        assert my_input.called_with('Give me a name: ')
+        assert my_input.call_args.args == ('Give me a name: ',)
         assert readline.remove_history_item.called
 
 
