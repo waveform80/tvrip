@@ -334,16 +334,9 @@ JSON Title Set: {json}
                 result.returncode, cmdline[0], result.stdout, result.stderr)
         return result
 
-    def mock_check_call(cmdline, **kwargs):
-        result = mock_run(cmdline, **kwargs)
-        if result.returncode != 0:
-            raise subprocess.CalledProcessError(
-                result.returncode, cmdline[0], result.stdout, result.stderr)
-
     with mock.patch('tvrip.ripper.proc') as proc:
         proc.disc = None
         proc.run.side_effect = mock_run
-        proc.check_call.side_effect = mock_check_call
         yield proc
 
 
