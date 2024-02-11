@@ -1,11 +1,14 @@
 import io
 import os
-import select
+import re
+import queue
+import socket
+import selectors
 import datetime as dt
 from pathlib import Path
 from unittest import mock
 from contextlib import closing, contextmanager
-from threading import Thread, Event
+from threading import Thread
 
 import pytest
 
@@ -15,68 +18,97 @@ from tvrip.ripcmd import *
 
 class Writer(Thread):
     def __init__(self, pipe):
-        super().__init__(target=self.write, daemon=True)
-        self.pipe = pipe
-        self.stop = Event()
-        self.lines = []
-        self.exc = None
+        super().__init__(daemon=True)
+        self._pipe = pipe
+        self._stop_r, self._stop_w = socket.socketpair()
+        self._buf = queue.Queue()
+        self._exc = None
 
-    def write(self):
-        try:
-            poll = select.poll()
-            poll.register(self.pipe, select.POLLOUT)
-            while not self.stop.wait(0.01):
-                if poll.poll(10):
-                    try:
-                        line = self.lines.pop(0)
-                    except IndexError:
-                        pass
-                    else:
-                        self.pipe.write(line)
-                else:
-                    raise RuntimeError('waited excessive time for input')
-        except Exception as exc:
-            self.exc = exc
-
-    def wait(self, timeout=None):
-        self.join(timeout)
+    def stop(self, timeout=10):
+        self._stop_w.send(b'\0')
+        self.join(timeout=timeout)
         if self.is_alive():
             raise RuntimeError('thread failed to stop before timeout')
-        if self.exc is not None:
-            raise self.exc
+        if self._exc is not None:
+            raise self._exc
+
+    def write(self, s):
+        self._buf.put(s)
+
+    def run(self):
+        try:
+            sel = selectors.DefaultSelector()
+            sel.register(self._stop_r, selectors.EVENT_READ)
+            sel.register(self._pipe, selectors.EVENT_WRITE)
+            while True:
+                ready = sel.select(10)
+                if not ready:
+                    # No test should ever be waiting 10 seconds for anything
+                    raise RuntimeError('waited excessive time for input')
+                for key, event in ready:
+                    if key.fileobj == self._stop_r:
+                        self._stop_r.recv(1)
+                        return
+                    try:
+                        self._pipe.write(self._buf.get(block=False))
+                    except queue.Empty:
+                        pass
+        except Exception as exc:
+            self._exc = exc
 
 
 class Reader(Thread):
     def __init__(self, pipe):
-        super().__init__(target=self.read, daemon=True)
-        self.pipe = pipe
-        self.stop = Event()
-        self.lines = []
-        self.exc = None
+        super().__init__(daemon=True)
+        self._pipe = pipe
+        self._stop_r, self._stop_w = socket.socketpair()
+        self._buf = queue.Queue()
+        self._exc = None
 
-    def read(self):
-        try:
-            poll = select.poll()
-            poll.register(self.pipe, select.POLLIN)
-            while not self.stop.wait(0):
-                if poll.poll(10):
-                    line = self.pipe.readline()
-                    if not line:
-                        break
-                    self.lines.append(line)
-                else:
-                    # No test should ever wait 10 seconds for output; probably
-                    # means something's awaiting input which it'll never get
-                    raise RuntimeError('waited excessive time for output')
-        except Exception as exc:
-            self.exc = exc
-
-    def wait(self, timeout=None):
-        self.join(timeout)
+    def stop(self, timeout=10):
+        if self.is_alive():
+            self._stop_w.send(b'\0')
+        self.join(timeout=timeout)
         if self.is_alive():
             raise RuntimeError('thread failed to stop before timeout')
-        if self.exc is not None:
-            raise self.exc
+        if self._exc is not None:
+            raise self._exc
+
+    def read(self, timeout=10):
+        return self._buf.get(timeout=timeout)
+
+    def read_all(self, timeout=10):
+        # Assumes output's been closed and waits for EOF
+        self.join(timeout=timeout)
+        if self.is_alive():
+            raise RuntimeError('waited excessive time for EOF')
+        while True:
+            try:
+                yield self._buf.get(block=False)
+            except queue.Empty:
+                break
+
+    def run(self):
+        try:
+            sel = selectors.DefaultSelector()
+            sel.register(self._stop_r, selectors.EVENT_READ)
+            sel.register(self._pipe, selectors.EVENT_READ)
+            while True:
+                ready = sel.select(10)
+                if not ready:
+                    # No test should ever be waiting 10 seconds for anything
+                    raise RuntimeError('waited excessive time for output')
+                for key, event in ready:
+                    if key.fileobj == self._stop_r:
+                        self._stop_r.recv(1)
+                        return
+                    line = self._pipe.readline()
+                    if not line:
+                        # Output's been closed
+                        return
+                    self._buf.put(line)
+        except Exception as exc:
+            self._exc = exc
 
 
 @contextmanager
@@ -137,24 +169,22 @@ def stdout(request, _ripcmd):
     yield stdout
 
 @pytest.fixture()
-def readout(request, stdout):
+def reader(request, stdout):
     thread = Reader(stdout)
     thread.start()
     try:
         yield thread
     finally:
-        thread.stop.set()
-        thread.wait(10)
+        thread.stop()
 
 @pytest.fixture()
-def writein(request, stdin):
+def writer(request, stdin):
     thread = Writer(stdin)
     thread.start()
     try:
         yield thread
     finally:
-        thread.stop.set()
-        thread.wait(10)
+        thread.stop()
 
 
 def test_new_init_db(db, ripcmd):
@@ -336,7 +366,7 @@ def test_clear_episodes(db, with_program, ripcmd):
     assert not ripcmd.config.season.episodes
 
 
-def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
+def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     # Can't print before scanning disc, and none is inserted
     with pytest.raises(CmdError):
         ripcmd.pprint_disc()
@@ -348,8 +378,7 @@ def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
     ripcmd.pprint_disc()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
@@ -374,7 +403,7 @@ Disc has 11 titles
 """
 
 
-def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, readout):
+def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, reader):
     # Can't print title prior to scan
     with pytest.raises(CmdError):
         ripcmd.pprint_title(None)
@@ -393,8 +422,7 @@ def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, rea
     ripcmd.pprint_title(ripcmd.disc.titles[0])
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭─────────┬─────────────────┬─────────────────┬────────────────╮
@@ -443,12 +471,11 @@ Title 1, duration: 2:31:26.000006, duplicate: no
 """
 
 
-def test_pprint_programs(db, with_program, ripcmd, readout):
+def test_pprint_programs(db, with_program, ripcmd, reader):
     ripcmd.pprint_programs()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
 ╞═══════════╪═════════╪══════════╪════════╡
@@ -457,7 +484,7 @@ def test_pprint_programs(db, with_program, ripcmd, readout):
 """
 
 
-def test_pprint_seasons(db, with_program, ripcmd, readout):
+def test_pprint_seasons(db, with_program, ripcmd, reader):
     # Printing seasons with no program selected is an error
     ripcmd.config.program = None
     with pytest.raises(CmdError):
@@ -468,8 +495,7 @@ def test_pprint_seasons(db, with_program, ripcmd, readout):
     ripcmd.pprint_seasons()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
@@ -481,13 +507,12 @@ Seasons for program Foo & Bar
 """
 
 
-def test_pprint_seasons_specific(db, with_program, ripcmd, readout):
+def test_pprint_seasons_specific(db, with_program, ripcmd, reader):
     # Same test as above but with season explicitly specified in call
     ripcmd.pprint_seasons(with_program)
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
@@ -499,7 +524,7 @@ Seasons for program Foo & Bar
 """
 
 
-def test_pprint_episodes(db, with_program, ripcmd, readout):
+def test_pprint_episodes(db, with_program, ripcmd, reader):
     # Printing episodes with no season selected is an error
     ripcmd.config.season = None
     with pytest.raises(CmdError):
@@ -510,8 +535,7 @@ def test_pprint_episodes(db, with_program, ripcmd, readout):
     ripcmd.pprint_episodes()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
@@ -526,13 +550,12 @@ Episodes for season 1 of program Foo & Bar
 """
 
 
-def test_pprint_episodes_specific(db, with_program, ripcmd, readout):
+def test_pprint_episodes_specific(db, with_program, ripcmd, reader):
     # Same test as above but with an explicitly specified episode in the call
     ripcmd.pprint_episodes(with_program.seasons[0])
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
@@ -547,12 +570,11 @@ Episodes for season 1 of program Foo & Bar
 """
 
 
-def test_do_config(db, with_program, ripcmd, readout, tmp_path):
+def test_do_config(db, with_program, ripcmd, reader, tmp_path):
     ripcmd.do_config()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == f"""\
+    assert ''.join(reader.read_all()) == f"""\
 External Utility Paths:
 
 atomicparsley    = AtomicParsley
@@ -606,12 +628,11 @@ def test_complete_set(ripcmd):
     assert completions(ripcmd, 'set template foo') is None
 
 
-def test_do_help(ripcmd, readout):
+def test_do_help(ripcmd, reader):
     ripcmd.do_help('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 ╭───────────┬────────────────────────────────────────────────────────────────────────────────────╮
 │ Command   │ Description                                                                        │
 ╞═══════════╪════════════════════════════════════════════════════════════════════════════════════╡
@@ -641,14 +662,13 @@ def test_do_help(ripcmd, readout):
 """
 
 
-def test_do_help_config(ripcmd, readout):
+def test_do_help_config(ripcmd, reader):
     with pytest.raises(CmdError):
         ripcmd.do_help('foo')
     ripcmd.do_help('duplicates')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 This configuration option can be set to "all", "first", or "last". When "all", duplicate titles
 will be treated individually and will all be considered for auto-mapping. When "first" only the
 first of a set of duplicates will be considered for auto-mapping, and conversely when "last" only
@@ -912,7 +932,7 @@ def test_set_api_url(db, with_config, ripcmd):
     assert ripcmd.config.api_url == 'https://example.com/'
 
 
-def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, readout):
+def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, reader):
     # Test various duplicate scenarios; several cases are tested here including
     # defining new duplicate tracks where none previously existed, marking
     # existing duplicates as non-duplicates, and overwriting the edges of an
@@ -991,7 +1011,7 @@ def test_do_episode(db, with_program, ripcmd):
         ripcmd.do_episode('foo two Foo Bar')
 
 
-def test_do_episodes(db, with_program, ripcmd, writein):
+def test_do_episodes(db, with_program, ripcmd, writer):
     prog = with_program
 
     # Cannot re-define episodes without a season
@@ -1014,33 +1034,32 @@ def test_do_episodes(db, with_program, ripcmd, writein):
     # Test manual re-definition of the episodes in a season
     assert [e.name for e in ripcmd.config.season.episodes] == [
         'Foo Bar - Part 1', 'Foo Bar - Part 2', 'Foo Baz', 'Foo Quux']
-    writein.lines.append('Foo for Thought\n')
-    writein.lines.append('Raising the Bar\n')
-    writein.lines.append('Baz the Magnificent\n')
+    writer.write('Foo for Thought\n')
+    writer.write('Raising the Bar\n')
+    writer.write('Baz the Magnificent\n')
     ripcmd.do_episodes('3')
     ripcmd.session.commit()
     assert [e.name for e in ripcmd.config.season.episodes] == [
         'Foo for Thought', 'Raising the Bar', 'Baz the Magnificent']
 
     # Same test with early termination of episode entry
-    writein.lines.append('Foo for Thought\n')
-    writein.lines.append('Raising the Bar\n')
-    writein.lines.append('Baz the Terrible\n')
-    writein.lines.append('\n') # terminate early
+    writer.write('Foo for Thought\n')
+    writer.write('Raising the Bar\n')
+    writer.write('Baz the Terrible\n')
+    writer.write('\n') # terminate early
     ripcmd.do_episodes('5')
     ripcmd.session.commit()
     assert [e.name for e in ripcmd.config.season.episodes] == [
         'Foo for Thought', 'Raising the Bar', 'Baz the Terrible']
 
 
-def test_do_episodes_print(db, with_program, ripcmd, readout):
+def test_do_episodes_print(db, with_program, ripcmd, reader):
     ripcmd.config.season = with_program.seasons[0]
     ripcmd.session.commit()
     ripcmd.do_episodes('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
@@ -1055,7 +1074,7 @@ Episodes for season 1 of program Foo & Bar
 """
 
 
-def test_do_season(db, with_program, ripcmd, writein):
+def test_do_season(db, with_program, ripcmd, writer):
     prog = with_program
 
     # Selecting season without a program is an error
@@ -1079,24 +1098,24 @@ def test_do_season(db, with_program, ripcmd, writein):
     assert ripcmd.config.season == prog.seasons[0]
 
     # Test manual entry of episodes for new season
-    writein.lines.append('3\n')
-    writein.lines.append('Foo for Thought\n')
-    writein.lines.append('Raising the Bar\n')
-    writein.lines.append('Baz the Imperfect\n')
+    writer.write('3\n')
+    writer.write('Foo for Thought\n')
+    writer.write('Raising the Bar\n')
+    writer.write('Baz the Imperfect\n')
     ripcmd.do_season('3')
     ripcmd.session.commit()
     assert ripcmd.config.season.number == 3
     assert ripcmd.config.season.episodes[0].name == 'Foo for Thought'
 
     # Test aborting manual entry of new season
-    writein.lines.append('0\n')
+    writer.write('0\n')
     ripcmd.do_season('4')
     ripcmd.session.commit()
     assert ripcmd.config.season.number == 4
     assert len(ripcmd.config.season.episodes) == 0
 
 
-def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writein):
+def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writer):
     ripcmd.config.api_key = 's3cret'
     ripcmd.config.api_url = tvdb.url
     ripcmd.set_api()
@@ -1104,15 +1123,15 @@ def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writein):
 
     # Test selecting new season from TVDB results
     assert len(ripcmd.config.program.seasons) == 2
-    writein.lines.append('1\n') # select program 1 from results table
+    writer.write('1\n') # select program 1 from results table
     ripcmd.do_season('3')
     assert len(ripcmd.config.program.seasons) == 3
     ripcmd.session.commit()
 
     # Test fallback to manual entry (with abort) after requesting non-existing
     # season from TVDB
-    writein.lines.append('1\n') # select program 1 from results table
-    writein.lines.append('0\n') # don't define episodes
+    writer.write('1\n') # select program 1 from results table
+    writer.write('0\n') # don't define episodes
     ripcmd.do_season('4')
     assert len(ripcmd.config.program.seasons) == 4
     assert len(ripcmd.config.season.episodes) == 0
@@ -1123,14 +1142,13 @@ def test_complete_do_season(db, with_program, ripcmd):
     assert set(completions(ripcmd, 'season ')) == {'1', '2'}
 
 
-def test_do_seasons(db, with_program, ripcmd, readout):
+def test_do_seasons(db, with_program, ripcmd, reader):
     ripcmd.config.season = with_program.seasons[0]
     ripcmd.session.commit()
     ripcmd.do_seasons('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
@@ -1142,25 +1160,25 @@ Seasons for program Foo & Bar
 """
 
 
-def test_do_program(db, with_config, ripcmd, writein):
+def test_do_program(db, with_config, ripcmd, writer):
     with pytest.raises(CmdError):
         ripcmd.do_program('')
 
     # Test manual definition of new program (note fixture is with_config, so
     # the Foo & Bar program isn't defined)
     assert ripcmd.config.program is None
-    writein.lines.append('2\n') # define 2 seasons
-    writein.lines.append('5\n') # define 5 episodes of season 1
-    writein.lines.append('Foo\n')
-    writein.lines.append('Bar\n')
-    writein.lines.append('Baz\n')
-    writein.lines.append('Quux\n')
-    writein.lines.append('Xyzzy\n')
-    writein.lines.append('4\n') # define 4 episodes of season 2
-    writein.lines.append('Foo Bar - Part 1\n')
-    writein.lines.append('Foo Bar - Part 2\n')
-    writein.lines.append('Foo Baz\n')
-    writein.lines.append('Foo Quux\n')
+    writer.write('2\n') # define 2 seasons
+    writer.write('5\n') # define 5 episodes of season 1
+    writer.write('Foo\n')
+    writer.write('Bar\n')
+    writer.write('Baz\n')
+    writer.write('Quux\n')
+    writer.write('Xyzzy\n')
+    writer.write('4\n') # define 4 episodes of season 2
+    writer.write('Foo Bar - Part 1\n')
+    writer.write('Foo Bar - Part 2\n')
+    writer.write('Foo Baz\n')
+    writer.write('Foo Quux\n')
     ripcmd.do_program('Foo & Bar')
     assert ripcmd.config.program.name == 'Foo & Bar'
     assert len(ripcmd.config.program.seasons) == 2
@@ -1175,37 +1193,37 @@ def test_do_program_existing(db, with_program, ripcmd):
     assert ripcmd.config.program.name == 'Foo & Bar'
 
 
-def test_do_program_found_in_tvdb(db, with_program, ripcmd, writein, tvdb):
+def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
     # Test selection of new program that exists in TVDB
     ripcmd.config.api_key = 's3cret'
     ripcmd.config.api_url = tvdb.url
     ripcmd.set_api()
-    writein.lines.append('1\n')
+    writer.write('1\n')
     ripcmd.do_program('Up')
     assert ripcmd.config.program.name == 'Up North'
     assert ripcmd.config.season.number == 1
     assert len(ripcmd.config.program.seasons) == 2
 
 
-def test_do_program_found_ignored(db, with_program, ripcmd, writein, tvdb):
+def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdb):
     # Test ignoring TVDB results and performing manual entry (with abort)
     ripcmd.config.api_key = 's3cret'
     ripcmd.config.api_url = tvdb.url
     ripcmd.set_api()
-    writein.lines.append('0\n')
-    writein.lines.append('0\n')
+    writer.write('0\n')
+    writer.write('0\n')
     ripcmd.do_program('The Worst')
     assert ripcmd.config.program.name == 'The Worst'
     assert ripcmd.config.season is None
     assert len(ripcmd.config.program.seasons) == 0
 
 
-def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writein, tvdb):
+def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
     # Test selecting something not found in TVDB
     ripcmd.config.api_key = 's3cret'
     ripcmd.config.api_url = tvdb.url
     ripcmd.set_api()
-    writein.lines.append('0\n')
+    writer.write('0\n')
     ripcmd.do_program('Something New')
     assert ripcmd.config.program.name == 'Something New'
     assert ripcmd.config.season is None
@@ -1217,14 +1235,13 @@ def test_complete_do_program(db, with_program, ripcmd):
     assert completions(ripcmd, 'program Fo') == ['Foo & Bar']
 
 
-def test_do_programs(db, with_program, ripcmd, readout):
+def test_do_programs(db, with_program, ripcmd, reader):
     ripcmd.config.season = with_program.seasons[0]
     ripcmd.session.commit()
     ripcmd.do_programs('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
 ╞═══════════╪═════════╪══════════╪════════╡
@@ -1233,15 +1250,14 @@ def test_do_programs(db, with_program, ripcmd, readout):
 """
 
 
-def test_do_disc(db, with_config, drive, foo_disc1, ripcmd, readout):
+def test_do_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
     ripcmd.do_disc('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
@@ -1266,15 +1282,14 @@ Disc has 11 titles
 """
 
 
-def test_do_title(db, with_config, drive, foo_disc1, ripcmd, readout):
+def test_do_title(db, with_config, drive, foo_disc1, ripcmd, reader):
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
     ripcmd.do_title('1')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == """\
+    assert ''.join(reader.read_all()) == """\
 Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭─────────┬─────────────────┬─────────────────┬────────────────╮
@@ -1363,13 +1378,12 @@ def test_do_scan_no_duration(db, with_config, ripcmd):
         ripcmd.do_scan('')
 
 
-def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, readout):
+def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader):
     drive.disc = foo_disc1
     ripcmd.do_scan('1')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == f"""\
+    assert ''.join(reader.read_all()) == f"""\
 Scanning disc in {tmp_path}/dvd
 Disc type:
 Disc identifier: $H1$6be864bc30cf66e5acb5adf3730fc60e2b4daa83
@@ -1385,13 +1399,12 @@ Disc has 1 titles
 """
 
 
-def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, readout):
+def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
-    assert ''.join(readout.lines) == f"""\
+    assert ''.join(reader.read_all()) == f"""\
 Scanning disc in {tmp_path}/dvd
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
@@ -1462,7 +1475,7 @@ def test_do_scan_already_ripped_chapters(db, with_program, drive, foo_disc1, rip
     } == {(1, 2), (3, 4), (5, 6)}
 
 
-def test_do_scan_ripped_title_missing(db, with_program, drive, foo_disc1, ripcmd, readout):
+def test_do_scan_ripped_title_missing(db, with_program, drive, foo_disc1, ripcmd, reader):
     # Simulate having ripped a title that doesn't exist
     season = ripcmd.config.season
     season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
@@ -1473,12 +1486,11 @@ def test_do_scan_ripped_title_missing(db, with_program, drive, foo_disc1, ripcmd
     ripcmd.do_scan('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
     assert len(ripcmd.episode_map) == 0
-    assert 'Warning: previously ripped title 12 not found' in ''.join(readout.lines)
+    assert 'Warning: previously ripped title 12 not found' in ''.join(reader.read_all())
 
 
-def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, readout):
+def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, reader):
     # Simulate having ripped a chapter that doesn't exist
     season = ripcmd.config.season
     season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
@@ -1491,10 +1503,9 @@ def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, read
     ripcmd.do_scan('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    readout.wait(10)
     # After the scan the pre-ripped episodes are already mapped
     assert len(ripcmd.episode_map) == 0
-    assert 'Warning: previously ripped chapters 24, 26 not found' in ''.join(readout.lines)
+    assert 'Warning: previously ripped chapters 24, 26 not found' in ''.join(reader.read_all())
 
 
 def test_do_automap_default(db, with_program, drive, foo_disc1, ripcmd):
