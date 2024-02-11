@@ -1692,8 +1692,8 @@ class RipCmd(Cmd):
                     chapter.play(self.config)
                     while True:
                         response = self.input(
-                            'Is chapter {title}.{chapter:02d} the start of episode '
-                            '{episode}? [y/n/r] '.format(
+                            'Is chapter {title}.{chapter:02d} the start of '
+                            'episode {episode}? [y/n/r] '.format(
                                 title=chapter.title.number,
                                 chapter=chapter.number,
                                 episode=episode.number))

@@ -33,6 +33,8 @@ class Writer(Thread):
                         pass
                     else:
                         self.pipe.write(line)
+                else:
+                    raise RuntimeError('waited excessive time for input')
         except Exception as exc:
             self.exc = exc
 
@@ -62,6 +64,10 @@ class Reader(Thread):
                     if not line:
                         break
                     self.lines.append(line)
+                else:
+                    # No test should ever wait 10 seconds for output; probably
+                    # means something's awaiting input which it'll never get
+                    raise RuntimeError('waited excessive time for output')
         except Exception as exc:
             self.exc = exc
 
@@ -1492,9 +1498,12 @@ def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, read
 
 
 def test_do_automap_default(db, with_program, drive, foo_disc1, ripcmd):
+    # Automap all 5 episodes of season 1 of Foo & Bar implicitly to all
+    # non-duplicate tracks of foo_disc1
     ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=31)
+    ripcmd.config.duration_max = dt.timedelta(minutes=32)
     ripcmd.config.season = with_program.seasons[0]
+    ripcmd.config.duplicates = 'first'
     ripcmd.session.commit()
 
     drive.disc = foo_disc1
@@ -1504,4 +1513,60 @@ def test_do_automap_default(db, with_program, drive, foo_disc1, ripcmd):
     assert {
         (episode.number, title.number)
         for episode, title in ripcmd.episode_map.items()
-    } == {(1, 2), (2, 3), (3, 4), (4, 5), (5, 6)}
+    } == {(1, 2), (2, 3), (3, 5), (4, 6), (5, 8)}
+
+
+def test_do_automap_episodes(db, with_program, drive, foo_disc1, ripcmd):
+    # Only automap the first three episodes
+    ripcmd.config.duration_min = dt.timedelta(minutes=29)
+    ripcmd.config.duration_max = dt.timedelta(minutes=32)
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.config.duplicates = 'first'
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    assert not ripcmd.episode_map
+    ripcmd.do_scan('')
+    ripcmd.do_automap('1-3')
+    assert {
+        (episode.number, title.number)
+        for episode, title in ripcmd.episode_map.items()
+    } == {(1, 2), (2, 3), (3, 5)}
+
+
+def test_do_automap_manual(db, with_program, drive, foo_disc1, ripcmd):
+    # Automap the first three episodes to the first three (non-aggregate)
+    # titles of foo_disc1
+    ripcmd.config.duration_min = dt.timedelta(minutes=29)
+    ripcmd.config.duration_max = dt.timedelta(minutes=32)
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.config.duplicates = 'all'
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    assert not ripcmd.episode_map
+    ripcmd.do_scan('')
+    ripcmd.do_automap('1-3 2-4')
+    assert {
+        (episode.number, title.number)
+        for episode, title in ripcmd.episode_map.items()
+    } == {(1, 2), (2, 3), (3, 4)}
+
+
+def test_do_automap_chapters(db, with_program, drive, foo_disc1, ripcmd):
+    # Automap all five episodes of season 1 of Foo & Bar to the aggregated
+    # title on foo_disc1
+    ripcmd.config.duration_min = dt.timedelta(minutes=29)
+    ripcmd.config.duration_max = dt.timedelta(minutes=32)
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.config.duplicates = 'first'
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    assert not ripcmd.episode_map
+    ripcmd.do_scan('')
+    ripcmd.do_automap('* 1')
+    assert {
+        (episode.number, start.number, end.number)
+        for episode, (start, end) in ripcmd.episode_map.items()
+    } == {(1, 1, 5), (2, 6, 10), (3, 11, 15), (4, 16, 19), (5, 20, 24)}
