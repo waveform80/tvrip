@@ -1754,34 +1754,27 @@ class RipCmd(Cmd):
         episode = self.parse_episode(episode)
         target = self.parse_title_or_chapter_range(target)
         if isinstance(target, Title):
-            target_label = 'title {title.number} (duration {title.duration})'.format(
-                title=target)
+            target_label = f'title {target.number} (duration {target.duration})'
         else:
             start, end = target
-            if start.title == end.title:
-                index = (
-                    '{start.title.number}.{start.number:02d}-'
-                    '{end.number:02d}'.format(
-                        start=start, end=end))
-            else:
-                index = (
-                    '{start.title.number}.{start.number:02d}-'
-                    '{end.title.number}.{end.number:02d}'.format(
-                        start=start, end=end))
-            target_label = 'chapters {index} (duration {duration})'.format(
-                index=index,
-                duration=sum((
-                    chapter.duration
-                    for title in start.title.disc.titles
-                    for chapter in title.chapters
-                    if (
-                        (start.title.number, start.number) <=
-                        (title.number, chapter.number) <=
-                        (end.title.number, end.number))
-                    ), timedelta()))
+            assert start.title == end.title
+            index = (
+                '{start.title.number}.{start.number:02d}-'
+                '{end.number:02d}'.format(start=start, end=end))
+            duration=sum((
+                chapter.duration
+                for title in start.title.disc.titles
+                for chapter in title.chapters
+                if (
+                    (start.title.number, start.number) <=
+                    (title.number, chapter.number) <=
+                    (end.title.number, end.number))
+                ), timedelta())
+            target_label = (
+                f'chapters {start.title.number}.{start.number:02d}-'
+                f'{end.number:02d} (duration {duration})')
         self.pprint(
-            'Mapping {target_label} to {episode.number} "{episode.name}"'.format(
-                episode=episode, target_label=target_label))
+            f'Mapping {target_label} to {episode.number} "{episode.name}"')
         self.episode_map[episode] = target
 
     def get_map(self):
@@ -1802,23 +1795,14 @@ class RipCmd(Cmd):
                     duration = mapping.duration
                 else:
                     start, end = mapping
-                    if start.title == end.title:
-                        index = (
-                            '{title}.{start:02d}-{end:02d}'.format(
-                                title=start.title.number,
-                                start=start.number,
-                                end=end.number
-                            )
+                    assert start.title == end.title
+                    index = (
+                        '{title}.{start:02d}-{end:02d}'.format(
+                            title=start.title.number,
+                            start=start.number,
+                            end=end.number
                         )
-                    else:
-                        index = (
-                            '{st}.{sc:02d}-{et}.{ec:02d}'.format(
-                                st=start.title.number,
-                                sc=start.number,
-                                et=end.title.number,
-                                ec=end.number
-                            )
-                        )
+                    )
                     duration = sum((
                         chapter.duration
                         for title in start.title.disc.titles
