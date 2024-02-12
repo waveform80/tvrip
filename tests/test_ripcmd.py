@@ -578,7 +578,10 @@ Episodes for season 1 of program Foo & Bar
 
 
 def test_do_config(db, with_program, ripcmd, reader, tmp_path):
-    ripcmd.do_config()
+    with pytest.raises(CmdError):
+        ripcmd.do_config('source')
+
+    ripcmd.do_config('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == f"""\
@@ -1645,8 +1648,9 @@ def test_do_automap_chapters_ambiguous_and_quit(
 
     with mock.patch('tvrip.cmdline.Cmd.input') as cmd_input:
         replay = True
+        garbage = True
         def user_response(prompt):
-            nonlocal replay
+            nonlocal replay, garbage
             m = re.match(
                 r'^Is chapter (?P<title>\d+)\.(?P<chapter>\d+) the start of '
                 r'episode (?P<episode>\d+)\?.*', prompt)
@@ -1655,6 +1659,9 @@ def test_do_automap_chapters_ambiguous_and_quit(
                     if replay:
                         replay = False
                         return 'r'
+                    elif garbage:
+                        garbage = False
+                        return 'foo'
                     else:
                         return 'y'
                 else:
@@ -1712,35 +1719,14 @@ def test_do_map_set_titles(
     ripcmd.session.commit()
 
     drive.disc = foo_disc1
-    ripcmd.do_scan('')
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
     ripcmd.do_map('1 2')
     ripcmd.do_map('2 3')
     ripcmd.do_map()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == f"""\
-Scanning disc in {tmp_path}/dvd
-Disc type:
-Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
-Disc serial: 123456789
-Disc name: FOO AND BAR
-Disc has 11 titles
-
-╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
-│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
-│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
-│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
-│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
-│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
-│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
-│ 9     │ 2        │ 0:05:03        │     │ eng eng │
-│ 10    │ 2        │ 0:07:01        │     │ eng eng │
-│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
 Mapping title 2 (duration 0:30:00.000002) to 1 "Foo"
 Mapping title 3 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
@@ -1761,35 +1747,14 @@ def test_do_map_set_chapters(
     ripcmd.session.commit()
 
     drive.disc = foo_disc1
-    ripcmd.do_scan('')
+    with suppress_stdout(ripcmd):
+        ripcmd.do_scan('')
     ripcmd.do_map('1 1.1-5')
     ripcmd.do_map('2 1.6-10')
     ripcmd.do_map()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == f"""\
-Scanning disc in {tmp_path}/dvd
-Disc type:
-Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
-Disc serial: 123456789
-Disc name: FOO AND BAR
-Disc has 11 titles
-
-╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
-│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
-│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
-│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
-│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
-│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
-│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
-│ 9     │ 2        │ 0:05:03        │     │ eng eng │
-│ 10    │ 2        │ 0:07:01        │     │ eng eng │
-│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
 Mapping chapters 1.01-05 (duration 0:30:00.000002) to 1 "Foo"
 Mapping chapters 1.06-10 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
@@ -1841,7 +1806,7 @@ def test_do_unmap_episode(db, with_program, drive, foo_disc1, ripcmd):
     } == {(2, 3), (3, 5), (4, 6), (5, 8)}
 
 
-def test_do_rip_mapped(db, with_program, drive, foo_disc1, ripcmd):
+def test_do_rip_mapped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
     assert not ripcmd.episode_map
     with pytest.raises(CmdError):
         ripcmd.do_rip('')
@@ -1852,17 +1817,23 @@ def test_do_rip_mapped(db, with_program, drive, foo_disc1, ripcmd):
     drive.disc = foo_disc1
     ripcmd.do_scan('')
     ripcmd.do_map('1 2')
+    ripcmd.do_map('2 3')
     ripcmd.do_rip('')
     cmdlines = [call.args[0] for call in drive.run.call_args_list]
     assert cmdlines[0][0] == 'HandBrakeCLI'
     assert '--scan' in cmdlines[0]
     assert cmdlines[1][0] == 'HandBrakeCLI'
     assert '--scan' not in cmdlines[1]
+    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
     assert ('-t', '2') in pairwise(cmdlines[1])
     assert cmdlines[2][0] == 'AtomicParsley'
+    assert cmdlines[3][0] == 'HandBrakeCLI'
+    assert '--scan' not in cmdlines[3]
+    assert ('-t', '3') in pairwise(cmdlines[3])
+    assert cmdlines[4][0] == 'AtomicParsley'
 
 
-def test_do_rip_manual(db, with_program, drive, foo_disc1, ripcmd):
+def test_do_rip_manual(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
     assert not ripcmd.episode_map
     with pytest.raises(CmdError):
         ripcmd.do_rip('')
@@ -1880,11 +1851,12 @@ def test_do_rip_manual(db, with_program, drive, foo_disc1, ripcmd):
     assert '--scan' in cmdlines[0]
     assert cmdlines[1][0] == 'HandBrakeCLI'
     assert '--scan' not in cmdlines[1]
+    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x02 - Bar.mp4')) in pairwise(cmdlines[1])
     assert ('-t', '3') in pairwise(cmdlines[1])
     assert cmdlines[2][0] == 'AtomicParsley'
 
 
-def test_do_rip_skipped_ripped(db, with_program, drive, foo_disc1, ripcmd):
+def test_do_rip_skip_ripped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
     # Simulate already having ripped the first four episodes from this disc
     ripcmd.config.duration_min = dt.timedelta(minutes=29)
     ripcmd.config.duration_max = dt.timedelta(minutes=32)
@@ -1906,14 +1878,11 @@ def test_do_rip_skipped_ripped(db, with_program, drive, foo_disc1, ripcmd):
     assert cmdlines[1][0] == 'HandBrakeCLI'
     assert '--scan' not in cmdlines[1]
     assert ('-t', '8') in pairwise(cmdlines[1])
+    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x05 - Xyzzy.mp4')) in pairwise(cmdlines[1])
     assert cmdlines[2][0] == 'AtomicParsley'
 
 
-def test_do_rip_chapters(db, with_program, drive, foo_disc1, ripcmd):
-    assert not ripcmd.episode_map
-    with pytest.raises(CmdError):
-        ripcmd.do_rip('')
-
+def test_do_rip_chapters(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
     ripcmd.config.duration_min = dt.timedelta(minutes=29)
     ripcmd.config.duration_max = dt.timedelta(minutes=32)
     ripcmd.config.season = with_program.seasons[0]
@@ -1929,6 +1898,106 @@ def test_do_rip_chapters(db, with_program, drive, foo_disc1, ripcmd):
     assert '--scan' in cmdlines[0]
     assert cmdlines[1][0] == 'HandBrakeCLI'
     assert '--scan' not in cmdlines[1]
+    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
     assert ('-t', '1') in pairwise(cmdlines[1])
     assert ('-c', '1-5') in pairwise(cmdlines[1])
     assert cmdlines[2][0] == 'AtomicParsley'
+
+
+def test_do_rip_all_audio_and_subs(db, with_program, drive, foo_disc1, ripcmd):
+    ripcmd.config.audio_all = True
+    ripcmd.config.subtitle_all = True
+    ripcmd.config.subtitle_format = 'vobsub'
+    ripcmd.config.duration_min = dt.timedelta(minutes=29)
+    ripcmd.config.duration_max = dt.timedelta(minutes=32)
+    ripcmd.config.season = with_program.seasons[0]
+    ripcmd.config.duplicates = 'first'
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    ripcmd.do_map('1 1.1-5')
+    ripcmd.do_rip('')
+    cmdlines = [call.args[0] for call in drive.run.call_args_list]
+    assert cmdlines[0][0] == 'HandBrakeCLI'
+    assert '--scan' in cmdlines[0]
+    assert cmdlines[1][0] == 'HandBrakeCLI'
+    assert '--scan' not in cmdlines[1]
+    assert ('-a', '1,2') in pairwise(cmdlines[1])
+    assert ('-s', '1,2') in pairwise(cmdlines[1])
+    assert cmdlines[2][0] == 'AtomicParsley'
+
+
+def test_do_rip_multi_episode_title(db, with_program, tmp_path, drive, foo_disc2, ripcmd):
+    ripcmd.config.season = with_program.seasons[1]
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc2
+    ripcmd.do_scan('')
+    ripcmd.do_map('1 2')
+    ripcmd.do_map('2 2')
+    ripcmd.do_rip('')
+    cmdlines = [call.args[0] for call in drive.run.call_args_list]
+    assert cmdlines[0][0] == 'HandBrakeCLI'
+    assert '--scan' in cmdlines[0]
+    assert cmdlines[1][0] == 'HandBrakeCLI'
+    assert '--scan' not in cmdlines[1]
+    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 2x01 2x02 - Foo Bar.mp4')) in pairwise(cmdlines[1])
+    assert ('-t', '2') in pairwise(cmdlines[1])
+    assert cmdlines[2][0] == 'AtomicParsley'
+
+
+def test_do_rip_failed(db, with_program, drive, foo_disc1, ripcmd):
+    ripcmd.config.season = with_program.seasons[1]
+    ripcmd.session.commit()
+
+    drive.disc = foo_disc1
+    ripcmd.do_scan('')
+    # Title 9 always fails
+    ripcmd.do_map('1 9')
+    with pytest.raises(CmdError):
+        ripcmd.do_rip('')
+
+
+def test_do_unrip(db, with_program, drive, foo_disc1, ripcmd):
+    # Simulate already having ripped the first three episodes from this disc
+    season = ripcmd.config.season
+    for i in range(3):
+        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
+        season.episodes[i].disc_title = i + 2
+    ripcmd.session.commit()
+
+    with pytest.raises(CmdError):
+        ripcmd.do_unrip('')
+
+    assert season.episodes[0].disc_id is not None
+    ripcmd.do_unrip('1')
+    assert season.episodes[0].disc_id is None
+    assert season.episodes[1].disc_id is not None
+    ripcmd.do_unrip('*')
+    assert season.episodes[1].disc_id is None
+    assert season.episodes[2].disc_id is None
+    # It's not an error to specify episodes that don't exist
+    ripcmd.do_unrip('1-10')
+
+
+def test_interactive(db, with_program, tmp_path, drive, foo_disc1, ripcmd, reader, writer):
+    ripcmd.color_prompt = False
+    drive.disc = foo_disc1
+    with mock.patch('tvrip.ripcmd.RipCmd.do_scan') as do_scan:
+        do_scan.side_effect = RuntimeError('DVD on fire')
+        # Run something that'll cause a regular command error (just printed, no
+        # session rollback)
+        writer.write('set video_style foo\n')
+        # Run something that'll work and cause a database commit
+        writer.write('set video_style animation\n')
+        # Run some things that'll cause a full blown exception (session rollback)
+        writer.write('scan 9\n')
+        writer.write('quit\n')
+        with pytest.raises(RuntimeError):
+            ripcmd.cmdloop()
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == f"""\
+(tvrip) Invalid video style foo
+(tvrip) (tvrip) """

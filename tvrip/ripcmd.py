@@ -116,9 +116,8 @@ class RipCmd(Cmd):
 
     def _set_disc(self, value):
         "Set the Disc object for the current source"
-        if self.config.source is None:
-            raise CmdError('No source has been specified')
-        elif self.config.source in self.discs:
+        assert self.config.source
+        if self.config.source in self.discs:
             # XXX assert that no background jobs are currently running
             pass
         if value is None:
@@ -756,13 +755,10 @@ class RipCmd(Cmd):
         """
         value = value.lower().split(' ')
         new_langs = set(value)
-        try:
-            lang_cls = {
-                'audio_langs':    AudioLanguage,
-                'subtitle_langs': SubtitleLanguage,
-            }[var]
-        except KeyError:
-            assert False
+        lang_cls = {
+            'audio_langs':    AudioLanguage,
+            'subtitle_langs': SubtitleLanguage,
+        }[var]
         for lang in getattr(self.config, var):
             if lang.lang in new_langs:
                 new_langs.remove(lang.lang)
@@ -1525,7 +1521,7 @@ class RipCmd(Cmd):
         self.episode_map.clear()
         try:
             self.disc = Disc(self.config, titles)
-        except (IOError, proc.CalledProcessError) as exc:
+        except (OSError, proc.CalledProcessError) as exc:
             self.disc = None
             raise CmdError(exc)
         self.map_ripped()
