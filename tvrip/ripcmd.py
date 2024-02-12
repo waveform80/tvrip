@@ -1693,12 +1693,12 @@ class RipCmd(Cmd):
                     while True:
                         response = self.input(
                             'Is chapter {title}.{chapter:02d} the start of '
-                            'episode {episode}? [y/n/r] '.format(
+                            'episode {episode}? [y/n/r/q] '.format(
                                 title=chapter.title.number,
                                 chapter=chapter.number,
                                 episode=episode.number))
                         response = response.lower()[:1]
-                        if response in ('y', 'n', 'r'):
+                        if response in ('y', 'n', 'r', 'q'):
                             break
                         else:
                             self.pprint('Invalid response')
@@ -1707,6 +1707,8 @@ class RipCmd(Cmd):
                         break
                     elif response == 'n':
                         break
+                    elif response == 'q':
+                        raise MapError('Abandoned automap at user request')
             assert len(chapters) == 1
             chapter = chapters.pop()
             mappings = [
