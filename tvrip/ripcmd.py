@@ -1867,7 +1867,7 @@ class RipCmd(Cmd):
             try:
                 del self.episode_map[episode]
             except KeyError:
-                self.pprint(
+                raise CmdError(
                     'Episode {episode.number}, {episode.name} was not in the '
                     'map'.format(episode=episode))
 
