@@ -19,9 +19,10 @@
 """Contains suite-level constants defined as globals"""
 
 import os
+from pathlib import Path
 
 # The path under which tvrip-related data will be kept
-XDG_CONFIG_HOME = os.environ.get(
-    'XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
-DATADIR = os.environ.get(
-    'TVRIP_CONFIG', os.path.join(XDG_CONFIG_HOME, 'tvrip'))
+XDG_CONFIG_HOME = Path(os.environ.get(
+    'XDG_CONFIG_HOME', Path.home() / '.config'))
+DATADIR = Path(os.environ.get(
+    'TVRIP_CONFIG', XDG_CONFIG_HOME / 'tvrip'))

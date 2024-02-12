@@ -23,7 +23,6 @@ import os
 import sys
 import argparse
 
-from .terminal import ErrorHandler
 from .database import init_session
 from .ripcmd import RipCmd
 from .const import DATADIR
