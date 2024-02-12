@@ -23,12 +23,12 @@ import os
 import sys
 import argparse
 
-from pkg_resources import require
-
 from .terminal import ErrorHandler
 from .database import init_session
 from .ripcmd import RipCmd
 from .const import DATADIR
+
+from importlib.metadata import version
 
 
 class TVRipApplication:
@@ -40,40 +40,34 @@ class TVRipApplication:
     """
     def __init__(self):
         super().__init__()
-        pkg = require('tvrip')[0]
-        self.version = pkg.version
+        self.version = version(__package__)
         self.parser = argparse.ArgumentParser(description=self.__doc__)
         self.parser.add_argument(
             '--version', action='version', version=self.version)
-        self.parser.add_argument(
-            '-P', '--pdb', dest='debug', action='store_true', default=False,
-            help='run under PDB (debug mode)')
 
     def __call__(self, args=None):
-        if args is None:
-            args = sys.argv[1:]
-        sys.excepthook = ErrorHandler()
-        sys.excepthook[OSError] = (sys.excepthook.exc_message, 1)
-        args = self.parser.parse_args(args)
-        if args.debug:
-            import pdb
-            return pdb.runcall(self.main, args)
-        else:
-            return self.main(args) or 0
+        try:
+            debug = int(os.environ['DEBUG'])
+        except (KeyError, ValueError):
+            debug = 0
 
-    def main(self, args):
         try:
-            os.mkdir(DATADIR)
-        except FileExistsError:
-            pass
-        session = init_session(debug=args.debug)
-        try:
-            cmd = RipCmd(session)
-            cmd.pprint('TVRip %s' % self.version)
-            cmd.pprint('Type "help" for more information.')
-            cmd.cmdloop()
-        finally:
-            session.close()
+            conf = self.parser.parse_args(args)
+            DATADIR.mkdir(parents=True, exist_ok=True)
+            with init_session(debug=bool(debug)) as session:
+                cmd = RipCmd(session)
+                cmd.pprint('TVRip %s' % self.version)
+                cmd.pprint('Type "help" for more information.')
+                cmd.cmdloop()
+        except Exception as e:
+            if not debug:
+                print(str(e), file=sys.stderr, flush=True)
+                return 1
+            elif debug == 1:
+                raise
+            else:
+                import pdb
+                pdb.post_mortem()
 
 
 main = TVRipApplication()
