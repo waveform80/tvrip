@@ -1,0 +1,64 @@
+(tvrip) scan
+Scanning disc in /dev/sr1
+Disc identifier: $H1$afdf4f8c160e38db338beeae2912ecf3c546391a
+Disc serial: None
+Disc name:
+Disc has 6 titles
+
+╭───────┬──────────┬──────────┬─────┬───────╮
+│ Title │ Chapters │ Duration │ Dup │ Audio │
+╞═══════╪══════════╪══════════╪═════╪═══════╡
+│ 1     │ 3        │ 0:42:57  │     │ eng   │
+│ 2     │ 2        │ 0:20:32  │     │ eng   │
+│ 3     │ 2        │ 0:20:29  │     │ eng   │
+│ 4     │ 2        │ 0:20:25  │     │ eng   │
+│ 5     │ 2        │ 0:20:30  │     │ eng   │
+│ 6     │ 2        │ 0:23:23  │     │ eng   │
+╰───────┴──────────┴──────────┴─────┴───────╯
+(tvrip) episodes
+Episodes for season 5 of program Will & Grace
+
+╭─────┬───────────────────────────────────────────┬────────╮
+│ Num │ Title                                     │ Ripped │
+╞═════╪═══════════════════════════════════════════╪════════╡
+│ 1   │ ...And the Horse He Rode In On            │ ✓      │
+│ 2   │ Bacon And Eggs                            │ ✓      │
+│ 3   │ The Kid Stays Out Of The Picture          │ ✓      │
+│ 4   │ Humongous Growth                          │ ✓      │
+│ 5   │ It's The Gay Pumpkin, Charlie Brown       │ ✓      │
+│ 6   │ Boardroom & A Parked Place                │ ✓      │
+│ 7   │ The Needle & Omelet's Done                │ ✓      │
+│ 8   │ Marry Me A Little (1)                     │        │
+│ 9   │ Marry Me A Little More (2)                │        │
+│ 10  │ The Honeymoon's Over                      │        │
+│ 11  │ All About Christmas Eve                   │        │
+│ 12  │ Field Of Queens                           │        │
+│ 13  │ Fagmalion Part One: Gay It Forward        │        │
+│ 14  │ Fagmalion Part Two: Attack of the Clones  │        │
+│ 15  │ Homojo                                    │        │
+│ 16  │ Women & Children First                    │        │
+│ 17  │ Fagmalion Part Three: Bye, Bye, Beardy    │        │
+│ 18  │ Fagmalion Part Four: The Guy Who Loved Me │        │
+│ 19  │ Sex, Losers, & Videotape                  │        │
+│ 20  │ Leo Unwrapped                             │        │
+│ 21  │ Dolls And Dolls                           │        │
+│ 22  │ May Divorce Be With You                   │        │
+│ 23  │ 23                                        │        │
+│ 24  │ 24                                        │        │
+╰─────┴───────────────────────────────────────────┴────────╯
+(tvrip) automap 8-14
+Performing auto-mapping
+Episode Mapping for Will & Grace season 5:
+
+╭───────┬──────────┬────────┬─────────┬──────────────────────────────────────────╮
+│ Title │ Duration │ Ripped │ Episode │ Name                                     │
+╞═══════╪══════════╪════════╪═════════╪══════════════════════════════════════════╡
+│ 1     │ 0:42:57  │        │ 8       │ Marry Me A Little (1)                    │
+│ 1     │ 0:42:57  │        │ 9       │ Marry Me A Little More (2)               │
+│ 2     │ 0:20:32  │        │ 10      │ The Honeymoon's Over                     │
+│ 3     │ 0:20:29  │        │ 11      │ All About Christmas Eve                  │
+│ 4     │ 0:20:25  │        │ 12      │ Field Of Queens                          │
+│ 5     │ 0:20:30  │        │ 13      │ Fagmalion Part One: Gay It Forward       │
+│ 6     │ 0:23:23  │        │ 14      │ Fagmalion Part Two: Attack of the Clones │
+╰───────┴──────────┴────────┴─────────┴──────────────────────────────────────────╯
+
