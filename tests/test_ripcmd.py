@@ -144,21 +144,20 @@ def completions(cmd, line):
 
 
 @pytest.fixture(scope='function')
-def _ripcmd(request, db):
-    with mock.patch('tvrip.cmdline.term_size') as term_size:
-        term_size.return_value = (100, 50)
-        ri, wi = os.pipe()
-        ro, wo = os.pipe()
-        with \
-                closing(os.fdopen(ri, 'r', buffering=1, encoding='utf-8')) as stdin_r, \
-                closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w, \
-                closing(os.fdopen(ro, 'r', buffering=1, encoding='utf-8')) as stdout_r, \
-                closing(os.fdopen(wo, 'w', buffering=1, encoding='utf-8')) as stdout_w:
-            stdout_w.reconfigure(write_through=True)
-            stdin_w.reconfigure(write_through=True)
-            test_ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
-            test_ripcmd.use_rawinput = False
-            yield stdin_w, stdout_r, test_ripcmd
+def _ripcmd(request, db, term_size):
+    term_size(100, 50)
+    ri, wi = os.pipe()
+    ro, wo = os.pipe()
+    with \
+            closing(os.fdopen(ri, 'r', buffering=1, encoding='utf-8')) as stdin_r, \
+            closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w, \
+            closing(os.fdopen(ro, 'r', buffering=1, encoding='utf-8')) as stdout_r, \
+            closing(os.fdopen(wo, 'w', buffering=1, encoding='utf-8')) as stdout_w:
+        stdout_w.reconfigure(write_through=True)
+        stdin_w.reconfigure(write_through=True)
+        test_ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
+        test_ripcmd.use_rawinput = False
+        yield stdin_w, stdout_r, test_ripcmd
 
 @pytest.fixture()
 def ripcmd(request, _ripcmd):
