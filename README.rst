@@ -10,8 +10,6 @@ relatively simple to rip whole seasons or series of TV episodes from DVD to
 high quality MP4s, along with optional subtitles, alternate languages and
 director's commentaries.
 
-This package is also available in .deb form from ppa://waveform/ppa
-
 
 Pre-requisites
 ==============
