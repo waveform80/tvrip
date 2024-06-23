@@ -13,9 +13,6 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            python: "3.7"
-            experimental: false
-          - os: ubuntu-20.04
             python: "3.8"
             experimental: false
           - os: ubuntu-20.04
@@ -44,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt install ctags
+          sudo apt install exuberant-ctags
           make develop
 
       - name: Run tests
