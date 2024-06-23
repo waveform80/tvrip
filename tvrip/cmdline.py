@@ -42,7 +42,7 @@ import cmd
 import readline
 from textwrap import TextWrapper
 
-from .termsize import terminal_size
+from .terminal import term_size
 from .formatter import TableWrapper, pretty_table
 
 COLOR_BOLD    = '\033[1m'
@@ -56,11 +56,15 @@ COLOR_CYAN    = '\033[36m'
 COLOR_WHITE   = '\033[37m'
 COLOR_RESET   = '\033[0m'
 
-__all__ = [
-    'CmdError',
-    'CmdSyntaxError',
-    'Cmd',
-    ]
+# Some prettier defaults for TableWrapper
+table_style = {
+    'cell_separator': ' │ ',
+    'internal_line': '═',
+    'internal_separator': '═╪═',
+    'borders': ('│ ', '─', ' │', '─'),
+    'corners': ('╭─', '─╮', '─╯', '╰─'),
+    'internal_borders': ('╞═', '─┬─', '═╡', '─┴─'),
+}
 
 
 class CmdError(Exception):
@@ -73,17 +77,17 @@ class CmdSyntaxError(CmdError):
 
 class Cmd(cmd.Cmd):
     "An enhanced version of the standard Cmd command line processor"
-    use_rawinput = True
     history_file = None
     history_size = 1000  # <0 implies infinite history
 
-    def __init__(self, color_prompt=True):
-        super().__init__()
+    def __init__(self, color_prompt=True, stdin=None, stdout=None):
+        super().__init__(stdin=stdin, stdout=stdout)
         self._wrapper = TextWrapper()
         self.color_prompt = color_prompt
         self.base_prompt = self.prompt
 
-    def parse_bool(self, value, default=None):
+    @staticmethod
+    def parse_bool(value, default=None):
         """
         Parse a string containing a boolean value.
 
@@ -101,7 +105,8 @@ class Cmd(cmd.Cmd):
             raise ValueError(
                 'Invalid boolean expression {}'.format(value))
 
-    def parse_number_range(self, s):
+    @staticmethod
+    def parse_number_range(s):
         """
         Parse a dash-separated number range.
 
@@ -111,13 +116,14 @@ class Cmd(cmd.Cmd):
         try:
             start, finish = (int(i) for i in s.split('-', 1))
         except ValueError as exc:
-            raise CmdSyntaxError(exc)
+            raise CmdSyntaxError(exc) from None
         if finish < start:
             raise CmdSyntaxError(
                 '{}-{} range goes backwards'.format(start, finish))
         return start, finish
 
-    def parse_number_list(self, s):
+    @staticmethod
+    def parse_number_list(s):
         """
         Parse a comma-separated list of dash-separated number ranges.
 
@@ -128,13 +134,13 @@ class Cmd(cmd.Cmd):
         result = []
         for i in s.split(','):
             if '-' in i:
-                start, finish = self.parse_number_range(i)
+                start, finish = Cmd.parse_number_range(i)
                 result.extend(range(start, finish + 1))
             else:
                 try:
                     result.append(int(i))
                 except ValueError as exc:
-                    raise CmdSyntaxError(exc)
+                    raise CmdSyntaxError(exc) from None
         return result
 
     def parse_docstring(self, docstring):
@@ -142,32 +148,22 @@ class Cmd(cmd.Cmd):
         lines = [line.strip() for line in docstring.strip().splitlines()]
         result = ['']
         for line in lines:
-            if result:
-                if line:
-                    if line.startswith(self.base_prompt):
-                        if result[-1]:
-                            result.append(line)
-                        else:
-                            result[-1] = line
+            if line:
+                if line.startswith(self.base_prompt):
+                    if result[-1]:
+                        result.append(line)
                     else:
-                        if result[-1]:
-                            result[-1] += ' ' + line
-                        else:
-                            result[-1] = line
+                        result[-1] = line
                 else:
-                    result.append('')
+                    if result[-1]:
+                        result[-1] += ' ' + line
+                    else:
+                        result[-1] = line
+            else:
+                result.append('')
         if not result[-1]:
             result = result[:-1]
         return result
-
-    def complete_path(self, text, line, start, finish):
-        "Utility routine used by path completion methods"
-        path, _ = os.path.split(line)
-        return [
-            item
-            for item in os.listdir(os.path.expanduser(path))
-            if item.startswith(text)
-        ]
 
     def default(self, line):
         raise CmdSyntaxError('Syntax error: {}'.format(line))
@@ -179,7 +175,10 @@ class Cmd(cmd.Cmd):
     def preloop(self):
         if self.color_prompt:
             self.prompt = COLOR_BOLD + COLOR_GREEN + self.prompt + COLOR_RESET
-        if self.history_file and os.path.exists(self.history_file):
+        if (
+            self.use_rawinput and self.history_file and
+            os.path.exists(self.history_file)
+        ):
             readline.read_history_file(self.history_file)
 
     def precmd(self, line):
@@ -196,22 +195,36 @@ class Cmd(cmd.Cmd):
         return stop
 
     def postloop(self):
-        readline.set_history_length(self.history_size)
-        readline.write_history_file(self.history_file)
+        if self.use_rawinput:
+            readline.set_history_length(self.history_size)
+            readline.write_history_file(self.history_file)
 
     def onecmd(self, line):
         # Just catch and report CmdError's; don't terminate execution because
         # of them
         try:
-            return cmd.Cmd.onecmd(self, line)
+            return super().onecmd(line)
         except CmdError as exc:
             self.pprint(str(exc) + '\n')
+            return False
 
     whitespace_re = re.compile(r'\s+$')
 
-    def wrap(self, s, newline=True, wrap=True, initial_indent='',
+    def wrap(self, s, *, wrap=True, newline=True, initial_indent='',
              subsequent_indent=''):
-        "Wraps a paragraph of text to the terminal"
+        """
+        Wraps the string *s* for output.
+
+        If *wrap* is :data:`True` (which is the default), the string will be
+        wrapped to the terminal's width (determined automatically). If
+        *newline* is :data:`True`, a newline character will be added to the
+        output, if it does not already have one.
+
+        The *initial_indent* is the string used to prefix the first line of
+        the output. This defaults to a blank string. The *subsequent_indent*
+        is the string used to prefix all subsequent wrapped lines of output.
+        This is useful for generating properly-aligned list output.
+        """
         suffix = ''
         if newline:
             suffix = '\n'
@@ -220,7 +233,7 @@ class Cmd(cmd.Cmd):
             if match:
                 suffix = match.group()
         if wrap:
-            self._wrapper.width = min(120, terminal_size()[0] - 2)
+            self._wrapper.width = min(120, term_size()[0] - 2)
             self._wrapper.initial_indent = initial_indent
             self._wrapper.subsequent_indent = subsequent_indent
             s = self._wrapper.fill(s)
@@ -232,45 +245,53 @@ class Cmd(cmd.Cmd):
         prompt = lines[-1]
         s = ''.join(line + '\n' for line in lines[:-1])
         self.stdout.write(s)
-        result = input(prompt).strip()
-        # Strip the history from readline (we only want commands in the
-        # history)
-        readline.remove_history_item(readline.get_current_history_length() - 1)
+        if self.use_rawinput:
+            result = input(prompt).strip()
+            # Strip the history from readline (we only want commands in the
+            # history)
+            readline.remove_history_item(
+                readline.get_current_history_length() - 1)
+        else:
+            self.stdout.write(prompt)
+            result = self.stdin.readline().strip()
         return result
 
     def input_number(self, valid, prompt=''):
+        """
+        Prompts and reads numeric input (from a limited set of *valid* inputs,
+        which can be any iterable supporting "in") from the user.
+        """
         suffix = '[{min}-{max}]'.format(
             min=min(valid), max=max(valid))
         prompt = '{prompt} {suffix} '.format(prompt=prompt, suffix=suffix)
-        try:
-            result = int(self.input(prompt))
-            if result not in valid:
-                raise ValueError('out of range')
-        except ValueError:
-            while True:
-                try:
-                    result = int(self.input(
-                        'Invalid input. Please enter a number {suffix} '
-                        ''.format(suffix=suffix)))
-                    if result not in valid:
-                        raise ValueError('out of range')
-                except ValueError:
-                    pass
-                else:
-                    break
-        return result
+        while True:
+            try:
+                result = int(self.input(prompt))
+                if result not in valid:
+                    raise ValueError('out of range')
+            except ValueError:
+                self.stdout.write('Invalid input\n')
+                continue
+            else:
+                return result
 
-    def pprint(self, s, newline=True, wrap=True, initial_indent='',
+    def pprint(self, s, *, newline=True, wrap=True, initial_indent='',
                subsequent_indent=''):
-        "Pretty-prints text to the terminal"
-        s = self.wrap(s, newline, wrap, initial_indent, subsequent_indent)
-        self.stdout.write(s)
+        """
+        Pretty-prints *s* to the terminal.
+
+        The various keyword arguments are passed verbatim to :meth:`wrap`.
+        """
+        self.stdout.write(
+            self.wrap(s, newline=newline, wrap=wrap,
+                      initial_indent=initial_indent,
+                      subsequent_indent=subsequent_indent))
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
         "Pretty-prints a table of data"
         wrapper = TableWrapper(
-            width=min(120, terminal_size()[0] - 2), header_rows=header_rows,
-            footer_rows=footer_rows, **pretty_table)
+            width=min(120, term_size()[0] - 2), header_rows=header_rows,
+            footer_rows=footer_rows, **table_style)
         for row in wrapper.wrap(data):
             self.stdout.write(row + '\n')
 

@@ -200,14 +200,14 @@ class Configuration(DeclarativeBase):
     source = Column(Unicode(300), nullable=False, default='/dev/dvd')
     target = Column(Unicode(300), nullable=False, default=os.path.expanduser('~/Videos'))
     temp = Column(Unicode(300), nullable=False, default=tempfile.gettempdir())
-    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.mp4')
+    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.{ext}')
     id_template = Column(Unicode(100), nullable=False, default='{season}x{episode:02d}')
     _duration_min = Column('duration_min', Integer, nullable=False, default=40)
     _duration_max = Column('duration_max', Integer, nullable=False, default=50)
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(Unicode(6),
-                             CheckConstraint("subtitle_format in ('none', 'vobsub', 'cc', 'any')"),
+                             CheckConstraint("subtitle_format in ('none', 'vobsub', 'pgs', 'cc', 'any')"),
                              nullable=False, default='none')
     audio_mix = Column(Unicode(6),
                        CheckConstraint("audio_mix in ('mono', 'stereo', 'dpl1', 'dpl2')"),
@@ -229,6 +229,11 @@ class Configuration(DeclarativeBase):
                         nullable=False, default='all')
     api_key = Column(Unicode(128), nullable=False, default='')
     api_url = Column(Unicode(300), nullable=False, default='https://api.thetvdb.com/')
+    output_format = Column(Unicode(3),
+                           CheckConstraint("output_format in ('mp4', 'mkv')"),
+                           nullable=False, default='mp4')
+    width_max = Column(Integer, nullable=False, default=1920)
+    height_max = Column(Integer, nullable=False, default=1080)
     paths = relationship('ConfigPath', backref='config')
     program = relationship('Program')
     season = relationship('Season',
@@ -254,6 +259,10 @@ class Configuration(DeclarativeBase):
 
     duration_max = synonym('_duration_max',
                            descriptor=property(_get_duration_max, _set_duration_max))
+
+    @property
+    def max_resolution(self):
+        return (self.width_max, self.height_max)
 
     def in_audio_langs(self, lang):
         """Returns True if lang is a selected audio language"""
@@ -282,25 +291,16 @@ class Configuration(DeclarativeBase):
         return "<Configuration(...)>"
 
 
-SESSION = None
-
-
-def init_session(url=None, debug=False):
+def init_session(url='sqlite:///{DATADIR}/tvrip.db'.format(DATADIR=DATADIR),
+                 debug=False):
     """Initializes the connection to the database and returns a new session
 
     This routine must be called once during the application to open the
     connection to the tvrip database and obtain a session object for
     manipulating that connection.
     """
-    # The SESSION global is simply used to ensure this is a one-time call so
-    # multiple simultaneous database connections don't get opened
-    global SESSION
-    assert SESSION is None
-
-    if url is None:
-        url = 'sqlite:///%s' % os.path.join(DATADIR, 'tvrip.db')
     engine = create_engine(url, echo=debug)
-    SESSION = Session(bind=engine)
+    session = Session(bind=engine)
     DeclarativeBase.metadata.bind = engine
     DeclarativeBase.metadata.create_all()
-    return SESSION
+    return session

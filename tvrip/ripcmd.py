@@ -44,11 +44,11 @@ class RipCmd(Cmd):
 
     prompt = '(tvrip) '
 
-    def __init__(self, debug=False):
-        super().__init__()
+    def __init__(self, session, *, color_prompt=True, stdin=None, stdout=None):
+        super().__init__(color_prompt=color_prompt, stdin=stdin, stdout=stdout)
         self.discs = {}
         self.episode_map = EpisodeMap()
-        self.session = init_session(debug=debug)
+        self.session = session
         # Specify the history filename
         self.history_file = os.path.join(DATADIR, 'tvrip.history')
         # Read the configuration from the database
@@ -63,6 +63,8 @@ class RipCmd(Cmd):
                 ConfigPath(self.config, 'handbrake', 'HandBrakeCLI'))
             self.session.add(
                 ConfigPath(self.config, 'atomicparsley', 'AtomicParsley'))
+            self.session.add(
+                ConfigPath(self.config, 'mkvpropedit', 'mkvpropedit'))
             self.session.add(
                 ConfigPath(self.config, 'vlc', 'vlc'))
             self.session.commit()
@@ -80,6 +82,9 @@ class RipCmd(Cmd):
             'dvdnav':           self.set_bool,
             'handbrake':        self.set_executable,
             'id_template':      self.set_id_template,
+            'max_resolution':   self.set_max_resolution,
+            'mkvpropedit':      self.set_executable,
+            'output_format':    self.set_output_format,
             'source':           self.set_device,
             'subtitle_all':     self.set_bool,
             'subtitle_default': self.set_bool,
@@ -111,9 +116,8 @@ class RipCmd(Cmd):
 
     def _set_disc(self, value):
         "Set the Disc object for the current source"
-        if self.config.source is None:
-            raise CmdError('No source has been specified')
-        elif self.config.source in self.discs:
+        assert self.config.source
+        if self.config.source in self.discs:
             # XXX assert that no background jobs are currently running
             pass
         if value is None:
@@ -320,13 +324,6 @@ class RipCmd(Cmd):
         else:
             return self.parse_title(s)
 
-    def clear_seasons(self, program=None):
-        "Removes all seasons from the specified program"
-        if program is None:
-            program = self.config.program
-        for season in self.session.query(Season).filter((Season.program == program)):
-            self.session.delete(season)
-
     def clear_episodes(self, season=None):
         "Removes all episodes from the specified season"
         if season is None:
@@ -338,6 +335,7 @@ class RipCmd(Cmd):
         "Prints the details of the currently scanned disc"
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
+        self.pprint('Disc type: {}'.format(self.disc.type))
         self.pprint('Disc identifier: {}'.format(self.disc.ident))
         self.pprint('Disc serial: {}'.format(self.disc.serial))
         self.pprint('Disc name: {}'.format(self.disc.name))
@@ -508,6 +506,10 @@ class RipCmd(Cmd):
         self.pprint('temp             = {}'.format(self.config.temp))
         self.pprint('template         = {}'.format(self.config.template))
         self.pprint('id_template      = {}'.format(self.config.id_template))
+        self.pprint('output_format    = {}'.format(self.config.output_format))
+        self.pprint('max_resolution   = {width}x{height}'.format(
+            width=self.config.width_max,
+            height=self.config.height_max))
         self.pprint('decomb           = {}'.format(self.config.decomb))
         self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
         self.pprint('audio_all        = {}'.format(
@@ -596,6 +598,34 @@ class RipCmd(Cmd):
                     self.pprint(para)
                     self.pprint('')
 
+    def set_complete_one(self, line, start, valid):
+        match = self.set_var_re.match(line)
+        value = line[match.end():]
+        return [
+            name[start - match.end():]
+            for name in valid
+            if name.startswith(value)
+        ]
+
+    def set_complete_path(self, line, start, is_dir=False, is_exec=False,
+                          is_block_device=False):
+        match = self.set_var_re.match(line)
+        value = line[match.end():]
+        if value.endswith('/'):
+            path = Path(value)
+        else:
+            path = Path(value).parent
+        for item in path.iterdir():
+            if str(item).startswith(value):
+                if item.is_dir():
+                    yield f'/{item.name}/'
+                elif not is_dir:
+                    if is_exec and not os.access(item, os.X_OK):
+                        continue
+                    elif is_block_device and not item.is_block_device():
+                        continue
+                    yield f'/{item.name}'
+
     def set_executable(self, var, value):
         """
         This configuration option takes the path of an executable, e.g.
@@ -607,6 +637,11 @@ class RipCmd(Cmd):
         if not os.access(str(value), os.X_OK, effective_ids=True):
             raise CmdError('Path {} is not executable'.format(value))
         self.config.set_path(var, str(value))
+
+    def set_complete_executable(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_exec=True))
+
+    set_executable.complete = set_complete_executable
 
     def set_directory(self, var, value):
         """
@@ -620,6 +655,11 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a directory'.format(value))
         setattr(self.config, var, str(value))
 
+    def set_complete_directory(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_dir=True))
+
+    set_directory.complete = set_complete_directory
+
     def set_device(self, var, value):
         """
         This configuration option takes the path of a device, e.g.
@@ -632,20 +672,19 @@ class RipCmd(Cmd):
             raise CmdError('Path {} is not a block device'.format(value))
         setattr(self.config, var, str(value))
 
-    def set_complete_one(self, line, start, valid):
-        match = self.set_var_re.match(line)
-        value = line[match.end():]
-        return [
-            name[start - match.end():]
-            for name in valid
-            if name.startswith(value)
-        ]
+    def set_complete_device(self, text, line, start, finish):
+        return list(self.set_complete_path(line, start, is_block_device=True))
+
+    set_device.complete = set_complete_device
 
     def set_bool(self, var, value):
         """
         This configuration option is either "on" or "off".
         """
-        setattr(self.config, var, self.parse_bool(value))
+        try:
+            setattr(self.config, var, self.parse_bool(value))
+        except ValueError:
+            raise CmdError(f'Value {value} must be on/off/no/yes')
 
     def set_complete_bool(self, text, line, start, finish):
         return self.set_complete_one(
@@ -703,8 +742,8 @@ class RipCmd(Cmd):
         self.config.video_style = value
 
     def set_complete_video_style(self, text, line, start, finish):
-        return self.set_complete_simple(
-            line, start, {'tv', 'television', 'film', 'anim', 'animation'})
+        return self.set_complete_one(
+            line, start, {'tv', 'television', 'film', 'animation'})
 
     set_video_style.complete = set_complete_video_style
 
@@ -716,13 +755,10 @@ class RipCmd(Cmd):
         """
         value = value.lower().split(' ')
         new_langs = set(value)
-        try:
-            lang_cls = {
-                'audio_langs':    AudioLanguage,
-                'subtitle_langs': SubtitleLanguage,
-            }[var]
-        except KeyError:
-            assert False
+        lang_cls = {
+            'audio_langs':    AudioLanguage,
+            'subtitle_langs': SubtitleLanguage,
+        }[var]
         for lang in getattr(self.config, var):
             if lang.lang in new_langs:
                 new_langs.remove(lang.lang)
@@ -815,7 +851,8 @@ class RipCmd(Cmd):
     def set_subtitle_format(self, var, value):
         """
         This configuration option specifies a subtitle format. Valid values
-        are "none", "vobsub", "cc", and "all".
+        are "none", "vobsub", "pgs", "cc", and "all". Typically, you want
+        "vobsub" for DVDs and "pgs" for Blu-rays.
         """
         assert var == 'subtitle_format'
         try:
@@ -826,6 +863,7 @@ class RipCmd(Cmd):
                 'vobsub': 'vobsub',
                 'bmp':    'vobsub',
                 'bitmap': 'vobsub',
+                'pgs':    'pgs',
                 'cc':     'cc',
                 'text':   'cc',
                 'any':    'any',
@@ -840,7 +878,8 @@ class RipCmd(Cmd):
     def set_complete_subtitle_format(self, text, line, start, finish):
         return self.set_complete_one(
             line, start,
-            {'off', 'none', 'vobsub', 'bitmap', 'cc', 'text', 'all', 'both'})
+            {'off', 'none', 'vobsub', 'pgs', 'bitmap', 'cc', 'text', 'all',
+             'both'})
 
     set_subtitle_format.complete = set_complete_subtitle_format
 
@@ -856,7 +895,7 @@ class RipCmd(Cmd):
             if value == 'auto':
                 self.config.decomb = 'auto'
             else:
-                raise
+                raise CmdError(f'{value} must be off/on/auto')
 
     def set_complete_decomb(self, text, line, start, finish):
         return self.set_complete_one(
@@ -872,6 +911,7 @@ class RipCmd(Cmd):
                 id='1x01',
                 name='Foo Bar',
                 now=datetime.now(),
+                ext='mp4',
                 )
         except KeyError as exc:
             raise CmdError(
@@ -897,6 +937,62 @@ class RipCmd(Cmd):
             raise CmdError(
                 'The new id_template contains an error: {}'.format(exc))
         self.config.id_template = value
+
+    def set_max_resolution(self, var, value):
+        """
+        The maximum resolution of the output file. Smaller sources will be
+        unaffected; larger sources will be scaled with their aspect ratio
+        respected.
+        """
+        assert var == 'max_resolution'
+        try:
+            width, height = (int(i) for i in value.split('x', 1))
+        except (TypeError, ValueError):
+            raise CmdError(
+                'The new resolution must be specified as WxH')
+        else:
+            if width < 32 or height < 32:
+                raise CmdError('The new resolution is too small')
+        self.config.width_max = width
+        self.config.height_max = height
+
+    def set_complete_max_resolution(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {
+                '640x480',   # NTSC
+                '768x576',   # PAL
+                '854x480',   # NTSC DVD (anamorphic)
+                '1024x576',  # PAL DVD (anamorphic)
+                '1280x720',  # HD 720p
+                '1920x1080', # "Full" HD 1080p
+                '2560x1440', # 2K QHD
+                '3840x2160', # 4K UHD
+                '5120x2880', # 5K UHD
+                '7680x4320', # 8K UHD
+            })
+
+    set_max_resolution.complete = set_complete_max_resolution
+
+    def set_output_format(self, var, value):
+        """
+        This configuration option specifies the video output format. Valid
+        values are "mp4" and "mkv". "mp4" is more widely supported, but "mkv"
+        is the more advanced format, and is the only format to support things
+        like PGS subtitle pass-through on Blu-ray.
+
+        The output format affects the {ext} substitution in the template.
+        """
+        assert var == 'output_format'
+        valid = ('mp4', 'mkv')
+        if value not in valid:
+            raise CmdError('The new output_format must be one of {}'.format(
+                ', '.join(valid)))
+        self.config.output_format = value
+
+    def set_complete_output_format(self, text, line, start, finish):
+        return self.set_complete_one(line, start, {'mp4', 'mkv'})
+
+    set_output_format.complete = set_complete_output_format
 
     def set_api_key(self, var, value):
         assert var == 'api_key'
@@ -1073,21 +1169,6 @@ class RipCmd(Cmd):
                 season=season.number,
                 program=season.program.name))
 
-    def create_episodes(self, count, season=None):
-        "Creates the specified number of episodes in the current season"
-        if season is None:
-            season = self.config.season
-        self.pprint('Please enter the names of the episodes. Leave a '
-                    'name blank if you wish to terminate entry early:')
-        self.clear_episodes()
-        for number in range(1, count + 1):
-            name = self.input('{:2d}: '.format(number))
-            if not name:
-                self.pprint('Terminating episode name entry')
-                break
-            episode = Episode(season, number, name)
-            self.session.add(episode)
-
     def do_episodes(self, arg):
         """
         Gets or sets the episodes for the current season.
@@ -1124,6 +1205,19 @@ class RipCmd(Cmd):
             self.episode_map.clear()
         else:
             self.pprint_episodes()
+
+    def create_episodes(self, count):
+        "Creates the specified number of episodes in the current season"
+        self.pprint('Please enter the names of the episodes. Leave a '
+                    'name blank if you wish to terminate entry early:')
+        self.clear_episodes()
+        for number in range(1, count + 1):
+            name = self.input('{:2d}: '.format(number))
+            if not name:
+                self.pprint('Terminating episode name entry')
+                break
+            episode = Episode(self.config.season, number, name)
+            self.session.add(episode)
 
     def do_season(self, arg, program_id=None):
         """
@@ -1172,7 +1266,8 @@ class RipCmd(Cmd):
                     Season
                 ).filter(
                     (Season.program == self.config.program) &
-                    ("SUBSTR(CAST(season AS TEXT), 1, :length) = :season")
+                    sa.sql.text(
+                        "SUBSTR(CAST(seasons.number AS TEXT), 1, :length) = :season")
                 ).params(
                     length=len(text),
                     season=text
@@ -1189,7 +1284,7 @@ class RipCmd(Cmd):
         return new_season
 
     def new_season(self, number):
-        new_season = Season(self.config.program, arg)
+        new_season = Season(self.config.program, number)
         self.session.add(new_season)
         count = self.input_number(
             range(100),
@@ -1271,13 +1366,10 @@ class RipCmd(Cmd):
     def find_program_entry(self, name):
 
         def format_overview(s):
-            if not s:
-                return '-'
-            else:
-                s = s.splitlines()[0]
-                if len(s) > 200:
-                    s = s[:197] + '...'
-                return s
+            s = (s.splitlines() or [''])[0]
+            if len(s) > 200:
+                s = s[:197] + '...'
+            return s
 
         if not self.api:
             raise CmdError('api_key or api_url not configured')
@@ -1429,7 +1521,7 @@ class RipCmd(Cmd):
         self.episode_map.clear()
         try:
             self.disc = Disc(self.config, titles)
-        except (IOError, proc.CalledProcessError) as exc:
+        except (OSError, proc.CalledProcessError) as exc:
             self.disc = None
             raise CmdError(exc)
         self.map_ripped()
@@ -1544,7 +1636,7 @@ class RipCmd(Cmd):
             titles = [
                 title for title in self.disc.titles
                 if title not in self.episode_map.values()
-                ]
+            ]
         else:
             titles = self.parse_title_list(titles)
         self.map_ripped()
@@ -1553,21 +1645,21 @@ class RipCmd(Cmd):
         episodes = [
             episode for episode in episodes
             if episode not in self.episode_map
-            ]
+        ]
         titles = [
             title for title in titles
             if title not in self.episode_map.values()
-            ]
+        ]
         # Filter out duplicate titles on the disc
         titles = [
             title for title in titles
             if title.duplicate == 'no' or
             self.config.duplicates == 'all' or
             self.config.duplicates == title.duplicate
-            ]
+        ]
         try:
             self.episode_map.automap(
-                titles, episodes, self.config.duration_min,
+                episodes, titles, self.config.duration_min,
                 self.config.duration_max,
                 strict_mapping=strict_mapping,
                 choose_mapping=self.choose_mapping)
@@ -1596,13 +1688,13 @@ class RipCmd(Cmd):
                     chapter.play(self.config)
                     while True:
                         response = self.input(
-                            'Is chapter {title}.{chapter:02d} the start of episode '
-                            '{episode}? [y/n/r] '.format(
+                            'Is chapter {title}.{chapter:02d} the start of '
+                            'episode {episode}? [y/n/r/q] '.format(
                                 title=chapter.title.number,
                                 chapter=chapter.number,
                                 episode=episode.number))
                         response = response.lower()[:1]
-                        if response in ('y', 'n', 'r'):
+                        if response in ('y', 'n', 'r', 'q'):
                             break
                         else:
                             self.pprint('Invalid response')
@@ -1611,12 +1703,14 @@ class RipCmd(Cmd):
                         break
                     elif response == 'n':
                         break
+                    elif response == 'q':
+                        raise MapError('Abandoned automap at user request')
             assert len(chapters) == 1
             chapter = chapters.pop()
             mappings = [
                 mapping for mapping in mappings
                 if mapping[episode][0] == chapter
-                ]
+            ]
         assert len(mappings) == 1
         return mappings[0]
 
@@ -1656,34 +1750,27 @@ class RipCmd(Cmd):
         episode = self.parse_episode(episode)
         target = self.parse_title_or_chapter_range(target)
         if isinstance(target, Title):
-            target_label = 'title {title.number} (duration {title.duration})'.format(
-                title=target)
+            target_label = f'title {target.number} (duration {target.duration})'
         else:
             start, end = target
-            if start.title == end.title:
-                index = (
-                    '{start.title.number}.{start.number:02d}-'
-                    '{end.number:02d}'.format(
-                        start=start, end=end))
-            else:
-                index = (
-                    '{start.title.number}.{start.number:02d}-'
-                    '{end.title.number}.{end.number:02d}'.format(
-                        start=start, end=end))
-            target_label = 'chapters {index} (duration {duration})'.format(
-                index=index,
-                duration=sum((
-                    chapter.duration
-                    for title in start.title.disc.titles
-                    for chapter in title.chapters
-                    if (
-                        (start.title.number, start.number) <=
-                        (title.number, chapter.number) <=
-                        (end.title.number, end.number))
-                    ), timedelta()))
+            assert start.title == end.title
+            index = (
+                '{start.title.number}.{start.number:02d}-'
+                '{end.number:02d}'.format(start=start, end=end))
+            duration=sum((
+                chapter.duration
+                for title in start.title.disc.titles
+                for chapter in title.chapters
+                if (
+                    (start.title.number, start.number) <=
+                    (title.number, chapter.number) <=
+                    (end.title.number, end.number))
+                ), timedelta())
+            target_label = (
+                f'chapters {start.title.number}.{start.number:02d}-'
+                f'{end.number:02d} (duration {duration})')
         self.pprint(
-            'Mapping {target_label} to {episode.number} "{episode.name}"'.format(
-                episode=episode, target_label=target_label))
+            f'Mapping {target_label} to {episode.number} "{episode.name}"')
         self.episode_map[episode] = target
 
     def get_map(self):
@@ -1704,23 +1791,14 @@ class RipCmd(Cmd):
                     duration = mapping.duration
                 else:
                     start, end = mapping
-                    if start.title == end.title:
-                        index = (
-                            '{title}.{start:02d}-{end:02d}'.format(
-                                title=start.title.number,
-                                start=start.number,
-                                end=end.number
-                            )
+                    assert start.title == end.title
+                    index = (
+                        '{title}.{start:02d}-{end:02d}'.format(
+                            title=start.title.number,
+                            start=start.number,
+                            end=end.number
                         )
-                    else:
-                        index = (
-                            '{st}.{sc:02d}-{et}.{ec:02d}'.format(
-                                st=start.title.number,
-                                sc=start.number,
-                                et=end.title.number,
-                                ec=end.number
-                            )
-                        )
+                    )
                     duration = sum((
                         chapter.duration
                         for title in start.title.disc.titles
@@ -1769,7 +1847,7 @@ class RipCmd(Cmd):
             try:
                 del self.episode_map[episode]
             except KeyError:
-                self.pprint(
+                raise CmdError(
                     'Episode {episode.number}, {episode.name} was not in the '
                     'map'.format(episode=episode))
 

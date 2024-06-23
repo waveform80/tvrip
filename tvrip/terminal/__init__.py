@@ -16,13 +16,25 @@
 # You should have received a copy of the GNU General Public License along with
 # tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Contains suite-level constants defined as globals"""
+"""
+Defines base classes for command line utilities.
 
-import os
-from pathlib import Path
+This module defines a TerminalApplication class which provides common
+facilities to command line applications: a help screen, universal file
+globbing, response file handling, and common logging configuration and options.
+"""
 
-# The path under which tvrip-related data will be kept
-XDG_CONFIG_HOME = Path(os.environ.get(
-    'XDG_CONFIG_HOME', Path.home() / '.config'))
-DATADIR = Path(os.environ.get(
-    'TVRIP_CONFIG', XDG_CONFIG_HOME / 'tvrip'))
+import sys
+import locale
+import argparse
+import traceback
+from collections import namedtuple, OrderedDict
+
+if sys.platform.startswith('win'):
+    from .win import term_size  # pragma: no cover
+else:
+    from .posix import term_size  # pragma: no cover
+
+
+# Use the user's default locale instead of C
+locale.setlocale(locale.LC_ALL, '')

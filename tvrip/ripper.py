@@ -28,8 +28,8 @@ import subprocess as proc
 import hashlib
 from fractions import Fraction
 from operator import attrgetter
-from itertools import groupby
-from weakref import proxy
+from itertools import groupby, chain
+from weakref import ref
 from pathlib import Path
 
 from . import multipart
@@ -48,23 +48,17 @@ AUDIO_ENCODING_ORDER = {
 }
 
 
-class Disc():
-    "Represents a DVD disc"
-
-    error1_re = re.compile(
-        r"libdvdread: Can't open .* for reading", re.UNICODE)
-    error2_re = re.compile(
-        r'libdvdnav: vm: failed to open/read the DVD', re.UNICODE)
-    disc_name_re = re.compile(r'^libdvdnav: DVD Title: (?P<name>.*)$')
-    disc_serial_re = re.compile(
-        r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
+class Disc:
+    """
+    Represents an optical disc, typically either a DVD or a Blu-ray disc.
+    """
 
     def __init__(self, config, titles=None):
         super().__init__()
-        self.match = None
+        self.type = ''
         self.titles = []
         self.name = ''
-        self.serial = None
+        self.serial = ''
         self.ident = None
         if titles is None:
             titles = [0]
@@ -77,17 +71,16 @@ class Disc():
     def _generate_ident(self):
         # Calculate a hash of disc serial, and track properties to form a
         # unique disc identifier, then replace disc-serial with this (#1)
-        h = hashlib.sha1()
-        if self.serial:
-            h.update(self.serial.encode())
-        h.update(str(len(self.titles)).encode())
+        ident_hash = hashlib.sha1()
+        ident_hash.update(self.serial.encode())
+        ident_hash.update(str(len(self.titles)).encode())
         for title in self.titles:
-            h.update(str(title.duration).encode())
-            h.update(str(len(title.chapters)).encode())
+            ident_hash.update(str(title.duration).encode())
+            ident_hash.update(str(len(title.chapters)).encode())
             for chapter in title.chapters:
-                h.update(str(chapter.start).encode())
-                h.update(str(chapter.duration).encode())
-        return '$H1$' + h.hexdigest()
+                ident_hash.update(str(chapter.start).encode())
+                ident_hash.update(str(chapter.duration).encode())
+        return '$H1$' + ident_hash.hexdigest()
 
     def _mark_duplicates(self):
         # Mark duplicate titles (adjacent titles with equal durations) as such;
@@ -97,7 +90,7 @@ class Disc():
         # * first: this title is the first in a run of duplicates
         # * yes:   this title is in the middle of a run of duplicates
         # * last:  this title is the last in a run of duplicates
-        previous = None
+        title = previous = None
         for title in self.titles:
             if previous is not None:
                 if previous.duration == title.duration:
@@ -108,7 +101,7 @@ class Disc():
                     if previous.duplicate == 'yes':
                         previous.duplicate = 'last'
             previous = title
-        if title.duplicate == 'yes':
+        if title is not None and title.duplicate == 'yes':
             title.duplicate = 'last'
 
     def _mark_best(self):
@@ -124,28 +117,18 @@ class Disc():
                     AUDIO_MIX_ORDER.index(track.channel_mix),
                     AUDIO_ENCODING_ORDER.get(track.encoding, len(AUDIO_ENCODING_ORDER))
                 ))
-                if group:
-                    group[0].best = True
+                group[0].best = True
             for _, group in groupby(
                     sorted(title.subtitle_tracks, key=attrgetter('name')),
                     key=attrgetter('name')):
                 group = list(group)
-                if group:
-                    group[0].best = True
+                group[0].best = True
 
     def __repr__(self):
         return '<Disc()>'
 
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
-
-        # This is a simple utility method to make the pattern matching below a
-        # bit simpler. It returns the result of the match as a bool and stores
-        # the result as an instance attribute for later extraction of groups
-        def _match(pattern, line):
-            self.match = pattern.match(line)
-            return bool(self.match)
-
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,      # specify the input device
@@ -153,25 +136,56 @@ class Disc():
             '--min-duration', '300',  # only scan titles >5 minutes
             '--scan',                 # scan only
             '--json',                 # JSON output
-            ]
+        ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
         result = proc.run(cmdline, stdout=proc.PIPE, stderr=proc.PIPE,
                           check=True, encoding='utf-8', errors='replace')
-        for line in result.stderr.splitlines():
-            if _match(self.error1_re, line) or _match(self.error2_re, line):
+        self._parse_scan_stderr(config, result.stderr)
+        self._parse_scan_stdout(config, result.stdout)
+
+    def _parse_scan_stderr(self, config, output):
+        # This is a simple utility method to make the pattern matching below a
+        # bit simpler. It returns the result of the match as a bool and stores
+        # the result as an instance attribute for later extraction of groups
+        disc_type_re = re.compile(
+            r'scan: (?P<type>BD|DVD) has (?:\d+) title\(s\)', re.UNICODE)
+        disc_name_re = re.compile(
+            r'^libdvdnav: DVD Title: (?P<name>.*)$')
+        disc_serial_re = re.compile(
+            r'^libdvdnav: DVD Serial Number: (?P<serial>.*)$', re.UNICODE)
+        error1_re = re.compile(
+            r"libdvdread: Can't open .* for reading", re.UNICODE)
+        error2_re = re.compile(
+            r'libdvdnav: vm: failed to open/read the .*', re.UNICODE)
+
+        match = None
+
+        def get_match(pattern, line):
+            nonlocal match
+            match = pattern.match(line)
+            return bool(match)
+
+        for line in output.splitlines():
+            if get_match(error1_re, line) or get_match(error2_re, line):
                 raise IOError(
                     'Unable to read disc in {}'.format(config.source))
-            elif _match(self.disc_name_re, line):
-                self.name = self.match.group('name')
-            elif _match(self.disc_serial_re, line):
-                self.serial = str(self.match.group('serial'))
+            if get_match(disc_name_re, line):
+                self.name = match.group('name')
+            elif get_match(disc_serial_re, line):
+                self.serial = match.group('serial')
+            elif get_match(disc_type_re, line):
+                self.type = {
+                    'DVD': 'DVD',
+                    'BD': 'Blu-ray',
+                }[match.group('type')]
+
+    def _parse_scan_stdout(self, config, output):
         try:
-            json_start = result.stdout.rindex('JSON Title Set:')
+            json_start = output.rindex('JSON Title Set:')
         except ValueError:
             raise IOError('Unable to find JSON data in HandBrake output')
-        json_disc = json.loads(
-            result.stdout[json_start + len('JSON Title Set:'):])
+        json_disc = json.loads(output[json_start + len('JSON Title Set:'):])
 
         title = None
         for json_title in json_disc['TitleList']:
@@ -226,20 +240,30 @@ class Disc():
         if title_or_chapter is None:
             mrl = 'dvd://{source}'.format(source=config.source)
         elif isinstance(title_or_chapter, Title):
+            assert title_or_chapter.disc is self
             mrl = 'dvd://{source}#{title}'.format(
                 source=config.source,
                 title=title_or_chapter.number)
         elif isinstance(title_or_chapter, Chapter):
+            assert title_or_chapter.title.disc is self
             mrl = 'dvd://{source}#{title}:{chapter}'.format(
                 source=config.source,
                 title=title_or_chapter.title.number,
                 chapter=title_or_chapter.number)
-        cmdline = [config.get_path('vlc'), '--quiet', mrl]
-        proc.check_call(cmdline, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
+        else:
+            assert False
+        cmdline = [config.get_path('vlc'), '--quiet', '--avcodec-hw', 'none', mrl]
+        proc.run(cmdline, check=True, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
     def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
         "Rip the specified title"
+        for item in chain(audio_tracks, subtitle_tracks,
+                          [start_chapter, end_chapter]):
+            if item is not None and item.title is not title:
+                raise ValueError(
+                    '{item} does not belong to {title}'.format(
+                        item=item, title=title))
         file_id = ' '.join(
             config.id_template.format(
                 season=episode.season.number,
@@ -252,26 +276,29 @@ class Disc():
             id=file_id,
             name=multipart.name(episodes),
             now=dt.datetime.now(),
-            )
+            ext=config.output_format,
+        )
         # Replace invalid characters in the filename with -
         filename = re.sub(r'[\/:]', '-', filename)
         # Convert the video track
         audio_defs = [
             (track.number, config.audio_mix, track.name)
             for track in audio_tracks
-            ]
+        ]
         subtitle_defs = [
             (track.number, track.name, track.best)
             for track in subtitle_tracks
-            ]
+        ]
         cmdline = [
             config.get_path('handbrake'),
             '-i', config.source,
             '-t', str(title.number),
             '-o', os.path.join(config.target, filename),
-            '-f', 'av_mp4',  # output an MP4 container
+            '-f', f'av_{config.output_format}',
             '-O',            # optimize for streaming
             '-m',            # include chapter markers
+            '-X', str(config.width_max),
+            '-Y', str(config.height_max),
             '--encoder', 'x264',
             '--encoder-preset', 'medium',
             '--encoder-profile', 'high',
@@ -293,7 +320,7 @@ class Disc():
             '-B', ','.join('160'     for ad           in audio_defs),
             '-6', ','.join(mix       for (_, mix, _)  in audio_defs),
             '-A', ','.join(name      for (_, _, name) in audio_defs),
-            ]
+        ]
         cmdline.append('--quality')
         cmdline.append(str({
             'film':      21,
@@ -312,8 +339,9 @@ class Disc():
                     '{start}-{end}'.format(
                         start=start_chapter.number, end=end_chapter.number))
             else:
+                end_chapter = start_chapter
                 cmdline.append(str(start_chapter.number))
-        if config.subtitle_format == 'vobsub':
+        if config.subtitle_format in ('vobsub', 'pgs') and subtitle_defs:
             cmdline.append('-s')
             cmdline.append(','.join(str(num) for (num, _, _) in subtitle_defs))
             if config.subtitle_default:
@@ -328,34 +356,36 @@ class Disc():
         elif config.decomb == 'auto':
             cmdline.append('-5')
         with (Path(config.temp) / 'tvrip.log').open('a') as log:
-            proc.check_call(cmdline, stdout=log, stderr=log)
+            proc.run(cmdline, check=True, stdout=log, stderr=log)
         # Tag the resulting file
-        tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
-        try:
-            cmdline = [
-                config.get_path('atomicparsley'),
-                os.path.join(config.target, filename),
-                '-o', tmpfile,
-                '--stik', 'TV Show',
-                # set tags for TV shows
-                '--TVShowName',   episodes[0].season.program.name,
-                '--TVSeasonNum',  str(episodes[0].season.number),
-                '--TVEpisodeNum', str(episodes[0].number),
-                '--TVEpisode',    multipart.name(episodes),
-                # also set tags for music files as these have wider support
-                '--artist',       episodes[0].season.program.name,
-                '--album',        'Season {}'.format(episodes[0].season.number),
-                '--tracknum',     str(episodes[0].number),
-                '--title',        multipart.name(episodes),
+        if config.output_format == 'mp4':
+            tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
+            try:
+                cmdline = [
+                    config.get_path('atomicparsley'),
+                    os.path.join(config.target, filename),
+                    '-o', tmpfile,
+                    '--stik', 'TV Show',
+                    # set tags for TV shows
+                    '--TVShowName',   episodes[0].season.program.name,
+                    '--TVSeasonNum',  str(episodes[0].season.number),
+                    '--TVEpisodeNum', str(episodes[0].number),
+                    '--TVEpisode',    multipart.name(episodes),
+                    # also set tags for music files as these have wider support
+                    '--artist',       episodes[0].season.program.name,
+                    '--album',        'Season {}'.format(episodes[0].season.number),
+                    '--tracknum',     str(episodes[0].number),
+                    '--title',        multipart.name(episodes),
                 ]
-            with (Path(config.temp) / 'tvrip.log').open('a') as log:
-                proc.check_call(cmdline, stdout=log, stderr=log)
-            os.chmod(
-                tmpfile,
-                os.stat(os.path.join(config.target, filename)).st_mode)
-            shutil.move(tmpfile, os.path.join(config.target, filename))
-        finally:
-            os.close(tmphandle)
+                with (Path(config.temp) / 'tvrip.log').open('a') as log:
+                    proc.run(cmdline, check=True, stdout=log, stderr=log)
+                os.chmod(
+                    tmpfile,
+                    os.stat(os.path.join(config.target, filename)).st_mode)
+                shutil.move(tmpfile, os.path.join(config.target, filename))
+            finally:
+                os.close(tmphandle)
+        # Update the database with the ripped titles
         for episode in episodes:
             episode.disc_id = title.disc.ident
             episode.disc_title = title.number
@@ -373,7 +403,7 @@ class Title():
     def __init__(self, disc):
         super().__init__()
         disc.titles.append(self)
-        self.disc = proxy(disc)
+        self._disc = ref(disc)
         self.number = 0
         self.duration = dt.timedelta()
         self.size = (0, 0)
@@ -388,6 +418,11 @@ class Title():
 
     def __repr__(self):
         return '<Title({})>'.format(self.number)
+
+    @property
+    def disc(self):
+        "Returns the owning :class:`Disc`"
+        return self._disc()
 
     @property
     def previous(self):
@@ -417,25 +452,36 @@ class Chapter():
     def __init__(self, title):
         super().__init__()
         title.chapters.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.number = 0
         self.duration = dt.timedelta(0)
+
+    def __repr__(self):
+        return '<Chapter({number}, {duration})>'.format(
+            number=self.number, duration=self.duration)
+
+    @property
+    def title(self):
+        "Returns the owning :class:`Title`"
+        return self._title()
 
     @property
     def start(self):
         "Returns the start time of the chapter"
-        result = dt.datetime(dt.MINYEAR, 1, 1)
-        for chapter in self.title.chapters:
-            if chapter.number >= self.number:
-                break
-            result += chapter.duration
-        return result.time()
+        return (
+            dt.datetime(dt.MINYEAR, 1, 1) + sum((
+                c.duration
+                for c in self.title.chapters[:self.title.chapters.index(self)]
+            ), dt.timedelta(0))
+        ).time()
 
     @property
     def finish(self):
         "Returns the finish time of the chapter"
-        result = dt.datetime.combine(dt.date(dt.MINYEAR, 1, 1), self.start)
-        return (result + self.duration).time()
+        return (
+            dt.datetime.combine(dt.date(dt.MINYEAR, 1, 1), self.start) +
+            self.duration
+        ).time()
 
     @property
     def previous(self):
@@ -454,10 +500,6 @@ class Chapter():
         except IndexError:
             return None
 
-    def __repr__(self):
-        return '<Chapter({number}, {duration})>'.format(
-            number=self.number, duration=self.duration)
-
     def play(self, config):
         "Starts VLC playing at the chapter start"
         self.title.disc.play(config, self)
@@ -469,7 +511,7 @@ class AudioTrack():
     def __init__(self, title):
         super().__init__()
         title.audio_tracks.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.name = ''
         self.number = 0
         self.language = ''
@@ -480,8 +522,13 @@ class AudioTrack():
         self.best = False
 
     def __repr__(self):
-        return "<AudioTrack({number}, '{name}')>".format(
+        return '<AudioTrack({number}, {name!r})>'.format(
             number=self.number, name=self.name)
+
+    @property
+    def title(self):
+        "Returns the owning title"
+        return self._title()
 
 
 class SubtitleTrack():
@@ -490,7 +537,7 @@ class SubtitleTrack():
     def __init__(self, title):
         super().__init__()
         title.subtitle_tracks.append(self)
-        self.title = proxy(title)
+        self._title = ref(title)
         self.number = 0
         self.name = ''
         self.language = ''
@@ -498,12 +545,11 @@ class SubtitleTrack():
         self.best = False
         self.log = ''
 
-    def guess_language(self):
-        if self.name.startswith('English'):
-            self.language = 'eng'
-        elif self.name.startswith('Japanese'):
-            self.language = 'jpn'
-
     def __repr__(self):
-        return "<SubtitleTrack({number}, '{name}')>".format(
+        return '<SubtitleTrack({number}, {name!r})>'.format(
             number=self.number, name=self.name)
+
+    @property
+    def title(self):
+        "Returns the owning title"
+        return self._title()
