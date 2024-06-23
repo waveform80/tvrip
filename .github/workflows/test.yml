@@ -44,6 +44,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt install ctags
           make develop
 
       - name: Run tests
