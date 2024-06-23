@@ -48,6 +48,5 @@ tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 .. _Python: http://www.python.org/
 .. _HandBrake: http://handbrake.fr/
-.. _AtomicParsley: http://atomicparsley.sourceforge.net/
+.. _Atomic Parsley: http://atomicparsley.sourceforge.net/
 .. _sqlalchemy: http://www.sqlalchemy.org/
-
