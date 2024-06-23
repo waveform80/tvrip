@@ -27,6 +27,8 @@ installed along with the following Python packages:
 
  * `sqlalchemy`_
 
+ * `requests`_
+
 
 License
 =======
@@ -50,3 +52,4 @@ tvrip.  If not, see <http://www.gnu.org/licenses/>.
 .. _HandBrake: http://handbrake.fr/
 .. _Atomic Parsley: http://atomicparsley.sourceforge.net/
 .. _sqlalchemy: http://www.sqlalchemy.org/
+.. _requests: https://requests.readthedocs.io/
