@@ -67,6 +67,7 @@ class TVRipApplication:
             else:
                 import pdb
                 pdb.post_mortem()
+        return 0
 
 
 main = TVRipApplication()
