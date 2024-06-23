@@ -83,7 +83,7 @@ def term_size(request):
         width, height = 80, 24
         def unix_patch(handle, ctrl, buf):
             return struct.pack('hhhh', height, width, 0, 0)
-        def win_patch(*args):
+        def win_patch(handle, buf):
             buf[:] = struct.pack('hhhhHhhhhhh', 0, 0, 0, 0, 0, 0, 0, 0, 0, width - 1, height - 1, 0, 0)
             return True
         fnctl.ioctl.side_effect = unix_patch
