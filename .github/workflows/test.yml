@@ -26,10 +26,10 @@ jobs:
             experimental: false
           - os: ubuntu-22.04
             python: "3.11"
-            experimental: true
+            experimental: false
           - os: ubuntu-22.04
             python: "3.12"
-            experimental: true
+            experimental: false
 
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
