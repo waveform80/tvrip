@@ -203,7 +203,7 @@ class Cmd(cmd.Cmd):
         # Just catch and report CmdError's; don't terminate execution because
         # of them
         try:
-            return cmd.Cmd.onecmd(self, line)
+            return super().onecmd(line)
         except CmdError as exc:
             self.pprint(str(exc) + '\n')
             return False
