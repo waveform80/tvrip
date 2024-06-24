@@ -11,11 +11,11 @@ DEST_DIR=/
 # Calculate the base names of the distribution, the location of all source,
 # documentation, packaging, icon, and executable script files
 NAME:=$(shell $(PYTHON) $(PYFLAGS) setup.py --name)
-PKG_DIR:=$(subst -,_,$(NAME))
+WHEEL_NAME:=$(subst -,_,$(NAME))
 VER:=$(shell $(PYTHON) $(PYFLAGS) setup.py --version)
 PY_SOURCES:=$(shell \
 	$(PYTHON) $(PYFLAGS) setup.py egg_info >/dev/null 2>&1 && \
-	grep -v "\.egg-info" $(PKG_DIR).egg-info/SOURCES.txt)
+	cat $(WHEEL_NAME).egg-info/SOURCES.txt | grep -v "\.egg-info"  | grep -v "\.mo$$")
 DOC_SOURCES:=docs/conf.py \
 	$(wildcard docs/*.png) \
 	$(wildcard docs/*.svg) \
@@ -27,11 +27,10 @@ DOC_SOURCES:=docs/conf.py \
 SUBDIRS:=
 
 # Calculate the name of all outputs
-DIST_WHEEL=dist/$(NAME)-$(VER)-py3-none-any.whl
+DIST_WHEEL=dist/$(WHEEL_NAME)-$(VER)-py3-none-any.whl
 DIST_TAR=dist/$(NAME)-$(VER).tar.gz
 DIST_ZIP=dist/$(NAME)-$(VER).zip
-MAN_DIR=build/sphinx/man
-MAN_PAGES=$(MAN_DIR)/tvrip.1
+MAN_PAGES=man/tvrip.1
 
 # Default target
 all:
@@ -54,9 +53,12 @@ install: $(SUBDIRS)
 doc: $(DOC_SOURCES)
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
-	$(MAKE) -C docs man
 	$(MAKE) -C docs epub
 	$(MAKE) -C docs latexpdf
+	$(MAKE) $(MAN_PAGES)
+
+preview:
+	$(MAKE) -C docs preview
 
 source: $(DIST_TAR) $(DIST_ZIP)
 
@@ -72,27 +74,32 @@ develop: tags
 	@# These have to be done separately to avoid a cockup...
 	$(PIP) install -U setuptools
 	$(PIP) install -U pip
+	$(PIP) install -U twine
+	$(PIP) install -U tox
 	$(PIP) install -e .[doc,test]
 
 test:
-	$(PYTEST) tests
+	$(PYTEST)
 
 clean:
-	$(PYTHON) $(PYFLAGS) setup.py clean
-	rm -fr build/ dist/ .pytest_cache/ .mypy_cache/ $(NAME).egg-info/ tags .coverage
-	for dir in docs $(SUBDIRS); do \
+	rm -fr dist/ build/ man/ .pytest_cache/ .mypy_cache/ $(WHEEL_NAME).egg-info/ tags .coverage
+	for dir in $(SUBDIRS); do \
 		$(MAKE) -C $$dir clean; \
 	done
 	find $(CURDIR) -name "*.pyc" -delete
+	find $(CURDIR) -name "__pycache__" -delete
 
 tags: $(PY_SOURCES)
 	ctags -R --exclude="build/*" --exclude="docs/*" --languages="Python"
+
+lint: $(PY_SOURCES)
+	pylint $(WHEEL_NAME)
 
 $(SUBDIRS):
 	$(MAKE) -C $@
 
 $(MAN_PAGES): $(DOC_SOURCES)
-	$(PYTHON) $(PYFLAGS) setup.py build_sphinx -b man
+	$(MAKE) -C docs man
 	mkdir -p man/
 	cp build/sphinx/man/*.[0-9] man/
 
@@ -108,9 +115,10 @@ $(DIST_WHEEL): $(PY_SOURCES) $(SUBDIRS)
 release:
 	$(MAKE) clean
 	test -z "$(shell git status --porcelain)"
-	git tag -s release-$(VER) -m "Release $(VER)"
-	git push origin release-$(VER)
-	$(MAKE) $(DIST_TAR) $(DIST_WHEEL)
+	git tag -s v$(VER) -m "Release $(VER)"
+	git push origin v$(VER)
+
+upload: $(DIST_TAR) $(DIST_WHEEL)
 	$(TWINE) check $(DIST_TAR) $(DIST_WHEEL)
 	$(TWINE) upload $(DIST_TAR) $(DIST_WHEEL)
 
