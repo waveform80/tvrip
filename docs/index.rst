@@ -16,6 +16,7 @@ Contents:
    tutorial
    tvrip
    commands
+   settings
    license
 
 
