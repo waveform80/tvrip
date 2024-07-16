@@ -480,9 +480,9 @@ class RipCmd(Cmd):
         """
         Shows the current set of configuration options.
 
-        Syntax: config
+        Syntax: ``config``
 
-        The 'config' command simply outputs the current set of configuration
+        The ``config`` command simply outputs the current set of configuration
         options as set by the various other commands.
         """
         self.no_args(arg)

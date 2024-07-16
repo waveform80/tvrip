@@ -32,8 +32,6 @@ from importlib.metadata import version
 
 class TVRipApplication:
     """
-    %prog [options]
-
     This command line interface simplifies the extraction and transcoding of a
     DVD containing a TV series (or a season of a TV series) via HandBrake.
     """

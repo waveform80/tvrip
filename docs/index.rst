@@ -13,7 +13,9 @@ Contents:
    :maxdepth: 1
 
    install
+   tutorial
    tvrip
+   commands
    license
 
 

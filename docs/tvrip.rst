@@ -2,13 +2,30 @@
 tvrip
 =====
 
-This is the currently the only application in the tvrip package. The command
-line interface includes all the usual readline trimmings: history, editing and
-tab-completion. Use the *exit* command or Ctrl+D to terminate the application.
+An interactive command line application to ease the ripping of TV series from
+DVD or Bluray.
 
 
 Synopsis
 ========
+
+.. code-block:: text
+
+    usage: tvrip [-h] [--version]
+
+
+Options
+=======
+
+.. program:: tvrip
+
+.. option:: -h, --help
+
+    show the help message and exit
+
+.. option:: --version
+
+    show the application's version and exit
 
 
 Commands
