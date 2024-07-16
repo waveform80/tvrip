@@ -4,12 +4,13 @@ help
 
 .. code-block:: text
 
-    help [command]
+    help [command|setting]
 
 
 Description
 ===========
 
 The 'help' command displays the list of commands available along with a brief
-synopsis of each. When specified with a command, it displays a description of
-that command 
+synopsis of each. When specified with a command, it displays the manual page
+for that particular command. When specified with a configuration setting, it
+displays information about that setting and its valid options.

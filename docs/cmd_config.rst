@@ -10,8 +10,8 @@ config
 Description
 ===========
 
-The 'config' command displays the current configuration of the application. The
-:doc:`cmd_set` command can be used to adjust the configuration. See
+The ``config`` command displays the current configuration of the application.
+The :doc:`cmd_set` command can be used to adjust the configuration. See
 :doc:`variables` for a full list of configuration variables.
 
 

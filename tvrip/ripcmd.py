@@ -44,8 +44,8 @@ class RipCmd(Cmd):
 
     prompt = '(tvrip) '
 
-    def __init__(self, session, *, color_prompt=True, stdin=None, stdout=None):
-        super().__init__(color_prompt=color_prompt, stdin=stdin, stdout=stdout)
+    def __init__(self, session, *, stdin=None, stdout=None):
+        super().__init__(stdin=stdin, stdout=stdout)
         self.discs = {}
         self.episode_map = EpisodeMap()
         self.session = session
@@ -479,11 +479,6 @@ class RipCmd(Cmd):
     def do_config(self, arg=''):
         """
         Shows the current set of configuration options.
-
-        Syntax: ``config``
-
-        The ``config`` command simply outputs the current set of configuration
-        options as set by the various other commands.
         """
         self.no_args(arg)
         self.pprint('External Utility Paths:')
@@ -533,11 +528,6 @@ class RipCmd(Cmd):
     def do_set(self, arg):
         """
         Sets a configuration option.
-
-        Syntax: set <variable> <value>
-
-        The 'set' command is used to alter the value of one of the
-        configuration settings listed by the 'config' command.
         """
         try:
             (var, value) = arg.split(' ', 1)
@@ -581,10 +571,6 @@ class RipCmd(Cmd):
         """
         Displays the available commands or help on a specified command or
         configuration setting.
-
-        The 'help' command is used to display the help text for a command or,
-        if no command is specified, it presents a list of all available
-        commands along with a brief description of each.
         """
         try:
             super().do_help(arg)
@@ -1017,24 +1003,6 @@ class RipCmd(Cmd):
     def do_duplicate(self, arg):
         """
         Manually specifies duplicated titles on a disc.
-
-        Syntax: duplicate <title>[-<title>]
-
-        The 'duplicate' command is used to override the duplicate setting on
-        disc titles. Usually duplicate titles are automatically detected during
-        'scan' based on identical title lengths. However, some discs have
-        duplicate titles with different lengths. In this case, it is necessary
-        to manually specify such duplicates.
-
-        If a single title number is given, that title is marked as not being a
-        duplicate. If a range of title numbers is given, then all titles in
-        that range will be marked as being duplicates of each other (and titles
-        immediately adjacent to the range which were formally marked as
-        duplicates will be marked as not duplicating titles within the range).
-        Examples:
-
-        (tvrip) duplicate 5
-        (tvrip) duplicate 1-3
         """
         arg = arg.strip()
         try:
@@ -1071,19 +1039,6 @@ class RipCmd(Cmd):
     def do_episode(self, arg):
         """
         Modifies a single episode in the current season.
-
-        Syntax: episode <insert|update|delete> <number> [name]
-
-        The 'episode' command is used to modify the details of a single episode
-        in the current season. If the first parameter is "insert", then the
-        episode will be inserted at the specified position, shifting any
-        existing, and all subsequent episodes up (numerically). If the first
-        parameter is "update", then the numbered episode is renamed. Finally,
-        if the first parameter is "delete", then the numbered episode is
-        removed, shifting all subsequent episodes down (numerically). In this
-        case, name does not need to be specified.
-
-        See also: season, episodes
         """
         if not self.config.season:
             raise CmdError('No season has been set')
@@ -1172,18 +1127,6 @@ class RipCmd(Cmd):
     def do_episodes(self, arg):
         """
         Gets or sets the episodes for the current season.
-
-        Syntax: episodes [number]
-
-        The 'episodes' command can be used to list the episodes of the
-        currently selected season of the program. If an argument is given, the
-        current episode list is deleted and you will be prompted to enter
-        names for the specified number of episodes.
-
-        If you simply wish to change the name of a single episode, see the
-        'episode' command instead.
-
-        See also: season, episode
         """
         if not self.config.season:
             raise CmdError('No season has been set')
@@ -1222,18 +1165,6 @@ class RipCmd(Cmd):
     def do_season(self, arg, program_id=None):
         """
         Sets which season of the program the disc contains.
-
-        Syntax: season <number>
-
-        The 'season' command specifies the season the disc contains episodes
-        for. This number is used when constructing the filename of ripped
-        episodes.
-
-        This command is also used to expand the episode database. If the number
-        given does not exist, it will be entered into the database under the
-        current program and you will be prompted for episode names.
-
-        See also: program, seasons
         """
         if not self.config.program:
             raise CmdError('You must specify a program first')
@@ -1301,14 +1232,6 @@ class RipCmd(Cmd):
     def do_seasons(self, arg=''):
         """
         Shows the defined seasons of the current program.
-
-        Syntax: seasons
-
-        The 'seasons' command outputs the list of seasons defined for the
-        current program, along with a summary of how many episodes are defined
-        for each season.
-
-        See also: programs, season
         """
         self.no_args(arg)
         self.pprint_seasons()
@@ -1316,17 +1239,6 @@ class RipCmd(Cmd):
     def do_program(self, arg):
         """
         Sets the name of the program.
-
-        Syntax: program <name>
-
-        The 'program' command specifies the program the disc contains episodes
-        for. This is used when constructing the filename of ripped episodes.
-
-        This command is also used to expand the episode database. If the name
-        given does not exist, it will be entered into the database and you will
-        be prompted for season and episode information.
-
-        See also: episodes, programs
         """
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
@@ -1428,14 +1340,6 @@ class RipCmd(Cmd):
     def do_programs(self, arg=''):
         """
         Shows the defined programs.
-
-        Syntax: programs
-
-        The 'programs' command outputs the list of programs defined in the
-        database, along with a summary of how many seasons and episodes are
-        defined for each.
-
-        See also: program
         """
         self.no_args(arg)
         self.pprint_programs()
@@ -1443,15 +1347,6 @@ class RipCmd(Cmd):
     def do_disc(self, arg=''):
         """
         Displays information about the last scanned disc.
-
-        Syntax: disc
-
-        The 'disc' command re-displays the top-level information that was
-        discovered during the last 'scan' command. It shows the disc's
-        identifier and serial number, along with a summary of title
-        information.
-
-        See also: scan, title
         """
         self.no_args(arg)
         self.pprint_disc()
@@ -1459,14 +1354,6 @@ class RipCmd(Cmd):
     def do_title(self, arg):
         """
         Displays information about the specified title(s).
-
-        Syntax: title <titles>
-
-        The 'title' command displays detailed information about the specified
-        titles including chapter starts and durations, audio tracks, and
-        subtitle tracks.
-
-        See also: scan, disc
         """
         if not arg:
             raise CmdSyntaxError('You must specify a title')
@@ -1476,15 +1363,6 @@ class RipCmd(Cmd):
     def do_play(self, arg):
         """
         Plays the specified episode.
-
-        Syntax: play [title[.chapter]]
-
-        The 'play' command plays the specified title (and optionally chapter)
-        of the currently scanned disc. Note that a disc must be scanned before
-        this command can be used. VLC will be started at the specified location
-        and must be quit before the command prompt will return.
-
-        See also: scan, disc
         """
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
@@ -1499,15 +1377,6 @@ class RipCmd(Cmd):
     def do_scan(self, arg):
         """
         Scans the source device for episodes.
-
-        Syntax: scan [titles]
-
-        The 'scan' command scans the current source device to discover what
-        titles, audio tracks, and subtitle tracks exist on the disc in the
-        source device. Please note that scanning a disc erases the current
-        episode mapping.
-
-        See also: automap, rip
         """
         if not self.config.source:
             raise CmdError('No source has been specified')
@@ -1591,24 +1460,6 @@ class RipCmd(Cmd):
     def do_automap(self, arg):
         """
         Maps episodes to titles or chapter ranges automatically.
-
-        Syntax: automap [episodes [titles]]
-
-        The 'automap' command is used to have the application attempt to figure
-        out which titles (or chapters of titles) contain the next set of
-        unripped episodes. If no episode numbers are specified, or * is
-        specified all unripped episodes are considered candidates. Otherwise,
-        only those episodes specified are considered.
-
-        If no title numbers are specified, all titles on the disc are
-        considered candidates. Otherwise, only the titles specified are
-        considered. If title mapping fails, chapter-based mapping is attempted
-        instead.
-
-        The current episode mapping can be viewed in the output of the 'map'
-        command.
-
-        See also: map, unmap
         """
         self.pprint('Performing auto-mapping')
         # Generate the list of titles, either specified or implied in the
@@ -1717,25 +1568,6 @@ class RipCmd(Cmd):
     def do_map(self, arg=''):
         """
         Maps episodes to titles or chapter ranges.
-
-        Syntax: map [episode title[.start[-end]]]
-
-        The 'map' command is used to define which title on the disc contains
-        the specified episode. This is used when constructing the filename of
-        ripped episodes. Note that multiple episodes can be mapped to a single
-        title, to deal with multi-part episodes being encoded as a single
-        title.
-
-        For example:
-
-        (tvrip) map 3 1
-        (tvrip) map 7 4
-        (tvrip) map 5 2.1-12
-
-        If no arguments are specified, the current episode map will be
-        displayed.
-
-        See also: automap, unmap
         """
         if arg:
             self.set_map(arg)
@@ -1818,19 +1650,6 @@ class RipCmd(Cmd):
     def do_unmap(self, arg):
         """
         Removes an episode mapping.
-
-        Syntax: unmap <episodes>
-
-        The 'unmap' command is used to remove a title to episode mapping. For
-        example, if the auto-mapping when scanning a disc makes an error, you
-        can use the 'map' and 'unmap' commands to fix it. You can also specify
-        '*' to clear the mapping list completely. For example:
-
-        (tvrip) unmap 3
-        (tvrip) unmap 7
-        (tvrip) unmap *
-
-        See also: map, automap
         """
         if not arg:
             raise CmdSyntaxError(
@@ -1854,27 +1673,6 @@ class RipCmd(Cmd):
     def do_rip(self, arg=''):
         """
         Starts the ripping and transcoding process.
-
-        Syntax: rip [episodes]
-
-        The 'rip' command begins ripping the mapped titles from the current
-        source device, converting them according to the current preferences,
-        and storing the results in the target path. Only previously unripped
-        episodes will be ripped. If you wish to re-rip an episode, use the
-        'unrip' command to set it to unripped first.
-
-        You can specify a list of episodes to rip only a subset of the map.
-        This is useful to adjust ripping configurations between episodes. Note
-        that already ripped episodes will not be re-ripped even if manually
-        specified. Use 'unrip' first.
-
-        If no episodes are specified, all unripped episodes in the map will be
-        ripped. Examples:
-
-        (tvrip) rip
-        (tvrip) rip 8,11-15
-
-        See also: unrip, map, automap
         """
         if not self.episode_map:
             raise CmdError('No titles have been mapped to episodes')
@@ -1934,23 +1732,6 @@ class RipCmd(Cmd):
     def do_unrip(self, arg):
         """
         Changes the status of the specified episode to unripped.
-
-        Syntax: unrip <episodes>
-
-        The 'unrip' command is used to set the status of an episode or episodes
-        to unripped. Episodes may be specified as a range (1-5) or as a comma
-        separated list (4,2,1) or some combination (1,3-5), or '*' to indicate
-        all episodes in the currently selected season.
-
-        Episodes are automatically set to ripped during the operation of the
-        'rip' command.  Episodes marked as ripped will be automatically mapped
-        to titles by the 'map' command when the disc they were ripped from is
-        scanned (they can be mapped manually too). For example:
-
-        (tvrip) unrip 3
-        (tvrip) unrip 7
-
-        See also: rip, map
         """
         if not arg:
             raise CmdSyntaxError(

@@ -40,31 +40,11 @@ import os
 import re
 import cmd
 import readline
-from textwrap import TextWrapper
+from importlib import resources
+from unittest import mock
 
-from .terminal import term_size
-from .formatter import TableWrapper, pretty_table
-
-COLOR_BOLD    = '\033[1m'
-COLOR_BLACK   = '\033[30m'
-COLOR_RED     = '\033[31m'
-COLOR_GREEN   = '\033[32m'
-COLOR_YELLOW  = '\033[33m'
-COLOR_BLUE    = '\033[34m'
-COLOR_MAGENTA = '\033[35m'
-COLOR_CYAN    = '\033[36m'
-COLOR_WHITE   = '\033[37m'
-COLOR_RESET   = '\033[0m'
-
-# Some prettier defaults for TableWrapper
-table_style = {
-    'cell_separator': ' │ ',
-    'internal_line': '═',
-    'internal_separator': '═╪═',
-    'borders': ('│ ', '─', ' │', '─'),
-    'corners': ('╭─', '─╮', '─╯', '╰─'),
-    'internal_borders': ('╞═', '─┬─', '═╡', '─┴─'),
-}
+from rich.console import Console
+from rich.table import Table
 
 
 class CmdError(Exception):
@@ -76,15 +56,25 @@ class CmdSyntaxError(CmdError):
 
 
 class Cmd(cmd.Cmd):
-    "An enhanced version of the standard Cmd command line processor"
+    """
+    An enhanced version of the standard Cmd command line processor, using rich
+    for console output.
+    """
     history_file = None
     history_size = 1000  # <0 implies infinite history
 
-    def __init__(self, color_prompt=True, stdin=None, stdout=None):
+    def __init__(self, stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
-        self._wrapper = TextWrapper()
-        self.color_prompt = color_prompt
-        self.base_prompt = self.prompt
+        self.console = Console()
+        # Clamp the console width for readability
+        if self.console.width > 120:
+            self.console.width = 120
+
+    def cmdloop(self, intro=None):
+        # This is evil, but unfortunately there's no other way (other than
+        # re-implemting the entire cmdloop method)
+        with mock.patch('cmd.input', self.console.input):
+            super().cmdloop(intro)
 
     @staticmethod
     def parse_bool(value, default=None):
@@ -173,26 +163,11 @@ class Cmd(cmd.Cmd):
         pass
 
     def preloop(self):
-        if self.color_prompt:
-            self.prompt = COLOR_BOLD + COLOR_GREEN + self.prompt + COLOR_RESET
         if (
             self.use_rawinput and self.history_file and
             os.path.exists(self.history_file)
         ):
             readline.read_history_file(self.history_file)
-
-    def precmd(self, line):
-        # Reset the prompt to its uncolored variant for the benefit of any
-        # command handlers that don't expect ANSI color sequences in it
-        self.prompt = self.base_prompt
-        return line
-
-    def postcmd(self, stop, line):
-        # Set the prompt back to its colored variant, if required
-        if self.color_prompt:
-            self.base_prompt = self.prompt
-            self.prompt = COLOR_BOLD + COLOR_GREEN + self.base_prompt + COLOR_RESET
-        return stop
 
     def postloop(self):
         if self.use_rawinput:
@@ -282,10 +257,7 @@ class Cmd(cmd.Cmd):
 
         The various keyword arguments are passed verbatim to :meth:`wrap`.
         """
-        self.stdout.write(
-            self.wrap(s, newline=newline, wrap=wrap,
-                      initial_indent=initial_indent,
-                      subsequent_indent=subsequent_indent))
+        self.console.print(s)
 
     def pprint_table(self, data, header_rows=1, footer_rows=0):
         "Pretty-prints a table of data"
@@ -304,8 +276,13 @@ class Cmd(cmd.Cmd):
         commands along with a brief description of each.
         """
         if arg:
-            if not hasattr(self, 'do_{}'.format(arg)):
+            if not hasattr(self, f'do_{arg}'):
                 raise CmdError('Unknown command {}'.format(arg))
+            with resources.files('tvrip') as root:
+                try:
+                    print((root / f'cmd_{arg}.rst').read_text())
+                except FileNotFoundError:
+                    pass
             paras = self.parse_docstring(
                 getattr(self, 'do_{}'.format(arg)).__doc__)
             for para in paras[1:]:
