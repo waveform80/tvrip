@@ -40,19 +40,32 @@ import os
 import re
 import cmd
 import readline
+from textwrap import dedent
 from importlib import resources
 from unittest import mock
 
+from rich import box
 from rich.console import Console
 from rich.table import Table
+from .richrst import RestructuredText
 
 
 class CmdError(Exception):
     "Base class for non-fatal Cmd errors"
+    def __str__(self):
+        return f'Error: {super().__str__()}'
+
+    def __rich__(self):
+        return f'[red]Error:[/red] {super().__str__()}'
 
 
 class CmdSyntaxError(CmdError):
     "Exception raised when the user makes a syntax error"
+    def __str__(self):
+        return f'Syntax error: {super().__str__()}'
+
+    def __rich__(self):
+        return f'[red]Syntax error:[/red] {super().__str__()}'
 
 
 class Cmd(cmd.Cmd):
@@ -65,16 +78,10 @@ class Cmd(cmd.Cmd):
 
     def __init__(self, stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
-        self.console = Console()
+        self.console = Console(highlight=False)
         # Clamp the console width for readability
         if self.console.width > 120:
             self.console.width = 120
-
-    def cmdloop(self, intro=None):
-        # This is evil, but unfortunately there's no other way (other than
-        # re-implemting the entire cmdloop method)
-        with mock.patch('cmd.input', self.console.input):
-            super().cmdloop(intro)
 
     @staticmethod
     def parse_bool(value, default=None):
@@ -133,34 +140,18 @@ class Cmd(cmd.Cmd):
                     raise CmdSyntaxError(exc) from None
         return result
 
-    def parse_docstring(self, docstring):
-        "Utility method for converting docstrings into help-text"
-        lines = [line.strip() for line in docstring.strip().splitlines()]
-        result = ['']
-        for line in lines:
-            if line:
-                if line.startswith(self.base_prompt):
-                    if result[-1]:
-                        result.append(line)
-                    else:
-                        result[-1] = line
-                else:
-                    if result[-1]:
-                        result[-1] += ' ' + line
-                    else:
-                        result[-1] = line
-            else:
-                result.append('')
-        if not result[-1]:
-            result = result[:-1]
-        return result
-
     def default(self, line):
-        raise CmdSyntaxError('Syntax error: {}'.format(line))
+        raise CmdSyntaxError(line)
 
     def emptyline(self):
         # Do not repeat commands when given an empty line
         pass
+
+    def cmdloop(self, intro=None):
+        # This is evil, but unfortunately there's no other way (other than
+        # re-implemting the entire cmdloop method)
+        with mock.patch('cmd.input', self.console.input):
+            super().cmdloop(intro)
 
     def preloop(self):
         if (
@@ -180,39 +171,10 @@ class Cmd(cmd.Cmd):
         try:
             return super().onecmd(line)
         except CmdError as exc:
-            self.pprint(str(exc) + '\n')
+            self.console.print(exc)
             return False
 
     whitespace_re = re.compile(r'\s+$')
-
-    def wrap(self, s, *, wrap=True, newline=True, initial_indent='',
-             subsequent_indent=''):
-        """
-        Wraps the string *s* for output.
-
-        If *wrap* is :data:`True` (which is the default), the string will be
-        wrapped to the terminal's width (determined automatically). If
-        *newline* is :data:`True`, a newline character will be added to the
-        output, if it does not already have one.
-
-        The *initial_indent* is the string used to prefix the first line of
-        the output. This defaults to a blank string. The *subsequent_indent*
-        is the string used to prefix all subsequent wrapped lines of output.
-        This is useful for generating properly-aligned list output.
-        """
-        suffix = ''
-        if newline:
-            suffix = '\n'
-        elif wrap:
-            match = self.whitespace_re.search(s)
-            if match:
-                suffix = match.group()
-        if wrap:
-            self._wrapper.width = min(120, term_size()[0] - 2)
-            self._wrapper.initial_indent = initial_indent
-            self._wrapper.subsequent_indent = subsequent_indent
-            s = self._wrapper.fill(s)
-        return s + suffix
 
     def input(self, prompt=''):
         "Prompts and reads input from the user"
@@ -250,23 +212,6 @@ class Cmd(cmd.Cmd):
             else:
                 return result
 
-    def pprint(self, s, *, newline=True, wrap=True, initial_indent='',
-               subsequent_indent=''):
-        """
-        Pretty-prints *s* to the terminal.
-
-        The various keyword arguments are passed verbatim to :meth:`wrap`.
-        """
-        self.console.print(s)
-
-    def pprint_table(self, data, header_rows=1, footer_rows=0):
-        "Pretty-prints a table of data"
-        wrapper = TableWrapper(
-            width=min(120, term_size()[0] - 2), header_rows=header_rows,
-            footer_rows=footer_rows, **table_style)
-        for row in wrapper.wrap(data):
-            self.stdout.write(row + '\n')
-
     def do_help(self, arg):
         """
         Displays the available commands or help on a specified command.
@@ -279,44 +224,31 @@ class Cmd(cmd.Cmd):
             if not hasattr(self, f'do_{arg}'):
                 raise CmdError('Unknown command {}'.format(arg))
             with resources.files('tvrip') as root:
-                try:
-                    print((root / f'cmd_{arg}.rst').read_text())
-                except FileNotFoundError:
-                    pass
-            paras = self.parse_docstring(
-                getattr(self, 'do_{}'.format(arg)).__doc__)
-            for para in paras[1:]:
-                if para.startswith(self.base_prompt):
-                    self.pprint('  ' + para, wrap=False)
-                else:
-                    self.pprint(para)
-                    self.pprint('')
-            if paras[-1].startswith(self.base_prompt):
-                self.pprint('')
+                source = RestructuredText.from_path(root / f'cmd_{arg}.rst')
+                self.console.print(source)
         else:
-            commands = [('Command', 'Description')]
-            commands += [
-                (
-                    method[3:],
-                    self.parse_docstring(getattr(self, method).__doc__)[0]
-                )
-                for method in self.get_names()
-                if method.startswith('do_') and method != 'do_EOF'
-            ]
-            self.pprint_table(commands)
+            table = Table(box=box.ROUNDED)
+            table.add_column('Command', no_wrap=True)
+            table.add_column('Description')
+            for method in self.get_names():
+                if method.startswith('do_') and method != 'do_EOF':
+                    name = method[3:]
+                    description = getattr(self, method).__doc__
+                    description = ' '.join(
+                        line.strip()
+                        for line in dedent(description).splitlines()
+                        if line.strip()
+                    )
+                    table.add_row(name, description)
+            self.console.print(table)
 
     def do_exit(self, arg):
         """
         Exits from the application.
-
-        Syntax: exit|quit
-
-        The 'exit' command is used to terminate the application. You can also
-        use the standard UNIX Ctrl+D end of file sequence to quit.
         """
         if arg:
             raise CmdSyntaxError('Unknown argument %s' % arg)
-        self.pprint('')
+        self.console.print('')
         return True
 
     do_quit = do_exit

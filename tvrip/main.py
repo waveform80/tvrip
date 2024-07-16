@@ -53,8 +53,9 @@ class TVRipApplication:
             DATADIR.mkdir(parents=True, exist_ok=True)
             with init_session(debug=bool(debug)) as session:
                 cmd = RipCmd(session)
-                cmd.pprint('TVRip %s' % self.version)
-                cmd.pprint('Type "help" for more information.')
+                cmd.console.print(f'[green]TVRip {self.version}[/green]')
+                cmd.console.print(
+                    'Type "[yellow]help[/yellow]" for more information.')
                 cmd.cmdloop()
         except Exception as e:
             if not debug:
