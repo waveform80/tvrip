@@ -69,6 +69,8 @@ autodoc_mock_imports = []
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3.12', None),
+    'rich': ('https://rich.readthedocs.io/en/stable', None),
+    'docutils': ('https://tristanlatr.github.io/apidocs/docutils', None),
 }
 
 # -- Options for HTML output ----------------------------------------------

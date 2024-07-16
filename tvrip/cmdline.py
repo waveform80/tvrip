@@ -47,7 +47,8 @@ from unittest import mock
 from rich import box
 from rich.console import Console
 from rich.table import Table
-from .richrst import RestructuredText
+
+from .richrst import RestructuredText, rest_theme
 
 
 class CmdError(Exception):
@@ -78,7 +79,7 @@ class Cmd(cmd.Cmd):
 
     def __init__(self, stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
-        self.console = Console(highlight=False)
+        self.console = Console(highlight=False, theme=rest_theme)
         # Clamp the console width for readability
         if self.console.width > 120:
             self.console.width = 120
@@ -145,7 +146,7 @@ class Cmd(cmd.Cmd):
 
     def emptyline(self):
         # Do not repeat commands when given an empty line
-        pass
+        self.console.print('')
 
     def cmdloop(self, intro=None):
         # This is evil, but unfortunately there's no other way (other than

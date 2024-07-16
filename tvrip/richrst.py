@@ -4,31 +4,15 @@ import math
 from docutils import core, nodes, io
 from docutils.writers import Writer
 from docutils.parsers.rst import roles
+from rich import box
 from rich.console import Console, NewLine
 from rich.containers import Renderables
 from rich.style import Style
 from rich.text import Text
 from rich.panel import Panel
-from rich.padding import Padding
 from rich.table import Table
 from rich.theme import Theme
 from rich.default_styles import DEFAULT_STYLES
-
-
-title_re = re.compile(r'^(.+?)\s*(?<!\x00)<(.*?)>$', re.DOTALL)
-def doc_ref_role(
-    role, rawtext, text, lineno, inliner, options=None, content=None
-):
-    matched = title_re.match(text)
-    if matched:
-        title = nodes.unescape(matched.group(1))
-        target = nodes.unescape(matched.group(2))
-    else:
-        title = nodes.unescape(text)
-        target = nodes.unescape(text)
-    node = nodes.Text(title, rawsource=rawtext)
-    return [node], []
-roles.register_local_role('doc', doc_ref_role)
 
 
 class Stack(list):
@@ -58,7 +42,11 @@ class RichContext:
     :param rich.style.Style style:
         The style to apply to the :attr:`output` for this context
 
-    :param str bullet_format:
+    :param str list_type:
+        The type of list the context represents. Blank string by default, but
+        may be any one of "ul", "ol", "dl", or "dl-compact"
+
+    :param str item_prefix:
         The format-string used to produce bullet-point or ordinal prefixes
         of list items (a blank string if the context is not within a list)
 
@@ -102,7 +90,13 @@ class RichContext:
         A :class:`rich.style.Style` instance to apply to all :attr:`output`
         for this context.
 
-    .. attribute:: bullet_format
+    .. attribute:: term_width
+
+        An :class:`int` indicating the maximum width of the term in a
+        definition list. Used when formatting definition lists in the
+        "compact" style.
+
+    .. attribute:: item_prefix
 
         A format :class:`str` that will be used to generate the prefix for
         all list items under this context.
@@ -134,16 +128,17 @@ class RichContext:
         A :class:`str` storing the prefix to be applied to all but the first
         line of :attr:`output` of this context.
     """
-    def __init__(self, console, options, *, style=None, bullet_format='',
-                 index=0, literal=False, heading_level=1, first_indent='',
-                 subsequent_indent=''):
+    def __init__(self, console, options, *, style=None, term_width=0,
+                 item_prefix='', index=0, literal=False, heading_level=1,
+                 first_indent='', subsequent_indent=''):
         self.console = console
         self.output = []
         self.options = options
         if style is None:
             style = Style.null()
         self.style = style
-        self.bullet_format = bullet_format
+        self.term_width = term_width
+        self.item_prefix = item_prefix
         self.index = index
         self.literal = literal
         self.heading_level = heading_level
@@ -152,16 +147,17 @@ class RichContext:
 
     def __repr__(self):
         return (
-            f'Context({self.output!r}, bullet_format={self.bullet_format!r}, '
+            f'RichContext({self.output!r}, term_width={self.term_width!r}, '
+            f'item_prefix={self.item_prefix!r}, '
             f'index={self.index!r}, literal={self.literal!r}, '
             f'heading_level={self.heading_level!r}, '
             f'first_indent={self.first_indent!r}, '
             f'subsequent_indent={self.subsequent_indent!r})'
         )
 
-    def new(self, *, style=None, bullet_format=None, index=None, literal=None,
-            heading_level=None, indent=None, first_indent=None,
-            subsequent_indent=None):
+    def new(self, *, style=None, term_width=None, item_prefix=None, index=None,
+            literal=None, heading_level=None, indent=None, first_indent=None,
+            subsequent_indent=None, padding=None):
         """
         Return a new instance of :class:`RichContext` with the specified
         attributes overridden.
@@ -170,20 +166,27 @@ class RichContext:
         style in the new instance. All other attributes override their
         corresponding value in the new instance.
 
+        If *padding* is not :data:`None`, it will reduce the maximum width of
+        the associated console options by the specified amount.
+
         One convenience parameter, *indent*, sets both *first_indent* and
         *subsequent_indent* if they are otherwise unspecified.
         """
         indent_width = max(
             (len(s) for s in (indent, first_indent, subsequent_indent)
             if s is not None), default=0)
+        padding = padding or 0
         if isinstance(style, str):
             style = self.console.get_style(style)
-        return Context(
+        return RichContext(
             self.console,
-            self.options.update(width=self.options.max_width - indent_width),
+            self.options.update(
+                width=self.options.max_width - indent_width - padding),
             style=self.style if style is None else self.style + style,
-            bullet_format=
-                self.bullet_format if bullet_format is None else bullet_format,
+            term_width=
+                self.term_width if term_width is None else term_width,
+            item_prefix=
+                self.item_prefix if item_prefix is None else item_prefix,
             index=self.index if index is None else index,
             literal=self.literal if literal is None else literal,
             heading_level=
@@ -247,6 +250,8 @@ class RichTranslator(nodes.NodeVisitor):
     may wish to sub-class it to customize its behaviour. Instead, use the
     :class:`RestructuredText` class, also in this module.
     """
+    dl_compact_width = 8
+
     def __init__(self, document, console, options):
         super().__init__(document)
         self.console = console
@@ -294,7 +299,7 @@ class RichTranslator(nodes.NodeVisitor):
         self.append(Text(
             '=~-'[self.context.heading_level - 1] * max(title_lens),
             style=sub_context.style))
-        self.append(NewLine(2))
+        self.append(NewLine())
 
     def visit_section(self, node):
         self.stack.push(self.context.new(
@@ -335,23 +340,54 @@ class RichTranslator(nodes.NodeVisitor):
     def visit_bullet_list(self, node):
         # TODO Handle "bullet" attribute for different styles, or use a fixed
         # list of styles for different levels?
-        self.stack.push(self.context.new(index=1, bullet_format='* '))
+        self.stack.push(self.context.new(
+            index=1, list_type='ul', item_prefix='* '))
 
     def visit_enumerated_list(self, node):
         # TODO Handle enumtype other than "arabic"
         num_width = int(math.log10(len(node.children))) + 1
         self.stack.push(self.context.new(
             index=node.attributes.get('start', 1),
-            bullet_format=f'{{:{num_width}d}}. '))
+            item_prefix=f'{{:{num_width}d}}. '))
 
     def visit_list_item(self, node):
-        bullet = self.context.bullet_format.format(self.context.index)
+        prefix = self.context.item_prefix.format(self.context.index)
         self.stack.push(self.context.new(
-            first_indent=bullet, subsequent_indent=' ' * len(bullet)))
+            first_indent=prefix, subsequent_indent=' ' * len(prefix)))
 
     def depart_list_item(self, node):
         self.pop_context(node)
         self.context.index += 1
+
+    def visit_definition_list(self, node):
+        term_width = max(
+            len(term.astext())
+            for term in node.traverse(condition=nodes.term))
+        self.stack.push(self.context.new(index=1, term_width=term_width))
+
+    def visit_definition_list_item(self, node):
+        if self.context.term_width <= self.dl_compact_width:
+            indent = self.context.term_width + 2
+        else:
+            indent = 4
+        self.stack.push(self.context.new(subsequent_indent=' ' * indent))
+
+    def depart_term(self, node):
+        if self.context.term_width <= self.dl_compact_width:
+            padding = self.context.term_width - len(node.astext()) + 2
+            self.append(' ' * padding)
+        else:
+            self.append(NewLine())
+
+    def visit_note(self, node):
+        self.stack.push(self.context.new(padding=4))
+
+    def depart_note(self, node):
+        sub_context = self.stack.pop()
+        note = Panel(
+            Renderables(sub_context.output),
+            box=box.ROUNDED, title='Note', title_align='left')
+        self.append(note)
 
     def visit_Text(self, node):
         text = node.astext()
@@ -359,8 +395,13 @@ class RichTranslator(nodes.NodeVisitor):
             text = re.sub(r'\s+', ' ', text)
         self.append(text)
 
-    def depart_Text(self, node):
+    def do_nothing(self, node):
         pass
+
+    visit_term = do_nothing
+    visit_definition = do_nothing
+    depart_definition = do_nothing
+    depart_Text = do_nothing
 
     def pop_context(self, node):
         sub_context = self.stack.pop()
@@ -370,8 +411,10 @@ class RichTranslator(nodes.NodeVisitor):
     depart_literal = pop_context
     depart_strong = pop_context
     depart_emphasis = pop_context
+    depart_definition_list = pop_context
     depart_enumerated_list = pop_context
     depart_bullet_list = pop_context
+    depart_definition_list_item = pop_context
 
     def skip_node(self, node):
         raise nodes.SkipChildren()
@@ -401,7 +444,7 @@ class RestructuredText:
         self.document = core.publish_doctree(
             source, source_path, source_class, reader, reader_name, parser,
             parser_name, settings, settings_spec, settings_overrides)
-        print(self.document.pformat())
+        #print(self.document.pformat())
 
     @classmethod
     def from_string(self, source):
@@ -465,3 +508,35 @@ class RestructuredText:
             pad=True, new_lines=True
         ):
             yield from line
+
+
+title_re = re.compile(r'^(.+?)\s*(?<!\x00)<(.*?)>$', re.DOTALL)
+def doc_ref_role(
+    role, rawtext, text, lineno, inliner, options=None, content=None
+):
+    matched = title_re.match(text)
+    if matched:
+        title = nodes.unescape(matched.group(1))
+        target = nodes.unescape(matched.group(2))
+    else:
+        title = nodes.unescape(text)
+        target = nodes.unescape(text)
+    node = nodes.Text(title, rawsource=rawtext)
+    return [node], []
+roles.register_local_role('doc', doc_ref_role)
+
+
+rest_theme = Theme(DEFAULT_STYLES.copy() | {
+    'rest.emph': Style(italic=True),
+    'rest.strong': Style(bold=True),
+    'rest.paragraph': Style(),
+    'rest.code': Style(bgcolor='black', color='bright_white'),
+    'rest.code_block': Style(bgcolor='black', color='cyan', dim=True),
+    'rest.block_quote': Style(color='yellow'),
+    'rest.h1': Style(bold=True),
+    'rest.h2': Style(bold=True),
+    'rest.h3': Style(bold=True),
+    'rest.h4': Style(bold=True, dim=True),
+    'rest.h5': Style(underline=True),
+    'rest.h6': Style(italic=True),
+})

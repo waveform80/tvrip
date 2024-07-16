@@ -22,11 +22,15 @@ import os
 import re
 import subprocess as proc
 from pathlib import Path
+from importlib import resources
 from datetime import timedelta, datetime
 
 import requests
 import sqlalchemy as sa
+from rich import box
+from rich.table import Table, Column
 
+from .richrst import RestructuredText
 from .ripper import Disc, Title
 from .database import (
     init_session, Configuration, Program, Season, Episode,
@@ -42,7 +46,7 @@ from . import multipart
 class RipCmd(Cmd):
     "Implementation of the TVRip command line"
 
-    prompt = '(tvrip) '
+    prompt = '[green](tvrip)[/green] '
 
     def __init__(self, session, *, stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
@@ -331,81 +335,101 @@ class RipCmd(Cmd):
         for episode in self.session.query(Episode).filter((Episode.season == season)):
             self.session.delete(episode)
 
-    def pprint_disc(self):
+    def print_disc(self):
         "Prints the details of the currently scanned disc"
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
-        self.pprint('Disc type: {}'.format(self.disc.type))
-        self.pprint('Disc identifier: {}'.format(self.disc.ident))
-        self.pprint('Disc serial: {}'.format(self.disc.serial))
-        self.pprint('Disc name: {}'.format(self.disc.name))
-        self.pprint('Disc has {} titles'.format(len(self.disc.titles)))
-        self.pprint('')
-        table = [('Title', 'Chapters', 'Duration', 'Dup', 'Audio')]
+        table = Table(box=box.ROUNDED)
+        table.add_column('Title', no_wrap=True)
+        table.add_column('Chapters', no_wrap=True, justify='right')
+        table.add_column('Duration', no_wrap=True, justify='right')
+        table.add_column('Dup', no_wrap=True)
+        table.add_column('Audio')
         for title in self.disc.titles:
-            table.append((
-                title.number,
-                len(title.chapters),
-                title.duration,
+            table.add_row(
+                str(title.number),
+                str(len(title.chapters)),
+                str(title.duration),
                 {'first': '━┓', 'yes': ' ┃', 'last': '━┛', 'no': ''}[title.duplicate],
                 ' '.join(track.language for track in title.audio_tracks)
-                ))
-        self.pprint_table(table)
+                )
+        self.console.print(
+            f'[green]Disc type:[/green] {self.disc.type}',
+            f'[green]Disc identifier:[/green] {self.disc.ident}',
+            f'[green]Disc serial:[/green] {self.disc.serial}',
+            f'[green]Disc name:[/green] {self.disc.name}',
+            f'Disc has {len(self.disc.titles)} titles',
+            '', table,
+            sep='\n')
 
-    def pprint_title(self, title):
+    def print_title(self, title):
         "Prints the details of the specified disc title"
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
         elif not self.disc.titles:
             raise CmdError('No titles found on the scanned disc')
-        self.pprint(
-            'Title {title}, duration: {duration}, duplicate: {duplicate}'.format(
-                title=title.number, duration=title.duration,
-                duplicate=title.duplicate)
-        )
-        self.pprint('')
-        table = [('Chapter', 'Start', 'Finish', 'Duration')]
+        info = (
+            f'Title {title.number}, duration: {title.duration}, '
+            f'duplicate: {title.duplicate}')
+        chapters_tbl = Table(box=box.ROUNDED)
+        chapters_tbl.add_column('Chapter', no_wrap=True)
+        chapters_tbl.add_column('Start', no_wrap=True, justify='right')
+        chapters_tbl.add_column('Finish', no_wrap=True, justify='right')
+        chapters_tbl.add_column('Duration', no_wrap=True, justify='right')
         for chapter in title.chapters:
-            table.append((
-                chapter.number,
-                chapter.start,
-                chapter.finish,
-                chapter.duration,
-                ))
-        self.pprint_table(table)
-        self.pprint('')
-        table = [('Audio', 'Lang', 'Name', 'Encoding', 'Mix', 'Best')]
+            chapters_tbl.add_row(
+                str(chapter.number),
+                str(chapter.start),
+                str(chapter.finish),
+                str(chapter.duration),
+                )
+        audio_tbl = Table(box=box.ROUNDED)
+        audio_tbl.add_column('Audio', no_wrap=True)
+        audio_tbl.add_column('Lang', no_wrap=True)
+        audio_tbl.add_column('Name')
+        audio_tbl.add_column('Encoding', no_wrap=True)
+        audio_tbl.add_column('Mix', no_wrap=True)
+        audio_tbl.add_column('Best', no_wrap=True, justify='center')
         for track in title.audio_tracks:
             suffix = ''
             if track.best and self.config.in_audio_langs(track.language):
                 suffix = '✓'
-            table.append((
-                track.number,
+            audio_tbl.add_row(
+                str(track.number),
                 track.language,
                 track.name,
                 track.encoding,
                 track.channel_mix,
                 suffix
-                ))
-        self.pprint_table(table)
-        self.pprint('')
-        table = [('Subtitle', 'Lang', 'Name', 'Format', 'Best')]
+                )
+        subtitle_tbl = Table(box=box.ROUNDED)
+        subtitle_tbl.add_column('Subtitle', no_wrap=True)
+        subtitle_tbl.add_column('Lang', no_wrap=True)
+        subtitle_tbl.add_column('Name')
+        subtitle_tbl.add_column('Format', no_wrap=True)
+        subtitle_tbl.add_column('Best', no_wrap=True, justify='center')
         for track in title.subtitle_tracks:
             suffix = ''
             if track.best and self.config.in_subtitle_langs(track.language):
                 suffix = '✓'
-            table.append((
-                track.number,
+            subtitle_tbl.add_row(
+                str(track.number),
                 track.language,
                 track.name,
                 track.format,
                 suffix
-                ))
-        self.pprint_table(table)
+                )
+        self.console.print(
+            info, '', chapters_tbl, '', audio_tbl, '', subtitle_tbl, '',
+            sep='\n')
 
-    def pprint_programs(self):
+    def print_programs(self):
         "Prints the defined programs"
-        table = [('Program', 'Seasons', 'Episodes', 'Ripped')]
+        table = Table(box=box.ROUNDED)
+        table.add_column('Program')
+        table.add_column('Seasons', no_wrap=True, justify='right')
+        table.add_column('Episodes', no_wrap=True, justify='right')
+        table.add_column('Ripped', no_wrap=True, justify='right')
         for (program, seasons, episodes, ripped) in self.session.query(
                     Program.name,
                     sa.func.count(Season.number.distinct()),
@@ -420,23 +444,24 @@ class RipCmd(Cmd):
                 ).order_by(
                     Program.name
                 ):
-            table.append((
+            table.add_row(
                 program,
-                seasons,
-                episodes,
-                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)
-            ))
-        self.pprint_table(table)
+                str(seasons),
+                str(episodes),
+                f'{ripped * 100 / episodes:5.1f}%' if episodes else '-'
+            )
+        self.console.print(table)
 
-    def pprint_seasons(self, program=None):
+    def print_seasons(self, program=None):
         "Prints the seasons of the specified program"
         if program is None:
             if not self.config.program:
                 raise CmdError('No program has been set')
             program = self.config.program
-        self.pprint('Seasons for program {}'.format(program.name))
-        self.pprint('')
-        table = [('Num', 'Episodes', 'Ripped')]
+        table = Table(box=box.ROUNDED)
+        table.add_column('Num', no_wrap=True)
+        table.add_column('Episodes', no_wrap=True)
+        table.add_column('Ripped', no_wrap=True, justify='right')
         for (season, episodes, ripped) in self.session.query(
                     Season.number,
                     sa.func.count(Episode.number),
@@ -450,85 +475,84 @@ class RipCmd(Cmd):
                 ).order_by(
                     Season.number
                 ):
-            table.append((
-                season,
-                episodes,
-                '{:5.1f}%'.format(ripped * 100 / episodes) if episodes else '-'.rjust(6)
-            ))
-        self.pprint_table(table)
+            table.add_row(
+                str(season),
+                str(episodes),
+                f'{ripped * 100 / episodes:5.1f}%' if episodes else '-'
+            )
+        self.console.print(
+            f'Seasons for program {program.name}', '', table,
+            sep='\n')
 
-    def pprint_episodes(self, season=None):
+    def print_episodes(self, season=None):
         "Prints the episodes of the specified season"
         if season is None:
             if not self.config.season:
                 raise CmdError('No season has been set')
             season = self.config.season
-        self.pprint(
-            'Episodes for season {season} of program {program}'.format(
-                season=season.number, program=season.program.name))
-        self.pprint('')
-        table = [('Num', 'Title', 'Ripped')]
+        table = Table(box=box.ROUNDED)
+        table.add_column('Num', no_wrap=True)
+        table.add_column('Title')
+        table.add_column('Ripped', no_wrap=True, justify='right')
         for episode in self.session.query(Episode).filter((Episode.season == season)):
-            table.append((
-                episode.number,
+            table.add_row(
+                str(episode.number),
                 episode.name,
                 '✓' if episode.ripped else '',
-            ))
-        self.pprint_table(table)
+            )
+        self.console.print(
+            f'Episodes for season {season.number} of program '
+            f'{season.program.name}', '', table,
+            sep='\n')
 
     def do_config(self, arg=''):
-        """
-        Shows the current set of configuration options.
-        """
+        "Shows the current set of configuration options"
         self.no_args(arg)
-        self.pprint('External Utility Paths:')
-        self.pprint('')
+
+        bool_str = ('off', 'on')
+        table = Table(box=box.ROUNDED)
+        table.add_column('Setting', no_wrap=True)
+        table.add_column('Value')
+
         for path in self.config.paths:
-            self.pprint('{name:<16} = {value}'.format(
-                name=path.name, value=path.path))
-        self.pprint('')
-        self.pprint('Scanning Configuration:')
-        self.pprint('')
-        self.pprint('source           = {}'.format(self.config.source))
-        self.pprint('duration         = {min}-{max} (mins)'.format(
-            min=self.config.duration_min.total_seconds() / 60,
-            max=self.config.duration_max.total_seconds() / 60))
-        self.pprint('duplicates       = {}'.format(self.config.duplicates))
-        self.pprint('')
-        self.pprint('Ripping Configuration:')
-        self.pprint('')
-        self.pprint('target           = {}'.format(self.config.target))
-        self.pprint('temp             = {}'.format(self.config.temp))
-        self.pprint('template         = {}'.format(self.config.template))
-        self.pprint('id_template      = {}'.format(self.config.id_template))
-        self.pprint('output_format    = {}'.format(self.config.output_format))
-        self.pprint('max_resolution   = {width}x{height}'.format(
-            width=self.config.width_max,
-            height=self.config.height_max))
-        self.pprint('decomb           = {}'.format(self.config.decomb))
-        self.pprint('audio_mix        = {}'.format(self.config.audio_mix))
-        self.pprint('audio_all        = {}'.format(
-            ['off', 'on'][self.config.audio_all]))
-        self.pprint('audio_langs      = {}'.format(' '.join(
-            l.lang for l in self.config.audio_langs)))
-        self.pprint('subtitle_format  = {}'.format(
-            self.config.subtitle_format))
-        self.pprint('subtitle_all     = {}'.format(
-            ['off', 'on'][self.config.subtitle_all]))
-        self.pprint('subtitle_default = {}'.format(
-            ['off', 'on'][self.config.subtitle_default]))
-        self.pprint('subtitle_langs   = {}'.format(
-            ' '.join(l.lang for l in self.config.subtitle_langs)))
-        self.pprint('video_style      = {}'.format(self.config.video_style))
-        self.pprint('dvdnav           = {}'.format(
-            ['no', 'yes'][self.config.dvdnav]))
-        self.pprint('api_url          = {}'.format(self.config.api_url))
-        self.pprint('api_key          = {}'.format(self.config.api_key))
+            table.add_row(path.name, path.path)
+        table.add_section()
+        table.add_row('source', self.config.source)
+        table.add_row(
+            'duration',
+            f'{self.config.duration_min.total_seconds() / 60}-'
+            f'{self.config.duration_max.total_seconds() / 60} (mins)')
+        table.add_row('duplicates', self.config.duplicates)
+        table.add_section()
+        table.add_row('target', self.config.target)
+        table.add_row('temp', self.config.temp)
+        table.add_row('template', self.config.template)
+        table.add_row('id_template', self.config.id_template)
+        table.add_row('output_format', self.config.output_format)
+        table.add_row(
+            'max_resolution',
+            f'{self.config.width_max}x{self.config.height_max}')
+        table.add_row('decomb', self.config.decomb)
+        table.add_row('audio_mix', self.config.audio_mix)
+        table.add_row('audio_all', bool_str[self.config.audio_all])
+        table.add_row(
+            'audio_langs',
+            ' '.join(l.lang for l in self.config.audio_langs))
+        table.add_row('subtitle_format', self.config.subtitle_format)
+        table.add_row('subtitle_all', bool_str[self.config.subtitle_all])
+        table.add_row('subtitle_default', bool_str[self.config.subtitle_default])
+        table.add_row(
+            'subtitle_langs',
+            ' '.join(l.lang for l in self.config.subtitle_langs))
+        table.add_row('video_style', self.config.video_style)
+        table.add_row('dvdnav', bool_str[self.config.dvdnav])
+        table.add_row('api_url', self.config.api_url)
+        table.add_row('api_key', self.config.api_key)
+
+        self.console.print(table)
 
     def do_set(self, arg):
-        """
-        Sets a configuration option.
-        """
+        "Sets a configuration option"
         try:
             (var, value) = arg.split(' ', 1)
         except (TypeError, ValueError):
@@ -570,19 +594,16 @@ class RipCmd(Cmd):
     def do_help(self, arg):
         """
         Displays the available commands or help on a specified command or
-        configuration setting.
+        configuration setting
         """
         try:
             super().do_help(arg)
         except CmdError as exc:
-            try:
-                doc = self.config_handlers[arg].__doc__
-            except KeyError:
-                raise exc
-            else:
-                for para in self.parse_docstring(doc):
-                    self.pprint(para)
-                    self.pprint('')
+            if arg not in self.config_handlers:
+                raise
+            with resources.files('tvrip') as root:
+                source = RestructuredText.from_path(root / f'var_{arg}.rst')
+                self.console.print(source)
 
     def set_complete_one(self, line, start, valid):
         match = self.set_var_re.match(line)
@@ -614,8 +635,7 @@ class RipCmd(Cmd):
 
     def set_executable(self, var, value):
         """
-        This configuration option takes the path of an executable, e.g.
-        "/usr/bin/vlc".
+        Sets the path of an executable, e.g. "/usr/bin/vlc".
         """
         value = Path(value).expanduser()
         if not value.exists():
@@ -680,11 +700,8 @@ class RipCmd(Cmd):
 
     def set_duplicates(self, var, value):
         """
-        This configuration option can be set to "all", "first", or "last". When
-        "all", duplicate titles will be treated individually and will all be
-        considered for auto-mapping. When "first" only the first of a set of
-        duplicates will be considered for auto-mapping, and conversely when
-        "last" only the last of a set of duplicates will be used.
+        Specifies whether "all", "first", or the "last" of duplicate titles
+        should be mapped for ripping.
         """
         assert var == 'duplicates'
         if value not in ('all', 'first', 'last'):
@@ -822,6 +839,7 @@ class RipCmd(Cmd):
                 'dpl2':     'dpl2',
                 'surround': 'dpl2',
                 'prologic': 'dpl2',
+                '5.1':      'dpl2',
                 }[value]
         except KeyError:
             raise CmdSyntaxError('Invalid audio mix {}'.format(value))
@@ -871,8 +889,7 @@ class RipCmd(Cmd):
 
     def set_decomb(self, var, value):
         """
-        This configuration option specifies a decomb mode. Valid values are
-        "off", "on", and "auto".
+        Set decomb mode to "off", "on", or "auto".
         """
         assert var == 'decomb'
         try:
@@ -894,6 +911,7 @@ class RipCmd(Cmd):
         try:
             value.format(
                 program='Program Name',
+                season=1,
                 id='1x01',
                 name='Foo Bar',
                 now=datetime.now(),
@@ -981,6 +999,7 @@ class RipCmd(Cmd):
     set_output_format.complete = set_complete_output_format
 
     def set_api_key(self, var, value):
+        "Sets the API key for use with TVDB"
         assert var == 'api_key'
         if set(value) - set('0123456789abcdef'):
             raise CmdSyntaxError('API key contains non-hex digits')
@@ -990,6 +1009,7 @@ class RipCmd(Cmd):
         self.set_api()
 
     def set_api_url(self, var, value):
+        "Sets the URL to contact TVDB on"
         assert var == 'api_url'
         self.config.api_url = value
         self.set_api()
@@ -1001,9 +1021,7 @@ class RipCmd(Cmd):
             self.api = None
 
     def do_duplicate(self, arg):
-        """
-        Manually specifies duplicated titles on a disc.
-        """
+        "Manually specifies duplicated titles on a disc"
         arg = arg.strip()
         try:
             start, finish = self.parse_title_range(arg)
@@ -1037,9 +1055,7 @@ class RipCmd(Cmd):
                 pass
 
     def do_episode(self, arg):
-        """
-        Modifies a single episode in the current season.
-        """
+        "Modifies a single episode in the current season"
         if not self.config.season:
             raise CmdError('No season has been set')
         season = self.config.season
@@ -1125,9 +1141,7 @@ class RipCmd(Cmd):
                 program=season.program.name))
 
     def do_episodes(self, arg):
-        """
-        Gets or sets the episodes for the current season.
-        """
+        "Gets or sets the episodes for the current season"
         if not self.config.season:
             raise CmdError('No season has been set')
         if arg:
@@ -1147,7 +1161,7 @@ class RipCmd(Cmd):
             self.create_episodes(count)
             self.episode_map.clear()
         else:
-            self.pprint_episodes()
+            self.print_episodes()
 
     def create_episodes(self, count):
         "Creates the specified number of episodes in the current season"
@@ -1163,9 +1177,7 @@ class RipCmd(Cmd):
             self.session.add(episode)
 
     def do_season(self, arg, program_id=None):
-        """
-        Sets which season of the program the disc contains.
-        """
+        "Sets which season of the program the disc contains"
         if not self.config.program:
             raise CmdError('You must specify a program first')
         try:
@@ -1230,16 +1242,12 @@ class RipCmd(Cmd):
         return new_season
 
     def do_seasons(self, arg=''):
-        """
-        Shows the defined seasons of the current program.
-        """
+        "Shows the defined seasons of the current program"
         self.no_args(arg)
-        self.pprint_seasons()
+        self.print_seasons()
 
     def do_program(self, arg):
-        """
-        Sets the name of the program.
-        """
+        "Sets the name of the program"
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
         new_program = self.session.query(Program).get((arg,))
@@ -1338,32 +1346,24 @@ class RipCmd(Cmd):
         return new_program
 
     def do_programs(self, arg=''):
-        """
-        Shows the defined programs.
-        """
+        "Shows the defined programs"
         self.no_args(arg)
-        self.pprint_programs()
+        self.print_programs()
 
     def do_disc(self, arg=''):
-        """
-        Displays information about the last scanned disc.
-        """
+        "Displays information about the last scanned disc"
         self.no_args(arg)
-        self.pprint_disc()
+        self.print_disc()
 
     def do_title(self, arg):
-        """
-        Displays information about the specified title(s).
-        """
+        "Displays information about the specified title(s)"
         if not arg:
             raise CmdSyntaxError('You must specify a title')
         for title in self.parse_title_list(arg):
-            self.pprint_title(title)
+            self.print_title(title)
 
     def do_play(self, arg):
-        """
-        Plays the specified episode.
-        """
+        "Plays the specified episode"
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
         try:
@@ -1375,9 +1375,7 @@ class RipCmd(Cmd):
             raise CmdError('VLC exited with code {}'.format(e.returncode))
 
     def do_scan(self, arg):
-        """
-        Scans the source device for episodes.
-        """
+        "Scans the source device for episodes"
         if not self.config.source:
             raise CmdError('No source has been specified')
         elif not (self.config.duration_min and self.config.duration_max):
@@ -1458,9 +1456,7 @@ class RipCmd(Cmd):
                         self.episode_map[episode] = (start_chapter, end_chapter)
 
     def do_automap(self, arg):
-        """
-        Maps episodes to titles or chapter ranges automatically.
-        """
+        "Maps episodes to titles or chapter ranges automatically"
         self.pprint('Performing auto-mapping')
         # Generate the list of titles, either specified or implied in the
         # arguments
@@ -1566,9 +1562,7 @@ class RipCmd(Cmd):
         return mappings[0]
 
     def do_map(self, arg=''):
-        """
-        Maps episodes to titles or chapter ranges.
-        """
+        "Maps episodes to titles or chapter ranges"
         if arg:
             self.set_map(arg)
         else:
@@ -1648,9 +1642,7 @@ class RipCmd(Cmd):
             self.pprint('Episode map is currently empty')
 
     def do_unmap(self, arg):
-        """
-        Removes an episode mapping.
-        """
+        "Removes an episode mapping"
         if not arg:
             raise CmdSyntaxError(
                 'You must specify a list of episodes to remove from the mapping')
@@ -1671,9 +1663,7 @@ class RipCmd(Cmd):
                     'map'.format(episode=episode))
 
     def do_rip(self, arg=''):
-        """
-        Starts the ripping and transcoding process.
-        """
+        "Starts the ripping and transcoding process"
         if not self.episode_map:
             raise CmdError('No titles have been mapped to episodes')
         arg = arg.strip()
@@ -1730,9 +1720,7 @@ class RipCmd(Cmd):
             raise CmdError('process failed with code {}'.format(e.returncode))
 
     def do_unrip(self, arg):
-        """
-        Changes the status of the specified episode to unripped.
-        """
+        "Changes the status of the specified episode to unripped"
         if not arg:
             raise CmdSyntaxError(
                 'You must specify a list of episodes to mark as unripped')
@@ -1752,4 +1740,3 @@ class RipCmd(Cmd):
                 episode.disc_title = None
                 episode.start_chapter = None
                 episode.end_chapter = None
-
