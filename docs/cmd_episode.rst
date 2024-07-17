@@ -4,7 +4,7 @@ episode
 
 ::
 
-    episode <insert|update|delete> <number> [name]
+    episode insert|update|delete <number> [name]
 
 
 Description
