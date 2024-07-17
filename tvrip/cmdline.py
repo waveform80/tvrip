@@ -22,18 +22,25 @@ Enhanced version of the standard Python Cmd command line interpreter.
 This module defines an enhanced version of the standard Python Cmd command line
 base class. The extra facilities provided are:
 
- * Colored prompts
- * Utility methods for parsing common syntax (number ranges, lists)
- * Utility methods to aid in readline-completion
- * Persistent readline history
- * Session terminates on EOF (Ctrl+D on Linux)
- * Custom exception class for command handlers which does not terminate the
-   application but is simply caught and printed verbatim
- * Methods for pretty-printing text (with wrapping and variable indentation)
-   and tables
- * A method for accepting prompted user input
- * An enhanced do_help method which extracts documentation from do_ docstrings
+* Colored prompts
 
+* Utility methods for parsing common syntax (number ranges, lists)
+
+* Utility methods to aid in readline-completion
+
+* Persistent readline history
+
+* Session terminates on EOF (Ctrl+D on Linux)
+
+* Custom exception class for command handlers which does not terminate the
+  application but is simply caught and printed verbatim
+
+* Methods for pretty-printing text (with wrapping and variable indentation)
+  and tables
+
+* A method for accepting prompted user input
+
+* An enhanced do_help method which extracts documentation from do_ docstrings
 """
 
 import os
