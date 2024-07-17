@@ -186,12 +186,8 @@ class Cmd(cmd.Cmd):
 
     def input(self, prompt=''):
         "Prompts and reads input from the user"
-        lines = self.wrap(prompt, newline=False).split('\n')
-        prompt = lines[-1]
-        s = ''.join(line + '\n' for line in lines[:-1])
-        self.stdout.write(s)
         if self.use_rawinput:
-            result = input(prompt).strip()
+            result = self.console.input(prompt).strip()
             # Strip the history from readline (we only want commands in the
             # history)
             readline.remove_history_item(
