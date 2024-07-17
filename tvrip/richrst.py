@@ -384,10 +384,13 @@ class RichTranslator(nodes.NodeVisitor):
 
     def depart_note(self, node):
         sub_context = self.stack.pop()
+        while isinstance(sub_context.output[-1], NewLine):
+            sub_context.output.pop()
         note = Panel(
             Renderables(sub_context.output),
             box=box.ROUNDED, title='Note', title_align='left')
         self.append(note)
+        self.append(NewLine())
 
     def visit_Text(self, node):
         text = node.astext()
