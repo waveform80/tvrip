@@ -363,8 +363,7 @@ class RichTranslator(nodes.NodeVisitor):
     def visit_bullet_list(self, node):
         # TODO Handle "bullet" attribute for different styles, or use a fixed
         # list of styles for different levels?
-        self.stack.push(self.context.new(
-            index=1, item_prefix='• '))
+        self.stack.push(self.context.new(index=1, item_prefix='• '))
     depart_bullet_list = pop_context
 
     def visit_enumerated_list(self, node):
@@ -412,6 +411,69 @@ class RichTranslator(nodes.NodeVisitor):
         else:
             self.stack.push(self.context.new(indent='    '))
     depart_definition = pop_context
+
+    def visit_table(self, node):
+        self.append(Table(box=box.ROUNDED, show_header=False))
+    def depart_table(self, node):
+        self.append(NewLine())
+
+    visit_tgroup = do_nothing
+    depart_tgroup = do_nothing
+
+    # TODO Do something with colspec's colwidth attribute?
+    visit_colspec = do_nothing
+    depart_colspec = do_nothing
+
+    def visit_thead(self, node):
+        self.stack.push(self.context.new(style='rest.table.header'))
+    def depart_thead(self, node):
+        # NOTE: We do not use pop_context here because depart_row has already
+        # added our content to the current table, so we don't care about any
+        # content in the sub-context
+        self.stack.pop()
+
+    def visit_tbody(self, node):
+        self.stack.push(self.context.new(style='rest.table.cell'))
+    def depart_tbody(self, node):
+        # NOTE: We do not use pop_context here because depart_row has already
+        # added our content to the current table, so we don't care about any
+        # content in the sub-context
+        self.stack.pop()
+
+    def visit_row(self, node):
+        self.stack.push(self.context.new())
+        self.context.output = []
+    def depart_row(self, node):
+        sub_context = self.stack.pop()
+        # TODO This is a horrid hack to find the current table... Probably
+        # would be better to stuff this in the context
+        for tbl_context in reversed(self.stack):
+            try:
+                if isinstance(tbl_context.output[-1], Table):
+                    table = tbl_context.output[-1]
+                    break
+            except IndexError:
+                continue
+        else:
+            raise ValueError('Failed to find current table')
+        end_section = (
+            isinstance(node.parent, nodes.thead) and
+            (node is node.parent.children[-1]))
+        table.add_row(*(
+            cell[0] if len(cell) == 1 else Renderables(cell)
+            for cell in sub_context.output
+        ), end_section=end_section)
+
+    def visit_entry(self, node):
+        self.stack.push(self.context.new())
+    def depart_entry(self, node):
+        sub_context = self.stack.pop()
+        while isinstance(sub_context.output[-1], NewLine):
+            sub_context.output.pop()
+        # NOTE: We temporarily leave each entry's output in its own list to
+        # ensure adjacent cell's Text entries don't get amalgamated; depart_row
+        # sorts converting these lists into valid rich output objects
+        self.context.output.append(sub_context.output)
 
     def visit_reference(self, node):
         refuri = node.attributes.get('refuri')
@@ -587,4 +649,8 @@ rest_theme = Theme(DEFAULT_STYLES.copy() | {
     'rest.h6': Style(italic=True),
     'rest.link': Style(color='bright_cyan'),
     'rest.item': Style(color='cyan'),
+    'rest.item.bullet': Style(color='cyan'),
+    'rest.item.number': Style(color='cyan'),
+    'rest.table.header': Style(bold=True),
+    'rest.table.cell': Style(),
 })
