@@ -493,7 +493,7 @@ class RipCmd(Cmd):
         table = Table(box=box.ROUNDED)
         table.add_column('Num', no_wrap=True)
         table.add_column('Title')
-        table.add_column('Ripped', no_wrap=True, justify='right')
+        table.add_column('Ripped', no_wrap=True, justify='center')
         for episode in self.session.query(Episode).filter((Episode.season == season)):
             table.add_row(
                 str(episode.number),
