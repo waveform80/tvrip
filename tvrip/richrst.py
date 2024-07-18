@@ -132,11 +132,14 @@ class RichContext:
                  item_prefix='', index=0, literal=False, heading_level=1,
                  first_indent='', subsequent_indent=''):
         self.console = console
-        self.output = []
         self.options = options
         if style is None:
             style = Style.null()
         self.style = style
+        # Always start output with a blank text string and the default style.
+        # This works around an issue in rendering where the default style is
+        # propagated when subsequent items are appended
+        self.output = [Text('', style=style, end='')]
         self.term_width = term_width
         self.item_prefix = item_prefix
         self.index = index
@@ -231,11 +234,10 @@ class RichContext:
         indentation set in :attr:`first_indent` and :attr:`subsequent_indent`.
         """
         for index, line in enumerate(self.console.render_lines(
-            Renderables(self.output), self.options, style=self.style, pad=True,
-            new_lines=True,
+            Renderables(self.output), self.options, pad=True, new_lines=True,
         )):
             yield Text(self.first_indent if index == 0 else
-                       self.subsequent_indent, style=self.style, end='')
+                       self.subsequent_indent, end='')
             yield from line
 
 
