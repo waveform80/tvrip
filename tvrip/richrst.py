@@ -42,10 +42,6 @@ class RichContext:
     :param rich.style.Style style:
         The style to apply to the :attr:`output` for this context
 
-    :param str list_type:
-        The type of list the context represents. Blank string by default, but
-        may be any one of "ul", "ol", "dl", or "dl-compact"
-
     :param str item_prefix:
         The format-string used to produce bullet-point or ordinal prefixes
         of list items (a blank string if the context is not within a list)
