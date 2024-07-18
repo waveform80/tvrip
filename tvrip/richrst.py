@@ -302,6 +302,14 @@ class RichTranslator(nodes.NodeVisitor):
         """
         raise nodes.SkipChildren()
 
+    visit_document = do_nothing
+    depart_document = do_nothing
+
+    def visit_section(self, node):
+        self.stack.push(self.context.new(
+            heading_level=self.context.heading_level + 1))
+    depart_section = pop_context
+
     def visit_title(self, node):
         self.stack.push(self.context.new(
             style=f'rest.h{self.context.heading_level}'))
@@ -319,11 +327,6 @@ class RichTranslator(nodes.NodeVisitor):
             '=~-'[self.context.heading_level - 1] * max(title_lens),
             style=sub_context.style))
         self.append(NewLine())
-
-    def visit_section(self, node):
-        self.stack.push(self.context.new(
-            heading_level=self.context.heading_level + 1))
-    depart_section = pop_context
 
     def visit_paragraph(self, node):
         self.stack.push(self.context.new(style='rest.paragraph'))
@@ -361,21 +364,23 @@ class RichTranslator(nodes.NodeVisitor):
         # TODO Handle "bullet" attribute for different styles, or use a fixed
         # list of styles for different levels?
         self.stack.push(self.context.new(
-            index=1, list_type='ul', item_prefix='* '))
+            index=1, item_prefix='• '))
     depart_bullet_list = pop_context
 
     def visit_enumerated_list(self, node):
         # TODO Handle enumtype other than "arabic"
-        num_width = int(math.log10(len(node.children))) + 1
+        start = node.attributes.get('start', 1)
+        num_width = int(math.log10(start + len(node.children) - 1)) + 1
         self.stack.push(self.context.new(
-            index=node.attributes.get('start', 1),
-            item_prefix=f'{{:{num_width}d}}. '))
+            index=start, item_prefix=f'{{:{num_width}d}}. '))
     depart_enumerated_list = pop_context
 
     def visit_list_item(self, node):
         prefix = self.context.item_prefix.format(self.context.index)
-        self.stack.push(self.context.new(
-            first_indent=prefix, subsequent_indent=' ' * len(prefix)))
+        self.stack.push(self.context.new(style='rest.item'))
+        self.append(prefix)
+        self.pop_context(node)
+        self.stack.push(self.context.new(subsequent_indent=' ' * len(prefix)))
     def depart_list_item(self, node):
         self.pop_context(node)
         self.context.index += 1
@@ -387,21 +392,26 @@ class RichTranslator(nodes.NodeVisitor):
         self.stack.push(self.context.new(index=1, term_width=term_width))
     depart_definition_list = pop_context
 
-    def visit_definition_list_item(self, node):
-        if self.context.term_width <= self.dl_compact_width:
-            indent = self.context.term_width + 2
-        else:
-            indent = 4
-        self.stack.push(self.context.new(subsequent_indent=' ' * indent))
-    depart_definition_list_item = pop_context
+    visit_definition_list_item = do_nothing
+    depart_definition_list_item = do_nothing
 
-    visit_term = do_nothing
+    def visit_term(self, node):
+        self.stack.push(self.context.new())
     def depart_term(self, node):
         if self.context.term_width <= self.dl_compact_width:
             padding = self.context.term_width - len(node.astext()) + 2
             self.append(' ' * padding)
         else:
             self.append(NewLine())
+        self.pop_context(node)
+
+    def visit_definition(self, node):
+        if self.context.term_width <= self.dl_compact_width:
+            self.stack.push(self.context.new(
+                subsequent_indent=' ' * (self.context.term_width + 2)))
+        else:
+            self.stack.push(self.context.new(indent='    '))
+    depart_definition = pop_context
 
     def visit_reference(self, node):
         refuri = node.attributes.get('refuri')
@@ -410,6 +420,9 @@ class RichTranslator(nodes.NodeVisitor):
                 f'[link={refuri}]{node.astext()}[/link]', style='rest.link'))
             raise nodes.SkipChildren()
     depart_reference = do_nothing
+
+    visit_target = do_nothing
+    depart_target = do_nothing
 
     def visit_Text(self, node):
         text = node.astext()
@@ -451,12 +464,6 @@ class RichTranslator(nodes.NodeVisitor):
     depart_tip = _depart_admonition('Tip')
     visit_warning = visit_admonition
     depart_warning = _depart_admonition('Warning')
-    visit_document = do_nothing
-    depart_document = do_nothing
-    visit_definition = do_nothing
-    depart_definition = do_nothing
-    visit_target = do_nothing
-    depart_target = do_nothing
     visit_comment = skip_node
     depart_comment = do_nothing
     visit_system_message = skip_node
@@ -579,4 +586,5 @@ rest_theme = Theme(DEFAULT_STYLES.copy() | {
     'rest.h5': Style(underline=True),
     'rest.h6': Style(italic=True),
     'rest.link': Style(color='bright_cyan'),
+    'rest.item': Style(color='cyan'),
 })
