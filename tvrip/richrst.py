@@ -260,9 +260,17 @@ class RichTranslator(nodes.NodeVisitor):
 
     @property
     def context(self):
+        """
+        Return the current :class:`RichContext` at the top of the
+        :attr:`stack`.
+        """
         return self.stack.top
 
     def append(self, obj):
+        """
+        Append *obj* (a :mod:`rich` renderable, or a :class:`str`) to the
+        output of the current context at the top of the stack.
+        """
         if isinstance(obj, str):
             obj = Text(obj, style=self.context.style, end='')
         if (
@@ -273,19 +281,32 @@ class RichTranslator(nodes.NodeVisitor):
         else:
             self.context.output.append(obj)
 
-    #def dispatch_visit(self, node):
-    #    return super().dispatch_visit(node)
+    def pop_context(self, node):
+        """
+        Pops the current top of the :attr:`stack` and appends all of its
+        :attr:`~RichContext.output` to the new top of the stack. This is
+        commonly called when departing a node that created a new context.
+        """
+        sub_context = self.stack.pop()
+        self.context.append(sub_context)
 
-    def visit_document(self, node):
+    def do_nothing(self, node):
+        """
+        A no-op method that's typically aliased to various visit and depart
+        methods that you wish to ignore (but not actively skip the children).
+        """
         pass
 
-    def depart_document(self, node):
-        pass
+    def skip_node(self, node):
+        """
+        A method which skips all child nodes. This is typically alised to visit
+        methods that should be skipped entirely (e.g. comments).
+        """
+        raise nodes.SkipChildren()
 
     def visit_title(self, node):
         self.stack.push(self.context.new(
             style=f'rest.h{self.context.heading_level}'))
-
     def depart_title(self, node):
         title_lens = [0]
         sub_context = self.stack.pop()
@@ -304,27 +325,29 @@ class RichTranslator(nodes.NodeVisitor):
     def visit_section(self, node):
         self.stack.push(self.context.new(
             heading_level=self.context.heading_level + 1))
+    depart_section = pop_context
 
     def visit_paragraph(self, node):
         self.stack.push(self.context.new(style='rest.paragraph'))
-
     def depart_paragraph(self, node):
         self.pop_context(node)
         self.append(NewLine(2))
 
     def visit_emphasis(self, node):
         self.stack.push(self.context.new(style='rest.emph'))
+    depart_emphasis = pop_context
 
     def visit_strong(self, node):
         self.stack.push(self.context.new(style='rest.strong'))
+    depart_strong = pop_context
 
     def visit_literal(self, node):
         self.stack.push(self.context.new(style='rest.code', literal=True))
+    depart_literal = pop_context
 
     def visit_literal_block(self, node):
         self.stack.push(self.context.new(
             style='rest.code_block', literal=True, indent='    '))
-
     def depart_literal_block(self, node):
         self.pop_context(node)
         self.append(NewLine(2))
@@ -332,7 +355,6 @@ class RichTranslator(nodes.NodeVisitor):
     def visit_block_quote(self, node):
         self.styles.push(self.context.new(
             style='rest.block_quote', literal=True, indent='> '))
-
     def depart_block_quote(self, node):
         self.pop_context(node)
         self.append(NewLine(2))
@@ -342,6 +364,7 @@ class RichTranslator(nodes.NodeVisitor):
         # list of styles for different levels?
         self.stack.push(self.context.new(
             index=1, list_type='ul', item_prefix='* '))
+    depart_bullet_list = pop_context
 
     def visit_enumerated_list(self, node):
         # TODO Handle enumtype other than "arabic"
@@ -349,12 +372,12 @@ class RichTranslator(nodes.NodeVisitor):
         self.stack.push(self.context.new(
             index=node.attributes.get('start', 1),
             item_prefix=f'{{:{num_width}d}}. '))
+    depart_enumerated_list = pop_context
 
     def visit_list_item(self, node):
         prefix = self.context.item_prefix.format(self.context.index)
         self.stack.push(self.context.new(
             first_indent=prefix, subsequent_indent=' ' * len(prefix)))
-
     def depart_list_item(self, node):
         self.pop_context(node)
         self.context.index += 1
@@ -364,6 +387,7 @@ class RichTranslator(nodes.NodeVisitor):
             len(term.astext())
             for term in node.traverse(condition=nodes.term))
         self.stack.push(self.context.new(index=1, term_width=term_width))
+    depart_definition_list = pop_context
 
     def visit_definition_list_item(self, node):
         if self.context.term_width <= self.dl_compact_width:
@@ -371,7 +395,9 @@ class RichTranslator(nodes.NodeVisitor):
         else:
             indent = 4
         self.stack.push(self.context.new(subsequent_indent=' ' * indent))
+    depart_definition_list_item = pop_context
 
+    visit_term = do_nothing
     def depart_term(self, node):
         if self.context.term_width <= self.dl_compact_width:
             padding = self.context.term_width - len(node.astext()) + 2
@@ -379,54 +405,66 @@ class RichTranslator(nodes.NodeVisitor):
         else:
             self.append(NewLine())
 
-    def visit_note(self, node):
-        self.stack.push(self.context.new(padding=4))
-
-    def depart_note(self, node):
-        sub_context = self.stack.pop()
-        while isinstance(sub_context.output[-1], NewLine):
-            sub_context.output.pop()
-        note = Panel(
-            Renderables(sub_context.output),
-            box=box.ROUNDED, title='Note', title_align='left')
-        self.append(note)
-        self.append(NewLine())
+    def visit_reference(self, node):
+        refuri = node.attributes.get('refuri')
+        if refuri:
+            self.append(Text.from_markup(
+                f'[link={refuri}]{node.astext()}[/link]', style='rest.link'))
+            raise nodes.SkipChildren()
+    depart_reference = do_nothing
 
     def visit_Text(self, node):
         text = node.astext()
         if not self.context.literal:
             text = re.sub(r'\s+', ' ', text)
         self.append(text)
-
-    def do_nothing(self, node):
-        pass
-
-    visit_term = do_nothing
-    visit_definition = do_nothing
-    depart_definition = do_nothing
     depart_Text = do_nothing
 
-    def pop_context(self, node):
+    def visit_admonition(self, node):
+        self.stack.push(self.context.new(padding=4))
+    def depart_admonition(self, node, *, title='Admonition'):
         sub_context = self.stack.pop()
-        self.context.append(sub_context)
+        while isinstance(sub_context.output[-1], NewLine):
+            sub_context.output.pop()
+        note = Panel(
+            Renderables(sub_context.output),
+            box=box.ROUNDED, title=title, title_align='left')
+        self.append(note)
+        self.append(NewLine())
 
-    depart_section = pop_context
-    depart_literal = pop_context
-    depart_strong = pop_context
-    depart_emphasis = pop_context
-    depart_definition_list = pop_context
-    depart_enumerated_list = pop_context
-    depart_bullet_list = pop_context
-    depart_definition_list_item = pop_context
+    def _depart_admonition(title):
+        return lambda self, node: self.depart_admonition(node, title=title)
 
-    def skip_node(self, node):
-        raise nodes.SkipChildren()
-
+    visit_attention = visit_admonition
+    depart_attention = _depart_admonition('Attention')
+    visit_caution = visit_admonition
+    depart_caution = _depart_admonition('Caution')
+    visit_danger = visit_admonition
+    depart_danger = _depart_admonition('Danger')
+    visit_error = visit_admonition
+    depart_error = _depart_admonition('Error')
+    visit_hint = visit_admonition
+    depart_hint = _depart_admonition('Hint')
+    visit_important = visit_admonition
+    depart_important = _depart_admonition('Important')
+    visit_note = visit_admonition
+    depart_note = _depart_admonition('Note')
+    visit_tip = visit_admonition
+    depart_tip = _depart_admonition('Tip')
+    visit_warning = visit_admonition
+    depart_warning = _depart_admonition('Warning')
+    visit_document = do_nothing
+    depart_document = do_nothing
+    visit_definition = do_nothing
+    depart_definition = do_nothing
+    visit_target = do_nothing
+    depart_target = do_nothing
     visit_comment = skip_node
-    depart_comment = skip_node
+    depart_comment = do_nothing
     visit_system_message = skip_node
-    depart_system_message = skip_node
+    depart_system_message = do_nothing
 
+    del _depart_admonition
 
 class RestructuredText:
     """
