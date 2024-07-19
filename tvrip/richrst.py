@@ -50,6 +50,9 @@ class RichContext:
         The ordinal number of the current list item (or 0 if the context does
         not apply to list items)
 
+    :param rich.table.Table table:
+        The table currently under construction (or :data:`None`)
+
     :param bool literal:
         If :data:`True`, the current context's output is literal and whitespace
         should not be collapsed
@@ -102,6 +105,11 @@ class RichContext:
         An :class:`int` indicating the ordinal position of the current list
         item (or 0 if the context is not under a list).
 
+    .. attribute:: table
+
+        The :class:`~rich.table.Table` currently being constructed, or
+        :data:`None` if no table is under construction.
+
     .. attribute:: literal
 
         A :class:`bool` which, if :data:`True`, indicates that the
@@ -125,8 +133,8 @@ class RichContext:
         line of :attr:`output` of this context.
     """
     def __init__(self, console, options, *, style=None, term_width=0,
-                 item_prefix='', index=0, literal=False, heading_level=1,
-                 first_indent='', subsequent_indent=''):
+                 item_prefix='', index=0, table=None, literal=False,
+                 heading_level=1, first_indent='', subsequent_indent=''):
         self.console = console
         self.options = options
         if style is None:
@@ -139,6 +147,7 @@ class RichContext:
         self.term_width = term_width
         self.item_prefix = item_prefix
         self.index = index
+        self.table = table
         self.literal = literal
         self.heading_level = heading_level
         self.first_indent = first_indent
@@ -148,15 +157,15 @@ class RichContext:
         return (
             f'RichContext({self.output!r}, term_width={self.term_width!r}, '
             f'item_prefix={self.item_prefix!r}, '
-            f'index={self.index!r}, literal={self.literal!r}, '
-            f'heading_level={self.heading_level!r}, '
+            f'index={self.index!r}, table={self.table!r}, '
+            f'literal={self.literal!r}, heading_level={self.heading_level!r}, '
             f'first_indent={self.first_indent!r}, '
             f'subsequent_indent={self.subsequent_indent!r})'
         )
 
     def new(self, *, style=None, term_width=None, item_prefix=None, index=None,
-            literal=None, heading_level=None, indent=None, first_indent=None,
-            subsequent_indent=None, padding=None):
+            table=None, literal=None, heading_level=None, indent=None,
+            first_indent=None, subsequent_indent=None, padding=None):
         """
         Return a new instance of :class:`RichContext` with the specified
         attributes overridden.
@@ -187,6 +196,7 @@ class RichContext:
             item_prefix=
                 self.item_prefix if item_prefix is None else item_prefix,
             index=self.index if index is None else index,
+            table=self.table if table is None else table,
             literal=self.literal if literal is None else literal,
             heading_level=
                 self.heading_level if heading_level is None else heading_level,
@@ -413,8 +423,11 @@ class RichTranslator(nodes.NodeVisitor):
     depart_definition = pop_context
 
     def visit_table(self, node):
-        self.append(Table(box=box.ROUNDED, show_header=False))
+        self.stack.push(
+            self.context.new(table=Table(box=box.ROUNDED, show_header=False)))
     def depart_table(self, node):
+        sub_context = self.stack.pop()
+        self.append(sub_context.table)
         self.append(NewLine())
 
     visit_tgroup = do_nothing
@@ -424,42 +437,39 @@ class RichTranslator(nodes.NodeVisitor):
     visit_colspec = do_nothing
     depart_colspec = do_nothing
 
-    def visit_thead(self, node):
-        self.stack.push(self.context.new(style='rest.table.header'))
-    def depart_thead(self, node):
+    def _visit_tbody(self, node, style):
+        self.stack.push(self.context.new(style=style))
+    def _depart_tbody(self, node):
         # NOTE: We do not use pop_context here because depart_row has already
         # added our content to the current table, so we don't care about any
         # content in the sub-context
         self.stack.pop()
 
+    def visit_thead(self, node):
+        self._visit_tbody(node, style='rest.table.header')
+    depart_thead = _depart_tbody
+
     def visit_tbody(self, node):
-        self.stack.push(self.context.new(style='rest.table.cell'))
-    def depart_tbody(self, node):
-        # NOTE: We do not use pop_context here because depart_row has already
-        # added our content to the current table, so we don't care about any
-        # content in the sub-context
-        self.stack.pop()
+        self._visit_tbody(node, style='rest.table.cell')
+    depart_tbody = _depart_tbody
 
     def visit_row(self, node):
         self.stack.push(self.context.new())
+        # NOTE: Get rid of the null-styled hack in the output; we're only
+        # interested in gathering the cell entries
         self.context.output = []
     def depart_row(self, node):
         sub_context = self.stack.pop()
-        # TODO This is a horrid hack to find the current table... Probably
-        # would be better to stuff this in the context
-        for tbl_context in reversed(self.stack):
-            try:
-                if isinstance(tbl_context.output[-1], Table):
-                    table = tbl_context.output[-1]
-                    break
-            except IndexError:
-                continue
-        else:
-            raise ValueError('Failed to find current table')
+        tbody = node.parent
+        tgroup = tbody.parent
+        table = tgroup.parent
+        last_row_of_table = table.children[-1].children[-1].children[-1]
+        last_row_of_body = tbody.children[-1]
         end_section = (
             isinstance(node.parent, nodes.thead) and
-            (node is node.parent.children[-1]))
-        table.add_row(*(
+            (node is last_row_of_body) and
+            (node is not last_row_of_table))
+        self.context.table.add_row(*(
             cell[0] if len(cell) == 1 else Renderables(cell)
             for cell in sub_context.output
         ), end_section=end_section)
@@ -472,7 +482,7 @@ class RichTranslator(nodes.NodeVisitor):
             sub_context.output.pop()
         # NOTE: We temporarily leave each entry's output in its own list to
         # ensure adjacent cell's Text entries don't get amalgamated; depart_row
-        # sorts converting these lists into valid rich output objects
+        # sorts converting these lists into valid rich renderables
         self.context.output.append(sub_context.output)
 
     def visit_reference(self, node):
