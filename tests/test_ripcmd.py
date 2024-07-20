@@ -3,6 +3,7 @@ import os
 import re
 import queue
 import socket
+import warnings
 import selectors
 import datetime as dt
 from pathlib import Path
@@ -678,12 +679,16 @@ def test_do_help(ripcmd, reader):
 
 
 def test_do_help_with_arg(ripcmd, reader):
-    with pytest.raises(CmdError):
-        ripcmd.do_help('foo')
-    ripcmd.do_help('duplicates')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
+    with warnings.catch_warnings():
+        # Suppress the particularly silly PendingDeprecationWarning for
+        # Node.traverse in docutils (the replacement doesn't even exist yet)
+        warnings.filterwarnings('ignore', category=PendingDeprecationWarning)
+        with pytest.raises(CmdError), warnings.catch_warnings():
+            ripcmd.do_help('foo')
+        ripcmd.do_help('duplicates')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
 duplicates
 ==========
 
