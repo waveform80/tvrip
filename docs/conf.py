@@ -56,6 +56,7 @@ templates_path = ['_templates']
 exclude_patterns = ['_build']
 highlight_language = 'python3'
 pygments_style = 'sphinx'
+nitpicky = True
 
 # -- Autodoc configuration ------------------------------------------------
 
@@ -76,6 +77,10 @@ intersphinx_mapping = {
 # -- Options for HTML output ----------------------------------------------
 
 html_theme = 'sphinx_rtd_theme'
+html_theme_options = {
+    'collapse_navigation': False,
+    'navigation_depth': 2,
+}
 html_title = f'{project} {version} Documentation'
 html_static_path = ['_static']
 manpages_url = 'https://manpages.ubuntu.com/manpages/noble/en/man{section}/{page}.{section}.html'
@@ -115,11 +120,11 @@ epub_show_urls = 'no'
 
 man_pages = [
     (
-        project,        # root document
-        project,        # manual page name
+        'tvrip',            # root document
+        project,            # manual page name
         f'{project} {version} Documentation', # description
-        [info['author']],                           # authors
-        1,                                          # section
+        [info['author']],   # authors
+        1,                  # section
     ),
 ]
 

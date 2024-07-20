@@ -14,7 +14,6 @@ Contents:
 
    install
    tutorial
-   tvrip
    commands
    settings
    license

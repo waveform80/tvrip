@@ -6,10 +6,6 @@ unrip
 
     unrip <episodes>
 
-
-Description
-===========
-
 The ``unrip`` command is used to set the status of an episode or episodes to
 unripped. Episodes may be specified as a range (``1-5``) or as a comma
 separated list (``4,2,1``) or some combination (``1,3-5``), or ``*`` to
@@ -23,8 +19,4 @@ scanned (they can be mapped manually too). For example::
     (tvrip) unrip 3
     (tvrip) unrip 7
 
-
-See Also
-========
-
-:doc:`cmd_rip`, :doc:`cmd_map`
+See also :doc:`cmd_rip`, :doc:`cmd_map`

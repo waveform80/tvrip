@@ -6,10 +6,6 @@ map
 
     map [episode title[.start[-end]]]
 
-
-Description
-===========
-
 The ``map`` command is used to define which title on the disc contains the
 specified episode. This is used when constructing the filename of ripped
 episodes. Note that multiple episodes can be mapped to a single title, to deal
@@ -23,8 +19,4 @@ For example::
 
 If no arguments are specified, the current episode map will be displayed.
 
-
-See Also
-========
-
-:doc:`cmd_automap`, :doc:`cmd_unmap`
+See also :doc:`cmd_automap`, :doc:`cmd_unmap`

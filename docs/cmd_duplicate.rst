@@ -6,10 +6,6 @@ duplicate
 
     duplicate <title>[-<title>]
 
-
-Description
-===========
-
 The ``duplicate`` command is used to override the duplicate setting on disc
 titles. Usually duplicate titles are automatically detected during
 :doc:`cmd_scan` based on identical title lengths. However, some discs have
@@ -25,8 +21,4 @@ as not duplicating titles within the range). Examples::
     (tvrip) duplicate 5
     (tvrip) duplicate 1-3
 
-
-See Also
-========
-
-:doc:`cmd_scan`
+See also :doc:`cmd_scan`

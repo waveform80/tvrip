@@ -6,10 +6,6 @@ subtitle_format
 
     set subtitle_format none|vobsub|pgs|cc|any
 
-
-Description
-===========
-
 Sets the encoding of subtitles in the output file. The following values are
 valid for this setting:
 
@@ -49,8 +45,4 @@ For example::
     (tvrip) set subtitle_format vobsub
     (tvrip) set subtitle_format off
 
-
-See Also
-========
-
-:doc:`var_subtitle_langs`
+See also :doc:`var_subtitle_langs`

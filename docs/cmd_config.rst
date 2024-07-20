@@ -6,17 +6,11 @@ config
 
     config
 
-
-Description
-===========
-
 The ``config`` command displays the current configuration of the application.
 The :doc:`cmd_set` command can be used to adjust the configuration. See
-:doc:`variables` for a full list of configuration variables.
+:doc:`settings` for a full list of configuration variables.
 
-
-Example
-=======
+For example:
 
 .. code-block:: text
 
@@ -52,8 +46,4 @@ Example
     │ api_key          │                                  │
     ╰──────────────────┴──────────────────────────────────╯
 
-
-See Also
-========
-
-:doc:`cmd_set`
+See also :doc:`cmd_set`

@@ -6,10 +6,6 @@ episode
 
     episode insert|update|delete <number> [name]
 
-
-Description
-===========
-
 The ``episode`` command is used to modify the details of a single episode in
 the current season. The operation depends on the first parameter:
 
@@ -24,8 +20,4 @@ the current season. The operation depends on the first parameter:
     The numbered episode is removed, shifting all subsequent episodes down
     (numerically). In this case, ``name`` does not need to be specified.
 
-
-See Also
-========
-
-:doc:`cmd_season`, :doc:`cmd_episodes`
+See also :doc:`cmd_season`, :doc:`cmd_episodes`

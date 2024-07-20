@@ -6,10 +6,6 @@ duration
 
     set duration <min>-<max>
 
-
-Description
-===========
-
 This setting configures the minimum and maximum length (in minutes) that an
 episode is expected to be. This is used when the :doc:`cmd_automap` command is
 mapping titles to episodes, to determine which titles on the disc are likely to
@@ -27,8 +23,4 @@ Example::
 
     (tvrip) set duration 28-32
 
-
-See Also
-========
-
-:doc:`cmd_automap`
+See also :doc:`cmd_automap`

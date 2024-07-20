@@ -6,10 +6,6 @@ audio_mix
 
     set audio_mix mono|stereo|dpl1|dpl2
 
-
-Description
-===========
-
 This setting specifies the audio mix-down that will be applied to the encoded
 audio tracks on the ripped titles. The valid values are:
 

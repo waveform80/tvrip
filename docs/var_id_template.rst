@@ -6,10 +6,6 @@ id_template
 
     set id_template <format>
 
-
-Description
-===========
-
 Sets the format used to fill out the ``{id}`` portion of the
 :doc:`var_template` setting. This format string may contain the following
 substitution variables:
@@ -39,8 +35,4 @@ is commonly done when releasing was were multipart TV episodes on DVD). In this
 case, the "id" portion of the template may be repeated. For example: ``Stargate
 Universe - 1x01 1x02 1x03 - Air.mp4"``
 
-
-See Also
-========
-
-:doc:`var_template`
+See also :doc:`var_template`

@@ -6,10 +6,6 @@ mkvpropedit
 
     set mkvpropedit /path/to/mkvpropedit
 
-
-Description
-===========
-
 Sets the path of the mkvpropedit binary, used by tvrip to fill out the MKV
 meta-data fields after ripping is complete. Example::
 

@@ -6,10 +6,6 @@ video_style
 
     set video_style tv|film|animation
 
-
-Description
-===========
-
 This setting provides a hint of the video style to the HandBrake encoder. The
 following values are valid for this setting:
 

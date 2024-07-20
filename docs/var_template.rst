@@ -5,10 +5,6 @@ template
 
     set template <format>
 
-
-Description
-===========
-
 Sets the format used to construct filenames for output video files. This format
 string may contain the following substitution variables:
 
@@ -44,8 +40,4 @@ Value                                              Output
 ``{program}/Season {season}/{id} - {name}.{ext}``  Red Dwarf/Season 3/3x02 - Marooned.mp4
 =================================================  ======================================
 
-
-See Also
-========
-
-:doc:`var_id_template`, :doc:`var_output_format`, :doc:`var_target`
+See also :doc:`var_id_template`, :doc:`var_output_format`, :doc:`var_target`

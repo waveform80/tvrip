@@ -2,6 +2,9 @@
 Command reference
 =================
 
+The available commands are documented below (note that the :doc:`cmd_help`
+command can be used to display this information within the application).
+
 .. toctree::
    :maxdepth: 1
 

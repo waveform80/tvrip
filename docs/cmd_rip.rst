@@ -6,10 +6,6 @@ rip
 
     rip [episodes]
 
-
-Description
-===========
-
 The ``rip`` command begins ripping the mapped titles from the current source
 device, converting them according to the current preferences, and storing the
 results in the target path. Only previously unripped episodes will be ripped.
@@ -27,8 +23,4 @@ Examples::
     (tvrip) rip
     (tvrip) rip 8,11-15
 
-
-See Also
-========
-
-:doc:`cmd_unrip`, :doc:`cmd_map`, :doc:`cmd_automap`
+See also :doc:`cmd_unrip`, :doc:`cmd_map`, :doc:`cmd_automap`

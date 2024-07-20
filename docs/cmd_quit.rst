@@ -6,14 +6,6 @@ quit
 
     quit
 
+The ``quit`` command is a simple alias of :doc:`cmd_exit`.
 
-Description
-===========
-
-The 'quit' command is a simple alias of :doc:`cmd_exit`.
-
-
-See Also
-========
-
-:doc:`cmd_exit`
+See also :doc:`cmd_exit`

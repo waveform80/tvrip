@@ -6,10 +6,6 @@ duplicates
 
     set duplicates all|first|last
 
-
-Description
-===========
-
 This setting specifies the handling of duplicates (detected by title and
 chapter length) by the :doc:`cmd_automap` command. For various reasons, it is
 fairly common to find duplicated tracks on DVDs. The valid values for this
@@ -37,8 +33,4 @@ setting are:
     This doesn't mean the video blocks are duplicated; just that multiple
     tracks with different meta-data exist.
 
-
-See Also
-========
-
-:doc:`cmd_automap`
+See also :doc:`cmd_automap`

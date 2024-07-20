@@ -2,6 +2,10 @@
 Configuration Settings
 ======================
 
+The available configuration settings are documented below (note that the
+:doc:`cmd_help` command can be used to show this information within the
+application).
+
 .. toctree::
    :maxdepth: 1
 

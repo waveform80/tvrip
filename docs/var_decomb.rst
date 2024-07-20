@@ -6,10 +6,6 @@ decomb
 
     set decomb off|on|auto
 
-
-Description
-===========
-
 This configuration option specifies a decomb mode. Before ripping the first
 title from a disc, it is strongly recommended that users preview a title first
 with the :doc:`cmd_play` command, disabling interlacing to determine whether
@@ -39,8 +35,4 @@ Example::
     (tvrip) set decomb auto
     (tvrip) set decomb on
 
-
-See Also
-========
-
-:doc:`cmd_play`
+See also :doc:`cmd_play`
