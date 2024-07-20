@@ -28,8 +28,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import Unicode, Integer, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, synonym, sessionmaker
+from sqlalchemy.orm import relationship, synonym, sessionmaker, declarative_base
 
 from .const import DATADIR
 
@@ -133,6 +132,7 @@ class AudioLanguage(DeclarativeBase):
                                   ondelete='cascade'), default=1,
                        primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
+    config = relationship('Configuration', back_populates='audio_langs')
 
     def __init__(self, config, lang):
         self.config = config
@@ -151,6 +151,7 @@ class SubtitleLanguage(DeclarativeBase):
                        ForeignKey('config.id', onupdate='cascade', ondelete='cascade'),
                        default=1, primary_key=True)
     lang = Column(Unicode(3), primary_key=True)
+    config = relationship('Configuration', back_populates='subtitle_langs')
 
     def __init__(self, config, lang):
         self.config = config
@@ -216,10 +217,10 @@ class Configuration(DeclarativeBase):
                     CheckConstraint("decomb in ('off', 'on', 'auto')"),
                     nullable=False, default='off')
     audio_all = Column(Boolean, nullable=False, default=False)
-    audio_langs = relationship('AudioLanguage', backref='config')
+    audio_langs = relationship('AudioLanguage', back_populates='config')
     subtitle_all = Column(Boolean, nullable=False, default=False)
     subtitle_default = Column(Boolean, nullable=False, default=False)
-    subtitle_langs = relationship('SubtitleLanguage', backref='config')
+    subtitle_langs = relationship('SubtitleLanguage', back_populates='config')
     video_style = Column(Unicode(10),
                          CheckConstraint("video_style in ('tv', 'film', 'animation')"),
                          nullable=False, default='tv')
@@ -300,7 +301,6 @@ def init_session(url='sqlite:///{DATADIR}/tvrip.db'.format(DATADIR=DATADIR),
     manipulating that connection.
     """
     engine = create_engine(url, echo=debug)
-    session = Session(bind=engine)
-    DeclarativeBase.metadata.bind = engine
-    DeclarativeBase.metadata.create_all()
+    session = Session(bind=engine, future=True)
+    DeclarativeBase.metadata.create_all(bind=engine)
     return session

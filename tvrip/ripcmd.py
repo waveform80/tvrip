@@ -155,7 +155,8 @@ class RipCmd(Cmd):
                 f'Expected episode number but found "{episode}"')
         if episode < 1:
             raise CmdError(f'Episode number {episode} is less than one')
-        result = self.session.query(Episode).get(
+        result = self.session.get(
+            Episode,
             (self.config.program_name, self.config.season_number, episode))
         if result is None and must_exist:
             raise CmdError(
@@ -1164,8 +1165,8 @@ class RipCmd(Cmd):
         if arg < 0:
             raise CmdSyntaxError(
                 f'A season number must be 0 or higher ({arg} specified)')
-        self.config.season = self.session.query(Season).get(
-            (self.config.program.name, arg))
+        self.config.season = self.session.get(
+            Season, (self.config.program.name, arg))
         if self.config.season is None:
             try:
                 new_season = self.find_season(arg)
@@ -1223,7 +1224,7 @@ class RipCmd(Cmd):
         "Sets the name of the program"
         if not arg:
             raise CmdSyntaxError('You must specify a program name')
-        new_program = self.session.query(Program).get((arg,))
+        new_program = self.session.get(Program, (arg,))
         if new_program is None:
             try:
                 new_program = self.find_program(arg)
