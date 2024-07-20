@@ -115,10 +115,12 @@ class Reader(Thread):
 @contextmanager
 def suppress_stdout(cmd):
     save_stdout = cmd.stdout
+    save_console_file = cmd.console.file
     try:
-        cmd.stdout = io.StringIO()
+        cmd.console.file = cmd.stdout = io.StringIO()
         yield
     finally:
+        cmd.console.file = save_console_file
         cmd.stdout = save_stdout
 
 
@@ -144,35 +146,43 @@ def completions(cmd, line):
 
 
 @pytest.fixture(scope='function')
-def _ripcmd(request, db, term_size):
-    term_size(100, 50)
+def stdin_pipe(request):
     ri, wi = os.pipe()
-    ro, wo = os.pipe()
     with \
             closing(os.fdopen(ri, 'r', buffering=1, encoding='utf-8')) as stdin_r, \
-            closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w, \
+            closing(os.fdopen(wi, 'w', buffering=1, encoding='utf-8')) as stdin_w:
+        yield stdin_r, stdin_w
+
+@pytest.fixture(scope='function')
+def stdout_pipe(request):
+    ro, wo = os.pipe()
+    with \
             closing(os.fdopen(ro, 'r', buffering=1, encoding='utf-8')) as stdout_r, \
             closing(os.fdopen(wo, 'w', buffering=1, encoding='utf-8')) as stdout_w:
-        stdout_w.reconfigure(write_through=True)
-        stdin_w.reconfigure(write_through=True)
-        test_ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
-        test_ripcmd.use_rawinput = False
-        yield stdin_w, stdout_r, test_ripcmd
+        yield stdout_r, stdout_w
+
+@pytest.fixture(scope='function')
+def ripcmd(request, db, stdin_pipe, stdout_pipe, monkeypatch):
+    stdin_r, stdin_w = stdin_pipe
+    _, stdout_w = stdout_pipe
+    stdout_w.reconfigure(write_through=True)
+    stdin_w.reconfigure(write_through=True)
+    with monkeypatch.context() as m:
+        m.setenv('COLUMNS', '100')
+        m.setenv('LINES', '50')
+        ripcmd = RipCmd(db, stdin=stdin_r, stdout=stdout_w)
+        ripcmd.use_rawinput = False
+        yield ripcmd
 
 @pytest.fixture()
-def ripcmd(request, _ripcmd):
-    stdin, stdout, cmd = _ripcmd
-    yield cmd
+def stdin(request, stdin_pipe):
+    _, stdin_w = stdin_pipe
+    yield stdin_w
 
 @pytest.fixture()
-def stdin(request, _ripcmd):
-    stdin, stdout, cmd = _ripcmd
-    yield stdin
-
-@pytest.fixture()
-def stdout(request, _ripcmd):
-    stdin, stdout, cmd = _ripcmd
-    yield stdout
+def stdout(request, stdout_pipe):
+    stdout_r, _ = stdout_pipe
+    yield stdout_r
 
 @pytest.fixture()
 def reader(request, stdout):
@@ -372,19 +382,19 @@ def test_clear_episodes(db, with_program, ripcmd):
     assert not ripcmd.config.season.episodes
 
 
-def test_pprint_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
+def test_print_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     # Can't print before scanning disc, and none is inserted
     with pytest.raises(CmdError):
-        ripcmd.pprint_disc()
+        ripcmd.print_disc()
 
     # Insert disc and scan it, then check printed output
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
-    ripcmd.pprint_disc()
+    ripcmd.print_disc()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
@@ -392,55 +402,54 @@ Disc name: FOO AND BAR
 Disc has 11 titles
 
 ╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
-│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
-│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
-│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
-│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
-│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
-│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
-│ 9     │ 2        │ 0:05:03        │     │ eng eng │
-│ 10    │ 2        │ 0:07:01        │     │ eng eng │
-│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
-"""
+│ Title │ Chapters │       Duration │ Dup │ Audio   │
+├───────┼──────────┼────────────────┼─────┼─────────┤
+│ 1     │       24 │ 2:31:26.000006 │     │ eng eng │
+│ 2     │        5 │ 0:30:00.000002 │     │ eng eng │
+│ 3     │        5 │ 0:30:00.000001 │ ━┓  │ eng eng │
+│ 4     │        5 │ 0:30:00.000001 │ ━┛  │ eng eng │
+│ 5     │        5 │ 0:30:05.000001 │     │ eng eng │
+│ 6     │        4 │ 0:30:01.000001 │ ━┓  │ eng eng │
+│ 7     │        4 │ 0:30:01.000001 │ ━┛  │ eng eng │
+│ 8     │        5 │ 0:31:20.000001 │     │ eng eng │
+│ 9     │        2 │        0:05:03 │     │ eng eng │
+│ 10    │        2 │        0:07:01 │     │ eng eng │
+│ 11    │        3 │ 0:31:30.000001 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯"""
 
 
-def test_pprint_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, reader):
+def test_print_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd, reader):
     # Can't print title prior to scan
     with pytest.raises(CmdError):
-        ripcmd.pprint_title(None)
+        ripcmd.print_title(None)
 
     # Insert a blank disc and scan it; printing titles still raises error
     drive.disc = blank_disc
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
     with pytest.raises(CmdError):
-        ripcmd.pprint_title(None)
+        ripcmd.print_title(None)
 
     # Insert a disc with titles and scan it; check title output
     drive.disc = foo_disc1
     with suppress_stdout(ripcmd):
         ripcmd.do_scan('')
-    ripcmd.pprint_title(ripcmd.disc.titles[0])
+    ripcmd.print_title(ripcmd.disc.titles[0])
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
 Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭─────────┬─────────────────┬─────────────────┬────────────────╮
-│ Chapter │ Start           │ Finish          │ Duration       │
-╞═════════╪═════════════════╪═════════════════╪════════════════╡
-│ 1       │ 00:00:00        │ 00:07:08.571429 │ 0:07:08.571429 │
+│ Chapter │           Start │          Finish │       Duration │
+├─────────┼─────────────────┼─────────────────┼────────────────┤
+│ 1       │        00:00:00 │ 00:07:08.571429 │ 0:07:08.571429 │
 │ 2       │ 00:07:08.571429 │ 00:14:17.142858 │ 0:07:08.571429 │
 │ 3       │ 00:14:17.142858 │ 00:21:25.714287 │ 0:07:08.571429 │
 │ 4       │ 00:21:25.714287 │ 00:28:34.285716 │ 0:07:08.571429 │
 │ 5       │ 00:28:34.285716 │ 00:30:00.000002 │ 0:01:25.714286 │
 │ 6       │ 00:30:00.000002 │ 00:41:25.714288 │ 0:11:25.714286 │
-│ 7       │ 00:41:25.714288 │ 00:51:25.714288 │ 0:10:00        │
+│ 7       │ 00:41:25.714288 │ 00:51:25.714288 │        0:10:00 │
 │ 8       │ 00:51:25.714288 │ 00:57:08.571431 │ 0:05:42.857143 │
 │ 9       │ 00:57:08.571431 │ 00:58:34.285717 │ 0:01:25.714286 │
 │ 10      │ 00:58:34.285717 │ 01:00:00.000003 │ 0:01:25.714286 │
@@ -462,43 +471,42 @@ Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭───────┬──────┬─────────┬──────────┬────────┬──────╮
 │ Audio │ Lang │ Name    │ Encoding │ Mix    │ Best │
-╞═══════╪══════╪═════════╪══════════╪════════╪══════╡
-│ 1     │ eng  │ English │ ac3      │ stereo │ ✓    │
+├───────┼──────┼─────────┼──────────┼────────┼──────┤
+│ 1     │ eng  │ English │ ac3      │ stereo │  ✓   │
 │ 2     │ eng  │ English │ ac3      │ stereo │      │
 ╰───────┴──────┴─────────┴──────────┴────────┴──────╯
 
 ╭──────────┬──────┬──────────────────────────┬────────┬──────╮
 │ Subtitle │ Lang │ Name                     │ Format │ Best │
-╞══════════╪══════╪══════════════════════════╪════════╪══════╡
-│ 1        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │ ✓    │
+├──────────┼──────┼──────────────────────────┼────────┼──────┤
+│ 1        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │  ✓   │
 │ 2        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │      │
 │ 3        │ fra  │ Francais (16:9) [VOBSUB] │ vobsub │      │
-╰──────────┴──────┴──────────────────────────┴────────┴──────╯
-"""
+╰──────────┴──────┴──────────────────────────┴────────┴──────╯"""
 
 
-def test_pprint_programs(db, with_program, ripcmd, reader):
-    ripcmd.pprint_programs()
+def test_print_programs(db, with_program, ripcmd, reader):
+    ripcmd.print_programs()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
-╞═══════════╪═════════╪══════════╪════════╡
-│ Foo & Bar │ 2       │ 9        │   0.0% │
+├───────────┼─────────┼──────────┼────────┤
+│ Foo & Bar │       2 │        9 │   0.0% │
 ╰───────────┴─────────┴──────────┴────────╯
 """
 
 
-def test_pprint_seasons(db, with_program, ripcmd, reader):
+def test_print_seasons(db, with_program, ripcmd, reader):
     # Printing seasons with no program selected is an error
     ripcmd.config.program = None
     with pytest.raises(CmdError):
-        ripcmd.pprint_seasons()
+        ripcmd.print_seasons()
 
     # Select program and try again; check printed output
     ripcmd.config.program = with_program
-    ripcmd.pprint_seasons()
+    ripcmd.print_seasons()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
@@ -506,16 +514,16 @@ Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
 │ Num │ Episodes │ Ripped │
-╞═════╪══════════╪════════╡
-│ 1   │ 5        │   0.0% │
-│ 2   │ 4        │   0.0% │
+├─────┼──────────┼────────┤
+│ 1   │        5 │   0.0% │
+│ 2   │        4 │   0.0% │
 ╰─────┴──────────┴────────╯
 """
 
 
-def test_pprint_seasons_specific(db, with_program, ripcmd, reader):
+def test_print_seasons_specific(db, with_program, ripcmd, reader):
     # Same test as above but with season explicitly specified in call
-    ripcmd.pprint_seasons(with_program)
+    ripcmd.print_seasons(with_program)
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
@@ -523,22 +531,22 @@ Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
 │ Num │ Episodes │ Ripped │
-╞═════╪══════════╪════════╡
-│ 1   │ 5        │   0.0% │
-│ 2   │ 4        │   0.0% │
+├─────┼──────────┼────────┤
+│ 1   │        5 │   0.0% │
+│ 2   │        4 │   0.0% │
 ╰─────┴──────────┴────────╯
 """
 
 
-def test_pprint_episodes(db, with_program, ripcmd, reader):
+def test_print_episodes(db, with_program, ripcmd, reader):
     # Printing episodes with no season selected is an error
     ripcmd.config.season = None
     with pytest.raises(CmdError):
-        ripcmd.pprint_episodes()
+        ripcmd.print_episodes()
 
     # Select a season and try again; check printed output
     ripcmd.config.season = with_program.seasons[0]
-    ripcmd.pprint_episodes()
+    ripcmd.print_episodes()
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
@@ -546,7 +554,7 @@ Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
 │ Num │ Title │ Ripped │
-╞═════╪═══════╪════════╡
+├─────┼───────┼────────┤
 │ 1   │ Foo   │        │
 │ 2   │ Bar   │        │
 │ 3   │ Baz   │        │
@@ -556,9 +564,9 @@ Episodes for season 1 of program Foo & Bar
 """
 
 
-def test_pprint_episodes_specific(db, with_program, ripcmd, reader):
+def test_print_episodes_specific(db, with_program, ripcmd, reader):
     # Same test as above but with an explicitly specified episode in the call
-    ripcmd.pprint_episodes(with_program.seasons[0])
+    ripcmd.print_episodes(with_program.seasons[0])
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
@@ -566,7 +574,7 @@ Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
 │ Num │ Title │ Ripped │
-╞═════╪═══════╪════════╡
+├─────┼───────┼────────┤
 │ 1   │ Foo   │        │
 │ 2   │ Bar   │        │
 │ 3   │ Baz   │        │
@@ -583,40 +591,38 @@ def test_do_config(db, with_program, ripcmd, reader, tmp_path):
     ripcmd.do_config('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == f"""\
-External Utility Paths:
-
-atomicparsley    = AtomicParsley
-handbrake        = HandBrakeCLI
-vlc              = vlc
-
-Scanning Configuration:
-
-source           = {tmp_path}/dvd
-duration         = 40.0-50.0 (mins)
-duplicates       = all
-
-Ripping Configuration:
-
-target           = {tmp_path}/videos
-temp             = {tmp_path}/tmp
-template         = {{program}} - {{id}} - {{name}}.{{ext}}
-id_template      = {{season}}x{{episode:02d}}
-output_format    = mp4
-max_resolution   = 1920x1080
-decomb           = off
-audio_mix        = dpl2
-audio_all        = off
-audio_langs      = eng
-subtitle_format  = none
-subtitle_all     = off
-subtitle_default = off
-subtitle_langs   = eng
-video_style      = tv
-dvdnav           = yes
-api_url          = https://api.thetvdb.com/
-api_key          =
-"""
+    alphabetic = re.compile('[a-z]')
+    lines = [
+        line.rstrip(' │\n')
+        for line in reader.read_all()
+        if alphabetic.search(line)
+    ]
+    assert '\n'.join(lines) == f"""\
+│ Setting          │ Value
+│ atomicparsley    │ AtomicParsley
+│ handbrake        │ HandBrakeCLI
+│ vlc              │ vlc
+│ source           │ {tmp_path}/dvd
+│ duration         │ 40.0-50.0 (mins)
+│ duplicates       │ all
+│ target           │ {tmp_path}/videos
+│ temp             │ {tmp_path}/tmp
+│ template         │ {{program}} - {{id}} - {{name}}.{{ext}}
+│ id_template      │ {{season}}x{{episode:02d}}
+│ output_format    │ mp4
+│ max_resolution   │ 1920x1080
+│ decomb           │ off
+│ audio_mix        │ dpl2
+│ audio_all        │ off
+│ audio_langs      │ eng
+│ subtitle_format  │ none
+│ subtitle_all     │ off
+│ subtitle_default │ off
+│ subtitle_langs   │ eng
+│ video_style      │ tv
+│ dvdnav           │ on
+│ api_url          │ https://api.thetvdb.com/
+│ api_key"""
 
 
 def test_do_set(ripcmd):
@@ -642,47 +648,74 @@ def test_do_help(ripcmd, reader):
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert ''.join(reader.read_all()) == """\
-╭───────────┬────────────────────────────────────────────────────────────────────────────────────╮
-│ Command   │ Description                                                                        │
-╞═══════════╪════════════════════════════════════════════════════════════════════════════════════╡
-│ automap   │ Maps episodes to titles or chapter ranges automatically.                           │
-│ config    │ Shows the current set of configuration options.                                    │
-│ disc      │ Displays information about the last scanned disc.                                  │
-│ duplicate │ Manually specifies duplicated titles on a disc.                                    │
-│ episode   │ Modifies a single episode in the current season.                                   │
-│ episodes  │ Gets or sets the episodes for the current season.                                  │
-│ exit      │ Exits from the application.                                                        │
-│ help      │ Displays the available commands or help on a specified command or configuration    │
-│           │ setting.                                                                           │
-│ map       │ Maps episodes to titles or chapter ranges.                                         │
-│ play      │ Plays the specified episode.                                                       │
-│ program   │ Sets the name of the program.                                                      │
-│ programs  │ Shows the defined programs.                                                        │
-│ quit      │ Exits from the application.                                                        │
-│ rip       │ Starts the ripping and transcoding process.                                        │
-│ scan      │ Scans the source device for episodes.                                              │
-│ season    │ Sets which season of the program the disc contains.                                │
-│ seasons   │ Shows the defined seasons of the current program.                                  │
-│ set       │ Sets a configuration option.                                                       │
-│ title     │ Displays information about the specified title(s).                                 │
-│ unmap     │ Removes an episode mapping.                                                        │
-│ unrip     │ Changes the status of the specified episode to unripped.                           │
-╰───────────┴────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────┬──────────────────────────────────────────────────────────────────────────────────────╮
+│ Command   │ Description                                                                          │
+├───────────┼──────────────────────────────────────────────────────────────────────────────────────┤
+│ automap   │ Maps episodes to titles or chapter ranges automatically                              │
+│ config    │ Shows the current set of configuration options                                       │
+│ disc      │ Displays information about the last scanned disc                                     │
+│ duplicate │ Manually specifies duplicated titles on a disc                                       │
+│ episode   │ Modifies a single episode in the current season                                      │
+│ episodes  │ Gets or sets the episodes for the current season                                     │
+│ exit      │ Exits from the application.                                                          │
+│ help      │ Displays the available commands or help on a specified command or configuration      │
+│           │ setting                                                                              │
+│ map       │ Maps episodes to titles or chapter ranges                                            │
+│ play      │ Plays the specified episode                                                          │
+│ program   │ Sets the name of the program                                                         │
+│ programs  │ Shows the defined programs                                                           │
+│ quit      │ Exits from the application.                                                          │
+│ rip       │ Starts the ripping and transcoding process                                           │
+│ scan      │ Scans the source device for episodes                                                 │
+│ season    │ Sets which season of the program the disc contains                                   │
+│ seasons   │ Shows the defined seasons of the current program                                     │
+│ set       │ Sets a configuration option                                                          │
+│ title     │ Displays information about the specified title(s)                                    │
+│ unmap     │ Removes an episode mapping                                                           │
+│ unrip     │ Changes the status of the specified episode to unripped                              │
+╰───────────┴──────────────────────────────────────────────────────────────────────────────────────╯
 """
 
 
-def test_do_help_config(ripcmd, reader):
+def test_do_help_with_arg(ripcmd, reader):
     with pytest.raises(CmdError):
         ripcmd.do_help('foo')
     ripcmd.do_help('duplicates')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
-This configuration option can be set to "all", "first", or "last". When "all", duplicate titles
-will be treated individually and will all be considered for auto-mapping. When "first" only the
-first of a set of duplicates will be considered for auto-mapping, and conversely when "last" only
-the last of a set of duplicates will be used.
+    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
+duplicates
+==========
 
+    set duplicates all|first|last
+
+Description
+~~~~~~~~~~~
+
+This setting specifies the handling of duplicates (detected by title and chapter length) by the
+cmd_automap command. For various reasons, it is fairly common to find duplicated tracks on DVDs. The
+valid values for this setting are:
+
+all    This is the default setting and indicates that you wish to map and rip all tracks, regardless
+       of whether they have been detected as duplicates.
+
+first  Specifies that you only wish to rip the first out of a set of duplicate tracks. In the
+       presence of actual duplicates, this is usually the best setting choice.
+
+last   Specifies that you only wish to rip the last out of a set of duplicate tracks.
+
+╭─ Note ───────────────────────────────────────────────────────────────────────────────────────────╮
+│ In contrast to DVDs of films, where duplicate tracks are used as an anti-piracy measure, on DVD  │
+│ sets of TV series it is occasionally used for "commentary" tracks. Often, duplicated titles have │
+│ both audio tracks, but one title will re-order them such that the commentary track is the        │
+│ default. This doesn't mean the video blocks are duplicated; just that multiple tracks with       │
+│ different meta-data exist.                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+See Also
+~~~~~~~~
+
+cmd_automap
 """
 
 
@@ -1073,7 +1106,7 @@ Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
 │ Num │ Title │ Ripped │
-╞═════╪═══════╪════════╡
+├─────┼───────┼────────┤
 │ 1   │ Foo   │        │
 │ 2   │ Bar   │        │
 │ 3   │ Baz   │        │
@@ -1162,9 +1195,9 @@ Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
 │ Num │ Episodes │ Ripped │
-╞═════╪══════════╪════════╡
-│ 1   │ 5        │   0.0% │
-│ 2   │ 4        │   0.0% │
+├─────┼──────────┼────────┤
+│ 1   │        5 │   0.0% │
+│ 2   │        4 │   0.0% │
 ╰─────┴──────────┴────────╯
 """
 
@@ -1253,8 +1286,8 @@ def test_do_programs(db, with_program, ripcmd, reader):
     assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
-╞═══════════╪═════════╪══════════╪════════╡
-│ Foo & Bar │ 2       │ 9        │   0.0% │
+├───────────┼─────────┼──────────┼────────┤
+│ Foo & Bar │       2 │        9 │   0.0% │
 ╰───────────┴─────────┴──────────┴────────╯
 """
 
@@ -1266,7 +1299,7 @@ def test_do_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     ripcmd.do_disc('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
@@ -1274,21 +1307,20 @@ Disc name: FOO AND BAR
 Disc has 11 titles
 
 ╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
-│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
-│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
-│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
-│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
-│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
-│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
-│ 9     │ 2        │ 0:05:03        │     │ eng eng │
-│ 10    │ 2        │ 0:07:01        │     │ eng eng │
-│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
-"""
+│ Title │ Chapters │       Duration │ Dup │ Audio   │
+├───────┼──────────┼────────────────┼─────┼─────────┤
+│ 1     │       24 │ 2:31:26.000006 │     │ eng eng │
+│ 2     │        5 │ 0:30:00.000002 │     │ eng eng │
+│ 3     │        5 │ 0:30:00.000001 │ ━┓  │ eng eng │
+│ 4     │        5 │ 0:30:00.000001 │ ━┛  │ eng eng │
+│ 5     │        5 │ 0:30:05.000001 │     │ eng eng │
+│ 6     │        4 │ 0:30:01.000001 │ ━┓  │ eng eng │
+│ 7     │        4 │ 0:30:01.000001 │ ━┛  │ eng eng │
+│ 8     │        5 │ 0:31:20.000001 │     │ eng eng │
+│ 9     │        2 │        0:05:03 │     │ eng eng │
+│ 10    │        2 │        0:07:01 │     │ eng eng │
+│ 11    │        3 │ 0:31:30.000001 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯"""
 
 
 def test_do_title(db, with_config, drive, foo_disc1, ripcmd, reader):
@@ -1302,15 +1334,15 @@ def test_do_title(db, with_config, drive, foo_disc1, ripcmd, reader):
 Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭─────────┬─────────────────┬─────────────────┬────────────────╮
-│ Chapter │ Start           │ Finish          │ Duration       │
-╞═════════╪═════════════════╪═════════════════╪════════════════╡
-│ 1       │ 00:00:00        │ 00:07:08.571429 │ 0:07:08.571429 │
+│ Chapter │           Start │          Finish │       Duration │
+├─────────┼─────────────────┼─────────────────┼────────────────┤
+│ 1       │        00:00:00 │ 00:07:08.571429 │ 0:07:08.571429 │
 │ 2       │ 00:07:08.571429 │ 00:14:17.142858 │ 0:07:08.571429 │
 │ 3       │ 00:14:17.142858 │ 00:21:25.714287 │ 0:07:08.571429 │
 │ 4       │ 00:21:25.714287 │ 00:28:34.285716 │ 0:07:08.571429 │
 │ 5       │ 00:28:34.285716 │ 00:30:00.000002 │ 0:01:25.714286 │
 │ 6       │ 00:30:00.000002 │ 00:41:25.714288 │ 0:11:25.714286 │
-│ 7       │ 00:41:25.714288 │ 00:51:25.714288 │ 0:10:00        │
+│ 7       │ 00:41:25.714288 │ 00:51:25.714288 │        0:10:00 │
 │ 8       │ 00:51:25.714288 │ 00:57:08.571431 │ 0:05:42.857143 │
 │ 9       │ 00:57:08.571431 │ 00:58:34.285717 │ 0:01:25.714286 │
 │ 10      │ 00:58:34.285717 │ 01:00:00.000003 │ 0:01:25.714286 │
@@ -1332,15 +1364,15 @@ Title 1, duration: 2:31:26.000006, duplicate: no
 
 ╭───────┬──────┬─────────┬──────────┬────────┬──────╮
 │ Audio │ Lang │ Name    │ Encoding │ Mix    │ Best │
-╞═══════╪══════╪═════════╪══════════╪════════╪══════╡
-│ 1     │ eng  │ English │ ac3      │ stereo │ ✓    │
+├───────┼──────┼─────────┼──────────┼────────┼──────┤
+│ 1     │ eng  │ English │ ac3      │ stereo │  ✓   │
 │ 2     │ eng  │ English │ ac3      │ stereo │      │
 ╰───────┴──────┴─────────┴──────────┴────────┴──────╯
 
 ╭──────────┬──────┬──────────────────────────┬────────┬──────╮
 │ Subtitle │ Lang │ Name                     │ Format │ Best │
-╞══════════╪══════╪══════════════════════════╪════════╪══════╡
-│ 1        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │ ✓    │
+├──────────┼──────┼──────────────────────────┼────────┼──────┤
+│ 1        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │  ✓   │
 │ 2        │ eng  │ English (16:9) [VOBSUB]  │ vobsub │      │
 │ 3        │ fra  │ Francais (16:9) [VOBSUB] │ vobsub │      │
 ╰──────────┴──────┴──────────────────────────┴────────┴──────╯
@@ -1392,7 +1424,7 @@ def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader
     ripcmd.do_scan('1')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == f"""\
+    assert '\n'.join([l.rstrip() for l in reader.read_all()]) == f"""\
 Scanning disc in {tmp_path}/dvd
 Disc type:
 Disc identifier: $H1$6be864bc30cf66e5acb5adf3730fc60e2b4daa83
@@ -1401,11 +1433,10 @@ Disc name: FOO AND BAR
 Disc has 1 titles
 
 ╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
-"""
+│ Title │ Chapters │       Duration │ Dup │ Audio   │
+├───────┼──────────┼────────────────┼─────┼─────────┤
+│ 1     │       24 │ 2:31:26.000006 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯"""
 
 
 def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader):
@@ -1413,7 +1444,7 @@ def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader
     ripcmd.do_scan('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == f"""\
+    assert '\n'.join([l.strip() for l in reader.read_all()]) == f"""\
 Scanning disc in {tmp_path}/dvd
 Disc type:
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
@@ -1422,21 +1453,20 @@ Disc name: FOO AND BAR
 Disc has 11 titles
 
 ╭───────┬──────────┬────────────────┬─────┬─────────╮
-│ Title │ Chapters │ Duration       │ Dup │ Audio   │
-╞═══════╪══════════╪════════════════╪═════╪═════════╡
-│ 1     │ 24       │ 2:31:26.000006 │     │ eng eng │
-│ 2     │ 5        │ 0:30:00.000002 │     │ eng eng │
-│ 3     │ 5        │ 0:30:00.000001 │ ━┓  │ eng eng │
-│ 4     │ 5        │ 0:30:00.000001 │ ━┛  │ eng eng │
-│ 5     │ 5        │ 0:30:05.000001 │     │ eng eng │
-│ 6     │ 4        │ 0:30:01.000001 │ ━┓  │ eng eng │
-│ 7     │ 4        │ 0:30:01.000001 │ ━┛  │ eng eng │
-│ 8     │ 5        │ 0:31:20.000001 │     │ eng eng │
-│ 9     │ 2        │ 0:05:03        │     │ eng eng │
-│ 10    │ 2        │ 0:07:01        │     │ eng eng │
-│ 11    │ 3        │ 0:31:30.000001 │     │ eng eng │
-╰───────┴──────────┴────────────────┴─────┴─────────╯
-"""
+│ Title │ Chapters │       Duration │ Dup │ Audio   │
+├───────┼──────────┼────────────────┼─────┼─────────┤
+│ 1     │       24 │ 2:31:26.000006 │     │ eng eng │
+│ 2     │        5 │ 0:30:00.000002 │     │ eng eng │
+│ 3     │        5 │ 0:30:00.000001 │ ━┓  │ eng eng │
+│ 4     │        5 │ 0:30:00.000001 │ ━┛  │ eng eng │
+│ 5     │        5 │ 0:30:05.000001 │     │ eng eng │
+│ 6     │        4 │ 0:30:01.000001 │ ━┓  │ eng eng │
+│ 7     │        4 │ 0:30:01.000001 │ ━┛  │ eng eng │
+│ 8     │        5 │ 0:31:20.000001 │     │ eng eng │
+│ 9     │        2 │        0:05:03 │     │ eng eng │
+│ 10    │        2 │        0:07:01 │     │ eng eng │
+│ 11    │        3 │ 0:31:30.000001 │     │ eng eng │
+╰───────┴──────────┴────────────────┴─────┴─────────╯"""
 
 
 def test_do_scan_bad_title(db, with_config, drive, foo_disc1, ripcmd):
@@ -1731,10 +1761,10 @@ Mapping title 3 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
 
 ╭───────┬────────────────┬────────┬─────────┬──────╮
-│ Title │ Duration       │ Ripped │ Episode │ Name │
-╞═══════╪════════════════╪════════╪═════════╪══════╡
-│ 2     │ 0:30:00.000002 │        │ 1       │ Foo  │
-│ 3     │ 0:30:00.000001 │        │ 2       │ Bar  │
+│ Title │       Duration │ Ripped │ Episode │ Name │
+├───────┼────────────────┼────────┼─────────┼──────┤
+│ 2     │ 0:30:00.000002 │        │       1 │ Foo  │
+│ 3     │ 0:30:00.000001 │        │       2 │ Bar  │
 ╰───────┴────────────────┴────────┴─────────┴──────╯
 """
 
@@ -1759,10 +1789,10 @@ Mapping chapters 1.06-10 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
 
 ╭─────────┬────────────────┬────────┬─────────┬──────╮
-│ Title   │ Duration       │ Ripped │ Episode │ Name │
-╞═════════╪════════════════╪════════╪═════════╪══════╡
-│ 1.01-05 │ 0:30:00.000002 │        │ 1       │ Foo  │
-│ 1.06-10 │ 0:30:00.000001 │        │ 2       │ Bar  │
+│ Title   │       Duration │ Ripped │ Episode │ Name │
+├─────────┼────────────────┼────────┼─────────┼──────┤
+│ 1.01-05 │ 0:30:00.000002 │        │       1 │ Foo  │
+│ 1.06-10 │ 0:30:00.000001 │        │       2 │ Bar  │
 ╰─────────┴────────────────┴────────┴─────────┴──────╯
 """
 
@@ -1998,5 +2028,5 @@ def test_interactive(db, with_program, tmp_path, drive, foo_disc1, ripcmd, reade
         ripcmd.stdout.flush()
         ripcmd.stdout.close()
         assert ''.join(reader.read_all()) == f"""\
-(tvrip) Invalid video style foo
-(tvrip) (tvrip) """
+[green](tvrip)[/green] Syntax error: Invalid video style foo
+[green](tvrip)[/green] [green](tvrip)[/green] """

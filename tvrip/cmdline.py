@@ -61,19 +61,19 @@ from .richrst import RestructuredText, rest_theme
 class CmdError(Exception):
     "Base class for non-fatal Cmd errors"
     def __str__(self):
-        return f'Error: {super().__str__()}'
+        return f'Error: {self.args[0]}'
 
     def __rich__(self):
-        return f'[red]Error:[/red] {super().__str__()}'
+        return f'[red]Error:[/red] {self.args[0]}'
 
 
 class CmdSyntaxError(CmdError):
     "Exception raised when the user makes a syntax error"
     def __str__(self):
-        return f'Syntax error: {super().__str__()}'
+        return f'Syntax error: {self.args[0]}'
 
     def __rich__(self):
-        return f'[red]Syntax error:[/red] {super().__str__()}'
+        return f'[red]Syntax error:[/red] {self.args[0]}'
 
 
 class Cmd(cmd.Cmd):
@@ -86,7 +86,7 @@ class Cmd(cmd.Cmd):
 
     def __init__(self, stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
-        self.console = Console(highlight=False, theme=rest_theme)
+        self.console = Console(highlight=False, theme=rest_theme, file=stdout)
         # Clamp the console width for readability
         if self.console.width > 120:
             self.console.width = 120
@@ -154,12 +154,13 @@ class Cmd(cmd.Cmd):
     def emptyline(self):
         # Do not repeat commands when given an empty line
         self.console.print('')
+        return False
 
     def cmdloop(self, intro=None):
         # This is evil, but unfortunately there's no other way (other than
         # re-implemting the entire cmdloop method)
         with mock.patch('cmd.input', self.console.input):
-            super().cmdloop(intro)
+            return super().cmdloop(intro)
 
     def preloop(self):
         if (
@@ -187,7 +188,7 @@ class Cmd(cmd.Cmd):
     def input(self, prompt=''):
         "Prompts and reads input from the user"
         if self.use_rawinput:
-            result = self.console.input(prompt).strip()
+            result = self.console.input(prompt, stream=self.stdin).strip()
             # Strip the history from readline (we only want commands in the
             # history)
             readline.remove_history_item(
@@ -219,10 +220,6 @@ class Cmd(cmd.Cmd):
     def do_help(self, arg):
         """
         Displays the available commands or help on a specified command.
-
-        The 'help' command is used to display the help text for a command or,
-        if no command is specified, it presents a list of all available
-        commands along with a brief description of each.
         """
         if arg:
             if not hasattr(self, f'do_{arg}'):

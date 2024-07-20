@@ -240,7 +240,7 @@ class RichContext:
         indentation set in :attr:`first_indent` and :attr:`subsequent_indent`.
         """
         for index, line in enumerate(self.console.render_lines(
-            Renderables(self.output), self.options, pad=True, new_lines=True,
+            Renderables(self.output), self.options, pad=False, new_lines=True,
         )):
             yield Text(self.first_indent if index == 0 else
                        self.subsequent_indent, end='')
@@ -623,7 +623,7 @@ class RestructuredText:
         self.document.walkabout(translator)
         for line in console.render_lines(
             Renderables(translator.context.output), options,
-            pad=True, new_lines=True
+            pad=False, new_lines=True
         ):
             yield from line
 
@@ -639,7 +639,7 @@ def doc_ref_role(
     else:
         title = nodes.unescape(text)
         target = nodes.unescape(text)
-    node = nodes.Text(title, rawsource=rawtext)
+    node = nodes.Text(title)
     return [node], []
 roles.register_local_role('doc', doc_ref_role)
 
