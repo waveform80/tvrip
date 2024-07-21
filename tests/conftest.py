@@ -432,7 +432,7 @@ class MockTVDBHandler(BaseHTTPRequestHandler):
 class MockTVDBServer(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, url, key='s3cret'):
+    def __init__(self, key='s3cret'):
         super().__init__(('127.0.0.1', 0), MockTVDBHandler)
         hostname, port, *other = self.server_address
         self.url = f'http://{hostname}:{port}/'
@@ -496,7 +496,7 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
 
 @pytest.fixture()
 def tvdb(request):
-    server = MockTVDBServer('http://127.0.0.1:8000/')
+    server = MockTVDBServer()
     server_thread = Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
