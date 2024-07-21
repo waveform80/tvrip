@@ -1281,7 +1281,7 @@ class RipCmd(Cmd):
             table.add_row(
                 str(num),
                 entry.title,
-                str(entry.aired) if entry.aired else '-',
+                f'{entry.aired:%Y-%m-%d}' if entry.aired else '-',
                 entry.status,
                 format_overview(entry.overview),
             )
