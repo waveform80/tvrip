@@ -5,7 +5,7 @@ tvrip
 =====
 
 tvrip is a small command line script that brings together several other
-utilities (Handbrake, Atomic Parsley, mkvtoolnix, VLC, etc.) with the aim of
+utilities (HandBrake, Atomic Parsley, mkvtoolnix, VLC, etc.) with the aim of
 making it relatively simple to rip whole seasons or series of TV episodes from
 DVD to high quality MP4 or Matroska files, along with optional subtitles,
 alternate languages and director's commentaries.
@@ -62,6 +62,7 @@ Episode meta-data in tvrip is (optionally) downloaded from the excellent
     :align: center
     :width: 200px
     :alt: The TVDB's logo
+    :target: `TVDB`_
 
 
 .. _Python: http://www.python.org/
