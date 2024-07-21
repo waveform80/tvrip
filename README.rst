@@ -60,12 +60,15 @@ Episode meta-data in tvrip is (optionally) downloaded from the excellent
 
 .. image:: docs/images/the-tvdb.png
     :align: center
+    :width: 200px
+    :alt: The TVDB's logo
 
 
 .. _Python: http://www.python.org/
 .. _HandBrake: http://handbrake.fr/
 .. _Atomic Parsley: http://atomicparsley.sourceforge.net/
 .. _mkvpropedit: https://mkvtoolnix.download/
+.. _VLC: https://www.videolan.org/
 .. _sqlalchemy: http://www.sqlalchemy.org/
 .. _requests: https://requests.readthedocs.io/
 .. _rich: https://rich.readthedocs.io/
