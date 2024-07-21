@@ -19,7 +19,6 @@ from fractions import Fraction
 from operator import attrgetter
 from itertools import groupby, chain
 from weakref import ref
-from pathlib import Path
 
 from . import multipart
 
@@ -119,8 +118,8 @@ class Disc:
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
         cmdline = [
-            config.get_path('handbrake'),
-            '-i', config.source,      # specify the input device
+            str(config.get_path('handbrake')),
+            '-i', str(config.source), # specify the input device
             '-t', str(title),         # select the specified title
             '--min-duration', '300',  # only scan titles >5 minutes
             '--scan',                 # scan only
@@ -237,7 +236,10 @@ class Disc:
             mrl = f'dvd://{config.source}#{chapter.title.number}:{chapter.number}'
         else:
             assert False
-        cmdline = [config.get_path('vlc'), '--quiet', '--avcodec-hw', 'none', mrl]
+        cmdline = [
+            str(config.get_path('vlc')),
+            '--quiet', '--avcodec-hw', 'none', mrl
+        ]
         proc.run(cmdline, check=True, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
 
     def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
@@ -256,13 +258,15 @@ class Disc:
         )
         filename = config.template.format(
             program=config.program.name,
+            season=config.season.number,
             id=file_id,
             name=multipart.name(episodes),
             now=dt.datetime.now(),
             ext=config.output_format,
         )
-        # Replace invalid characters in the filename with -
-        filename = re.sub(r'[\/:]', '-', filename)
+        # Replace invalid characters in the filename with - or _
+        filename = re.sub(r'[:]', '-', filename)
+        filename = re.sub(r'[*?]', '_', filename)
         # Convert the video track
         audio_defs = [
             (track.number, config.audio_mix, track.name)
@@ -273,10 +277,10 @@ class Disc:
             for track in subtitle_tracks
         ]
         cmdline = [
-            config.get_path('handbrake'),
-            '-i', config.source,
+            str(config.get_path('handbrake')),
+            '-i', str(config.source),
             '-t', str(title.number),
-            '-o', os.path.join(config.target, filename),
+            '-o', str(config.target / filename),
             '-f', f'av_{config.output_format}',
             '-O',            # optimize for streaming
             '-m',            # include chapter markers
@@ -336,15 +340,17 @@ class Disc:
             cmdline.append('slow')
         elif config.decomb == 'auto':
             cmdline.append('-5')
-        with (Path(config.temp) / 'tvrip.log').open('a') as log:
+        # Create any paths for the target that don't exist
+        (config.target / filename).parent.mkdir(parents=True, exist_ok=True)
+        with (config.temp / 'tvrip.log').open('a') as log:
             proc.run(cmdline, check=True, stdout=log, stderr=log)
         # Tag the resulting file
         if config.output_format == 'mp4':
             tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
             try:
                 cmdline = [
-                    config.get_path('atomicparsley'),
-                    os.path.join(config.target, filename),
+                    str(config.get_path('atomicparsley')),
+                    str(config.target / filename),
                     '-o', tmpfile,
                     '--stik', 'TV Show',
                     # set tags for TV shows
@@ -358,12 +364,12 @@ class Disc:
                     '--tracknum',     str(episodes[0].number),
                     '--title',        multipart.name(episodes),
                 ]
-                with (Path(config.temp) / 'tvrip.log').open('a') as log:
+                with (config.temp / 'tvrip.log').open('a') as log:
                     proc.run(cmdline, check=True, stdout=log, stderr=log)
-                os.chmod(
-                    tmpfile,
-                    os.stat(os.path.join(config.target, filename)).st_mode)
-                shutil.move(tmpfile, os.path.join(config.target, filename))
+                os.fchmod(
+                    tmphandle,
+                    (config.target / filename).stat().st_mode)
+                os.rename(tmpfile, config.target / filename)
             finally:
                 os.close(tmphandle)
         # Update the database with the ripped titles

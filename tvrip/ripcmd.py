@@ -498,15 +498,15 @@ class RipCmd(Cmd):
         for path in self.config.paths:
             table.add_row(path.name, path.path)
         table.add_section()
-        table.add_row('source', self.config.source)
+        table.add_row('source', str(self.config.source))
         table.add_row(
             'duration',
             f'{self.config.duration_min.total_seconds() / 60}-'
             f'{self.config.duration_max.total_seconds() / 60} (mins)')
         table.add_row('duplicates', self.config.duplicates)
         table.add_section()
-        table.add_row('target', self.config.target)
-        table.add_row('temp', self.config.temp)
+        table.add_row('target', str(self.config.target))
+        table.add_row('temp', str(self.config.temp))
         table.add_row('template', self.config.template)
         table.add_row('id_template', self.config.id_template)
         table.add_row('output_format', self.config.output_format)
@@ -1341,7 +1341,7 @@ class RipCmd(Cmd):
 
     def do_scan(self, arg):
         "Scans the source device for episodes"
-        if not self.config.source:
+        if not self.config._source:
             raise CmdError('No source has been specified')
         elif not (self.config.duration_min and self.config.duration_max):
             raise CmdError('No duration range has been specified')

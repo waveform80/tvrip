@@ -725,7 +725,7 @@ See also cmd_automap
 
 
 def test_set_executable(db, with_config, ripcmd, tmp_path):
-    assert ripcmd.config.get_path('vlc') == 'vlc'
+    assert ripcmd.config.get_path('vlc') == Path('vlc')
     with pytest.raises(CmdError):
         ripcmd.do_set(f'vlc {tmp_path}/vlc')
     (tmp_path / 'vlc').touch()
@@ -733,7 +733,7 @@ def test_set_executable(db, with_config, ripcmd, tmp_path):
         ripcmd.do_set(f'vlc {tmp_path}/vlc')
     (tmp_path / 'vlc').chmod(0o755)
     ripcmd.do_set(f'vlc {tmp_path}/vlc')
-    assert ripcmd.config.get_path('vlc') == f'{tmp_path}/vlc'
+    assert ripcmd.config.get_path('vlc') == tmp_path / 'vlc'
 
 
 def test_complete_set_executable(db, with_config, ripcmd, tmp_path):
@@ -751,13 +751,13 @@ def test_complete_set_executable(db, with_config, ripcmd, tmp_path):
 def test_set_directory(db, with_config, ripcmd, tmp_path):
     (tmp_path / 'target').mkdir()
     (tmp_path / 'bar').touch(mode=0o644)
-    assert ripcmd.config.target == str(tmp_path / 'videos')
+    assert ripcmd.config.target == tmp_path / 'videos'
     with pytest.raises(CmdError):
         ripcmd.do_set(f'target {tmp_path}/foo')
     with pytest.raises(CmdError):
         ripcmd.do_set(f'target {tmp_path}/bar')
     ripcmd.do_set(f'target {tmp_path}/target')
-    assert ripcmd.config.target == f'{tmp_path}/target'
+    assert ripcmd.config.target == tmp_path / 'target'
 
 
 def test_complete_set_directory(db, with_config, ripcmd, tmp_path):
@@ -774,9 +774,9 @@ def test_set_device(db, with_config, ripcmd, tmp_path):
         (tmp_path / 'sr0').touch(mode=0o644)
         (tmp_path / 'sr1').touch(mode=0o644)
         is_block_device.return_value = True
-        assert ripcmd.config.source == str(tmp_path / 'dvd')
+        assert ripcmd.config.source == tmp_path / 'dvd'
         ripcmd.do_set(f'source {tmp_path}/sr0')
-        assert ripcmd.config.source == str(tmp_path / 'sr0')
+        assert ripcmd.config.source == tmp_path / 'sr0'
         is_block_device.return_value = False
         with pytest.raises(CmdError):
             ripcmd.do_set(f'source {tmp_path}/null')

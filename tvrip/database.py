@@ -11,6 +11,7 @@ Implements the data model for the tvrip application's database
 
 import os
 import tempfile
+from pathlib import Path
 from datetime import timedelta
 
 from sqlalchemy import (
@@ -207,13 +208,27 @@ class Configuration(DeclarativeBase):
     )
 
     id = Column(Integer, primary_key=True)
-    source = Column(Unicode(300), nullable=False, default='/dev/dvd')
-    target = Column(Unicode(300), nullable=False, default=os.path.expanduser('~/Videos'))
-    temp = Column(Unicode(300), nullable=False, default=tempfile.gettempdir())
-    template = Column(Unicode(300), nullable=False, default='{program} - {id} - {name}.{ext}')
-    id_template = Column(Unicode(100), nullable=False, default='{season}x{episode:02d}')
-    _duration_min = Column('duration_min', Integer, nullable=False, default=40)
-    _duration_max = Column('duration_max', Integer, nullable=False, default=50)
+    _source = Column(
+        'source', Unicode(300),
+        nullable=False, default='/dev/dvd')
+    _target = Column(
+        'target', Unicode(300),
+        nullable=False, default=os.path.expanduser('~/Videos'))
+    _temp = Column(
+        'temp', Unicode(300),
+        nullable=False, default=tempfile.gettempdir())
+    template = Column(
+        Unicode(300),
+        nullable=False, default='{program} - {id} - {name}.{ext}')
+    id_template = Column(
+        Unicode(100),
+        nullable=False, default='{season}x{episode:02d}')
+    _duration_min = Column(
+        'duration_min', Integer,
+        nullable=False, default=40)
+    _duration_max = Column(
+        'duration_max', Integer,
+        nullable=False, default=50)
     program_name = Column(Unicode(200))
     season_number = Column(Integer)
     subtitle_format = Column(
@@ -260,6 +275,30 @@ class Configuration(DeclarativeBase):
             'Season.number == foreign(Configuration.season_number)'
         ')')
 
+    def _get_source(self):
+        return Path(self._source)
+
+    def _set_source(self, value):
+        self._source = str(value)
+
+    source = synonym('_source', descriptor=property(_get_source, _set_source))
+
+    def _get_target(self):
+        return Path(self._target)
+
+    def _set_target(self, value):
+        self._target = str(value)
+
+    target = synonym('_target', descriptor=property(_get_target, _set_target))
+
+    def _get_temp(self):
+        return Path(self._temp)
+
+    def _set_temp(self, value):
+        self._temp = str(value)
+
+    temp = synonym('_temp', descriptor=property(_get_temp, _set_temp))
+
     def _get_duration_min(self):
         return timedelta(minutes=self._duration_min)
 
@@ -298,12 +337,13 @@ class Configuration(DeclarativeBase):
 
     def get_path(self, name):
         """
-        Returns the configured path of the specified utility.
+        Returns the configured path of the specified utility as a
+        :class:`~pathlib.Path`.
         """
         session = Session.object_session(self)
-        return session.query(ConfigPath).\
+        return Path(session.query(ConfigPath).\
             filter(ConfigPath.config_id == self.id).\
-            filter(ConfigPath.name == name).one().path
+            filter(ConfigPath.name == name).one().path)
 
     def set_path(self, name, value):
         """
@@ -312,7 +352,7 @@ class Configuration(DeclarativeBase):
         session = Session.object_session(self)
         session.query(ConfigPath).\
             filter(ConfigPath.config_id == self.id).\
-            filter(ConfigPath.name == name).one().path = value
+            filter(ConfigPath.name == name).one().path = str(value)
         session.commit()
 
     def __repr__(self):

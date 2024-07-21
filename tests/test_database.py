@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import datetime as dt
+from pathlib import Path
 
 from tvrip.database import *
 
@@ -33,10 +34,10 @@ def test_config_langs(db, with_config):
 def test_config_paths(db, with_config):
     cfg = with_config
     assert len(cfg.paths) == 3
-    assert cfg.get_path('vlc') == 'vlc'
-    assert cfg.get_path('atomicparsley') == 'AtomicParsley'
+    assert cfg.get_path('vlc') == Path('vlc')
+    assert cfg.get_path('atomicparsley') == Path('AtomicParsley')
     cfg.set_path('handbrake', '/home/me/hb/build/HandBrakeCLI')
-    assert cfg.get_path('handbrake') == '/home/me/hb/build/HandBrakeCLI'
+    assert cfg.get_path('handbrake') == Path('/home/me/hb/build/HandBrakeCLI')
     for path in cfg.paths:
         if path.name == 'vlc':
             assert repr(path) == "<ConfigPath('vlc', 'vlc')>"

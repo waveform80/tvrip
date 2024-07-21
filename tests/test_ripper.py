@@ -183,7 +183,7 @@ def test_rip_with_defaults(db, with_config, with_program, drive, foo_disc1):
     rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
     ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
     assert rip_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-i', str(with_config.source)] in rip_cmdline
     assert ['-t', '2'] in rip_cmdline
     assert ['-d', 'slow'] not in rip_cmdline
     assert '-5' not in rip_cmdline
@@ -301,7 +301,7 @@ def test_rip_chapter(db, with_config, with_program, drive, foo_disc1):
     rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
     ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
     assert rip_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-i', str(with_config.source)] in rip_cmdline
     assert ['-t', '1'] in rip_cmdline
     assert ['-c', '1'] in rip_cmdline
 
@@ -319,6 +319,6 @@ def test_rip_chapters(db, with_config, with_program, drive, foo_disc1):
     rip_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
     ap_cmdline = Cmdline(drive.run.call_args_list[2].args[0])
     assert rip_cmdline[0] == 'HandBrakeCLI'
-    assert ['-i', with_config.source] in rip_cmdline
+    assert ['-i', str(with_config.source)] in rip_cmdline
     assert ['-t', '1'] in rip_cmdline
     assert ['-c', '1-5'] in rip_cmdline
