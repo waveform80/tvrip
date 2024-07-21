@@ -694,9 +694,6 @@ duplicates
 
     set duplicates all|first|last
 
-Description
-~~~~~~~~~~~
-
 This setting specifies the handling of duplicates (detected by title and chapter length) by the
 cmd_automap command. For various reasons, it is fairly common to find duplicated tracks on DVDs. The
 valid values for this setting are:
@@ -717,10 +714,7 @@ last   Specifies that you only wish to rip the last out of a set of duplicate tr
 │ different meta-data exist.                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-See Also
-~~~~~~~~
-
-cmd_automap
+See also cmd_automap
 """
 
 
