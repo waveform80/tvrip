@@ -16,22 +16,22 @@ Pre-requisites
 
 tvrip depends primarily on the following applications:
 
- * `Handbrake`_
+* `Handbrake`_
 
- * `Atomic Parsley`_
+* `Atomic Parsley`_
 
- * `mkvpropedit`_
+* `mkvpropedit`_
 
- * `VLC`_
+* `VLC`_
 
 As tvrip is written in the `Python`_ language, you will need a copy of this
 installed along with the following Python packages:
 
- * `sqlalchemy`_
+* `sqlalchemy`_
 
- * `requests`_
+* `requests`_
 
- * `rich`_
+* `rich`_
 
 
 License
