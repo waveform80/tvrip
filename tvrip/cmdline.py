@@ -96,8 +96,7 @@ class Cmd(cmd.Cmd):
         elif value in set(('1', 'true', 'on', 'yes', 'y')):
             return True
         else:
-            raise ValueError(
-                'Invalid boolean expression {}'.format(value))
+            raise ValueError(f'Invalid boolean expression {value}')
 
     @staticmethod
     def parse_number_range(s):
@@ -112,8 +111,7 @@ class Cmd(cmd.Cmd):
         except ValueError as exc:
             raise CmdSyntaxError(exc) from None
         if finish < start:
-            raise CmdSyntaxError(
-                '{}-{} range goes backwards'.format(start, finish))
+            raise CmdSyntaxError(f'{start}-{finish} range goes backwards')
         return start, finish
 
     @staticmethod
@@ -192,9 +190,8 @@ class Cmd(cmd.Cmd):
         Prompts and reads numeric input (from a limited set of *valid* inputs,
         which can be any iterable supporting "in") from the user.
         """
-        suffix = '[{min}-{max}]'.format(
-            min=min(valid), max=max(valid))
-        prompt = '{prompt} {suffix} '.format(prompt=prompt, suffix=suffix)
+        suffix = f'[{min(valid)}-{max(valid)}]'
+        prompt = f'{prompt} {suffix} '
         while True:
             try:
                 result = int(self.input(prompt))
@@ -212,7 +209,7 @@ class Cmd(cmd.Cmd):
         """
         if arg:
             if not hasattr(self, f'do_{arg}'):
-                raise CmdError('Unknown command {}'.format(arg))
+                raise CmdError(f'Unknown command {arg}')
             with resources.files('tvrip') as root:
                 source = RestructuredText.from_path(root / f'cmd_{arg}.rst')
                 self.console.print(source)

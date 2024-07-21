@@ -117,7 +117,7 @@ def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
                 'SubtitleList': [
                     {
                         'SourceName': 'VOBSUB',
-                        'Language': '{lang} (16:9) [VOBSUB]'.format(lang=languages[lang]),
+                        'Language': f'{languages[lang]} (16:9) [VOBSUB]',
                         'LanguageCode': lang,
                         'TrackNumber': sub_track,
                     }
@@ -125,7 +125,7 @@ def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),
                 ],
                 'ChapterList': [
                     {
-                        'Name': 'Chapter {chapter}'.format(chapter=chapter),
+                        'Name': f'Chapter {chapter}',
                         'Duration': {
                             'Hours': duration.total_seconds() // 3600,
                             'Minutes': duration.total_seconds() // 60 % 60,
@@ -263,17 +263,16 @@ def drive(request, tmp_path):
             target_file.write('\n')
         return subprocess.CompletedProcess(
             args=cmdline, returncode=0,
-            stdout='', stderr='Tagging {target}'.format(target=target))
+            stdout='', stderr=f'Tagging {target}')
 
     def mock_handbrake(cmdline, **kwargs):
+        source = cmdline[cmdline.index('-i') + 1]
         if proc.disc is None:
             if '--no-dvdnav' in cmdline:
-                error = "libdvdread: Can't open {source} for reading".format(
-                    source=source)
+                error = f"libdvdread: Can't open {source} for reading"
             else:
                 error = "libdvdnav: vm: failed to open/read the DVD"
             return mock.Mock(args=cmdline, returncode=0, stdout='', stderr=error)
-        source = cmdline[cmdline.index('-i') + 1]
         if source != str(tmp_path / 'dvd'):
             return subprocess.CompletedProcess(
                 args=cmdline, returncode=0, stdout='', stderr='')
@@ -291,12 +290,12 @@ def drive(request, tmp_path):
                     if t['Index'] == title
                 ]
         if '--scan' in cmdline:
-            stderr = """\
+            stderr = f"""\
 libdvdnav: Random stuff
 libdvdnav: DVD Title: FOO AND BAR
 libdvdnav: DVD Serial Number: 123456789
 """
-            stdout = """\
+            stdout = f"""\
 Version: {{
     "Name": "HandBrake",
     "System": "Linux",
@@ -313,12 +312,12 @@ Progress: {{
     }},
     "State": "SCANNING"
 }}
-JSON Title Set: {json}
-""".format(json=json.dumps(data))
+JSON Title Set: {json.dumps(data)}
+"""
         else:
             target = Path(cmdline[cmdline.index('-o') + 1])
             stdout = ''
-            stderr = 'Ripping to {target}'.format(target=target)
+            stderr = f'Ripping to {target}'
             target.write_text(json.dumps(cmdline) + '\n')
         return subprocess.CompletedProcess(
             args=cmdline, returncode=0, stdout=stdout, stderr=stderr)
@@ -333,7 +332,7 @@ JSON Title Set: {json}
         else:
             result = subprocess.CompletedProcess(
                 args=cmdline, returncode=127, stdout='',
-                stderr='Command {cmdline[0]} not found'.format(cmdline=cmdline))
+                stderr=f'Command {cmdline[0]} not found')
         if kwargs.get('check') and result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode, cmdline[0], result.stdout, result.stderr)
@@ -360,10 +359,10 @@ class MockTVDBHandler(BaseHTTPRequestHandler):
             except KeyError:
                 pass
             else:
-                if url.path == '/series/{id}/episodes/summary'.format(id=quoted_id):
+                if url.path == f'/series/{quoted_id}/episodes/summary':
                     self.handle_summary(program_id, program)
                     return
-                elif url.path == '/series/{id}/episodes/query'.format(id=quoted_id):
+                elif url.path == f'/series/{quoted_id}/episodes/query':
                     self.handle_query(program_id, program, query)
                     return
         self.send_error(404, 'Not found')

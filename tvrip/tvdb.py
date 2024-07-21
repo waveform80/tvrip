@@ -69,7 +69,7 @@ class TVDB:
         headers = {
             'Content-Type': 'application/json',
             'Accept':       'application/vnd.thetvdb.v3',
-            'Authorization': 'Bearer {}'.format(self.token),
+            'Authorization': f'Bearer {self.token}',
         }
         resp = requests.get(
             self.url._replace(path=path).geturl(),
@@ -108,7 +108,7 @@ class TVDB:
         return [
             int(season)
             for season in self._get(
-                '/series/{id}/episodes/summary'.format(id=program_id),
+                f'/series/{program_id}/episodes/summary',
                 {})['data']['airedSeasons']
         ]
 
@@ -120,7 +120,7 @@ class TVDB:
         """
         for page in count(start=1):
             resp = self._get(
-                '/series/{id}/episodes/query'.format(id=program_id),
+                f'/series/{program_id}/episodes/query',
                 {'airedSeason': season, 'page': page})
             for entry in resp['data']:
                 # Exclude entries with episode number 0 (these tend to be

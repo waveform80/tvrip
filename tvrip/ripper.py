@@ -157,8 +157,7 @@ class Disc:
 
         for line in output.splitlines():
             if get_match(error1_re, line) or get_match(error2_re, line):
-                raise IOError(
-                    'Unable to read disc in {}'.format(config.source))
+                raise IOError(f'Unable to read disc in {config.source}')
             if get_match(disc_name_re, line):
                 self.name = match.group('name')
             elif get_match(disc_serial_re, line):
@@ -227,18 +226,15 @@ class Disc:
     def play(self, config, title_or_chapter=None):
         "Play the specified title or chapter"
         if title_or_chapter is None:
-            mrl = 'dvd://{source}'.format(source=config.source)
+            mrl = f'dvd://{config.source}'
         elif isinstance(title_or_chapter, Title):
-            assert title_or_chapter.disc is self
-            mrl = 'dvd://{source}#{title}'.format(
-                source=config.source,
-                title=title_or_chapter.number)
+            title = title_or_chapter
+            assert title.disc is self
+            mrl = f'dvd://{config.source}#{title.number}'
         elif isinstance(title_or_chapter, Chapter):
-            assert title_or_chapter.title.disc is self
-            mrl = 'dvd://{source}#{title}:{chapter}'.format(
-                source=config.source,
-                title=title_or_chapter.title.number,
-                chapter=title_or_chapter.number)
+            chapter = title_or_chapter
+            assert chapter.title.disc is self
+            mrl = f'dvd://{config.source}#{chapter.title.number}:{chapter.number}'
         else:
             assert False
         cmdline = [config.get_path('vlc'), '--quiet', '--avcodec-hw', 'none', mrl]
@@ -250,9 +246,7 @@ class Disc:
         for item in chain(audio_tracks, subtitle_tracks,
                           [start_chapter, end_chapter]):
             if item is not None and item.title is not title:
-                raise ValueError(
-                    '{item} does not belong to {title}'.format(
-                        item=item, title=title))
+                raise ValueError(f'{item} does not belong to {title}')
         file_id = ' '.join(
             config.id_template.format(
                 season=episode.season.number,
@@ -324,9 +318,7 @@ class Disc:
         if start_chapter:
             cmdline.append('-c')
             if end_chapter:
-                cmdline.append(
-                    '{start}-{end}'.format(
-                        start=start_chapter.number, end=end_chapter.number))
+                cmdline.append(f'{start_chapter.number}-{end_chapter.number}')
             else:
                 end_chapter = start_chapter
                 cmdline.append(str(start_chapter.number))
@@ -362,7 +354,7 @@ class Disc:
                     '--TVEpisode',    multipart.name(episodes),
                     # also set tags for music files as these have wider support
                     '--artist',       episodes[0].season.program.name,
-                    '--album',        'Season {}'.format(episodes[0].season.number),
+                    '--album',        f'Season {episodes[0].season.number}',
                     '--tracknum',     str(episodes[0].number),
                     '--title',        multipart.name(episodes),
                 ]
@@ -406,7 +398,7 @@ class Title():
         self.duplicate = 'no'
 
     def __repr__(self):
-        return '<Title({})>'.format(self.number)
+        return f'<Title({self.number})>'
 
     @property
     def disc(self):
@@ -446,8 +438,7 @@ class Chapter():
         self.duration = dt.timedelta(0)
 
     def __repr__(self):
-        return '<Chapter({number}, {duration})>'.format(
-            number=self.number, duration=self.duration)
+        return f'<Chapter({self.number}, {self.duration})>'
 
     @property
     def title(self):
@@ -511,8 +502,7 @@ class AudioTrack():
         self.best = False
 
     def __repr__(self):
-        return '<AudioTrack({number}, {name!r})>'.format(
-            number=self.number, name=self.name)
+        return f'<AudioTrack({self.number}, {self.name!r})>'
 
     @property
     def title(self):
@@ -535,8 +525,7 @@ class SubtitleTrack():
         self.log = ''
 
     def __repr__(self):
-        return '<SubtitleTrack({number}, {name!r})>'.format(
-            number=self.number, name=self.name)
+        return f'<SubtitleTrack({self.number}, {self.name!r})>'
 
     @property
     def title(self):
