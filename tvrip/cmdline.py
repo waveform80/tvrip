@@ -37,8 +37,12 @@ import re
 import cmd
 import readline
 from textwrap import dedent
-from importlib import resources
 from unittest import mock
+try:
+    # Remove when base Python version >3.8
+    import importlib_resources as resources
+except ImportError:
+    from importlib import resources
 
 from rich import box
 from rich.console import Console

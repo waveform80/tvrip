@@ -11,8 +11,12 @@ import os
 import re
 import subprocess as proc
 from pathlib import Path
-from importlib import resources
 from datetime import timedelta, datetime
+try:
+    # Remove when base Python version >3.8
+    import importlib_resources as resources
+except ImportError:
+    from importlib import resources
 
 import requests
 import sqlalchemy as sa
