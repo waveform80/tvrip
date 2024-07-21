@@ -650,8 +650,7 @@ def doc_ref_role(
 roles.register_local_role('doc', doc_ref_role)
 
 
-_rest_style = DEFAULT_STYLES.copy()
-_rest_style.update({
+rest_theme = Theme(DEFAULT_STYLES.copy() | {
     'rest.emph': Style(italic=True),
     'rest.strong': Style(bold=True),
     'rest.paragraph': Style(),
@@ -671,5 +670,3 @@ _rest_style.update({
     'rest.table.header': Style(bold=True),
     'rest.table.cell': Style(),
 })
-rest_theme = Theme(_rest_style)
-del _rest_style
