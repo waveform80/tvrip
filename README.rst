@@ -20,12 +20,18 @@ tvrip depends primarily on the following applications:
 
  * `Atomic Parsley`_
 
+ * `mkvpropedit`_
+
+ * `VLC`_
+
 As tvrip is written in the `Python`_ language, you will need a copy of this
 installed along with the following Python packages:
 
  * `sqlalchemy`_
 
  * `requests`_
+
+ * `rich`_
 
 
 License
@@ -46,8 +52,21 @@ You should have received a copy of the GNU General Public License along with
 tvrip.  If not, see <http://www.gnu.org/licenses/>.
 
 
+Attributions
+============
+
+Episode meta-data in tvrip is (optionally) downloaded from the excellent
+`TVDB`_.
+
+.. image:: docs/images/the-tvdb.png
+    :align: center
+
+
 .. _Python: http://www.python.org/
 .. _HandBrake: http://handbrake.fr/
 .. _Atomic Parsley: http://atomicparsley.sourceforge.net/
+.. _mkvpropedit: https://mkvtoolnix.download/
 .. _sqlalchemy: http://www.sqlalchemy.org/
 .. _requests: https://requests.readthedocs.io/
+.. _rich: https://rich.readthedocs.io/
+.. _TVDB: https://thetvdb.com/
