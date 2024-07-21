@@ -45,6 +45,7 @@ Episode meta-data in tvrip is (optionally) downloaded from the excellent
    tutorial
    commands
    settings
+   development
    license
 
 
