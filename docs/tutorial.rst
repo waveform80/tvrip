@@ -373,7 +373,7 @@ Once the rip is finished, we can query the episodes to see which ones remain.
     │ 8   │ What I Know                                     │        │
     ╰─────┴─────────────────────────────────────────────────┴────────╯
 
-Now switch to disc 2 and repeat the process!
+Now switch to disc 2, :doc:`cmd_scan`, :doc:`cmd_automap`, and :doc:`cmd_rip`!
 
 .. _The Boys: https://www.amazon.co.uk/Boys-Season-02-DVD/dp/B08YLGJWY3/
 .. _enshittification: https://en.wikipedia.org/wiki/Enshittification
