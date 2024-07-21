@@ -1,3 +1,9 @@
+# tvrip: extract and transcode DVDs of TV series
+#
+# Copyright (c) 2021-2024 Dave Jones <dave@waveform.org.uk>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import datetime as dt
 
 from tvrip.database import *
