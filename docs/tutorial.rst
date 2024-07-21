@@ -136,40 +136,49 @@ enter "1" and let tvrip request all the episode data.
     (tvrip) program The Boys
     Searching the TVDB for The Boys
     Found the following matches on the TVDB:
-
-    ╭────┬────────────────────────────────────┬────────────┬────────────┬───────────────────────────────────╮
-    │ #  │ Title                              │ Aired      │ Status     │ Overview                          │
-    ├────┼────────────────────────────────────┼────────────┼────────────┼───────────────────────────────────┤
-    │ 1  │ The Boys                           │ 2019-07-26 │ Continuing │ In a world where superheroes      │
-    │    │                                    │            │            │ embrace the darker side of their  │
-    │    │                                    │            │            │ massive celebrity and fame, a     │
-    │    │                                    │            │            │ group of vigilantes known         │
-    │    │                                    │            │            │ informally as "The Boys" set out  │
-    │    │                                    │            │            │ to take down corrupt superheroes  │
-    │    │                                    │            │            │ with no more th…                  │
-    │ 2  │ The Boys Presents: Diabolical      │ 2022-03-04 │ Ended      │ From some of the most unhinged    │
-    │    │                                    │            │            │ and maniacal minds in Hollywood   │
-    │    │                                    │            │            │ today comes Diabolical, a         │
-    │    │                                    │            │            │ collection of eight irreverent    │
-    │    │                                    │            │            │ and emotionally shocking animated │
-    │    │                                    │            │            │ short films. Each episode plunges │
-    │    │                                    │            │            │ elbow-deep …                      │
-    │ 3  │ Prime Rewind: Inside The Boys      │ 2020-08-28 │ Ended      │ A talk show about Season 2 of the │
-    │    │                                    │            │            │ Amazon Original Series "The       │
-    │    │                                    │            │            │ Boys", hosted by Aisha Tyler and  │
-    │    │                                    │            │            │ featuring the creators and cast   │
-    │    │                                    │            │            │ from the series, including Karl   │
-    │    │                                    │            │            │ Urban (Butcher), Jack Quaid       │
-    │    │                                    │            │            │ (Hughie), An…                     │
-    │ 4  │ The Boys: VNN (Seven on 7)         │ 2021-07-07 │ Ended      │ A digital series bridges the      │
-    │    │                                    │            │            │ events that take place between    │
-    │    │                                    │            │            │ Season 2 and Season 3 of The      │
-    │    │                                    │            │            │ Boys' main series narrative.      │
-    │ 5  │ The Boys from Brazil: Rise of the  │ 2022-09-05 │ Ended      │ The remarkable rise of one of the │
-    │    │ Bolsonaros                         │            │            │ world’s most controversial        │
-    │    │                                    │            │            │ leaders, Jair Bolsonaro, from     │
-    │    │                                    │            │            │ obscurity to the presidency of    │
-    │    │                                    │            │            │ Brazil.                           │
+    ╭────┬───────────────────────┬────────────┬────────────┬───────────────────────╮
+    │ #  │ Title                 │ Aired      │ Status     │ Overview              │
+    ├────┼───────────────────────┼────────────┼────────────┼───────────────────────┤
+    │ 1  │ The Boys              │ 2019-07-26 │ Continuing │ In a world where      │
+    │    │                       │            │            │ superheroes embrace   │
+    │    │                       │            │            │ the darker side of    │
+    │    │                       │            │            │ their massive         │
+    │    │                       │            │            │ celebrity and fame, a │
+    │    │                       │            │            │ group of vigilantes   │
+    │    │                       │            │            │ known informally as   │
+    │    │                       │            │            │ "The Boys" set out to │
+    │    │                       │            │            │ take down corrupt     │
+    │    │                       │            │            │ superheroes with no   │
+    │    │                       │            │            │ more th…              │
+    │ 2  │ The Boys Presents:    │ 2022-03-04 │ Ended      │ From some of the most │
+    │    │ Diabolical            │            │            │ unhinged and maniacal │
+    │    │                       │            │            │ minds in Hollywood    │
+    │    │                       │            │            │ today comes           │
+    │    │                       │            │            │ Diabolical, a         │
+    │    │                       │            │            │ collection of eight   │
+    │    │                       │            │            │ irreverent and        │
+    │    │                       │            │            │ emotionally shocking  │
+    │    │                       │            │            │ animated short films. │
+    │    │                       │            │            │ Each episode plunges  │
+    │    │                       │            │            │ elbow-deep …          │
+    │ 3  │ Prime Rewind: Inside  │ 2020-08-28 │ Ended      │ A talk show about     │
+    │    │ The Boys              │            │            │ Season 2 of the       │
+    │    │                       │            │            │ Amazon Original       │
+    │    │                       │            │            │ Series "The Boys",    │
+    │    │                       │            │            │ hosted by Aisha Tyler │
+    │    │                       │            │            │ and featuring the     │
+    │    │                       │            │            │ creators and cast     │
+    │    │                       │            │            │ from the series,      │
+    │    │                       │            │            │ including Karl Urban  │
+    │    │                       │            │            │ (Butcher), Jack Quaid │
+    │    │                       │            │            │ (Hughie), An…         │
+    │ 4  │ The Boys: VNN (Seven  │ 2021-07-07 │ Ended      │ A digital series      │
+    │    │ on 7)                 │            │            │ bridges the events    │
+    │    │                       │            │            │ that take place       │
+    │    │                       │            │            │ between Season 2 and  │
+    │    │                       │            │            │ Season 3 of The Boys' │
+    │    │                       │            │            │ main series           │
+    │    │                       │            │            │ narrative.            │
     ...
     Which entry matches the program you wish to rip (enter 0 if you wish to enter program information
     manually)? [0-88] 1
@@ -319,13 +328,14 @@ Hence we tell tvrip episodes range from 55-65 minutes in length, and then run
     Performing auto-mapping
     Episode Mapping for The Boys season 2:
 
-    ╭───────┬──────────┬────────┬─────────┬─────────────────────────────────────────────────╮
-    │ Title │ Duration │ Ripped │ Episode │ Name                                            │
-    ├───────┼──────────┼────────┼─────────┼─────────────────────────────────────────────────┤
-    │ 1     │  1:00:12 │        │       1 │ The Big Ride                                    │
-    │ 2     │  0:56:49 │        │       2 │ Proper Preparation and Planning                 │
-    │ 3     │  0:55:59 │        │       3 │ Over the Hill with the Swords of a Thousand Men │
-    ╰───────┴──────────┴────────┴─────────┴─────────────────────────────────────────────────╯
+    ╭───────┬──────────┬────────┬─────────┬────────────────────────────────────────╮
+    │ Title │ Duration │ Ripped │ Episode │ Name                                   │
+    ├───────┼──────────┼────────┼─────────┼────────────────────────────────────────┤
+    │ 1     │  1:00:12 │        │       1 │ The Big Ride                           │
+    │ 2     │  0:56:49 │        │       2 │ Proper Preparation and Planning        │
+    │ 3     │  0:55:59 │        │       3 │ Over the Hill with the Swords of a     │
+    │       │          │        │         │ Thousand Men                           │
+    ╰───────┴──────────┴────────┴─────────┴────────────────────────────────────────╯
 
 This command simply maps the titles on the disc to unripped episodes in the
 current season, in ascending order. Much of the time, the episodes for shows
