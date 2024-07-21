@@ -495,16 +495,16 @@ class RipCmd(Cmd):
         table.add_column('Setting', no_wrap=True)
         table.add_column('Value')
 
-        for path in self.config.paths:
-            table.add_row(path.name, path.path)
-        table.add_section()
+        paths = list(self.config.paths)
+        for index, path in enumerate(paths):
+            table.add_row(
+                path.name, path.path, end_section=index == len(paths) - 1)
         table.add_row('source', str(self.config.source))
         table.add_row(
             'duration',
             f'{self.config.duration_min.total_seconds() / 60}-'
             f'{self.config.duration_max.total_seconds() / 60} (mins)')
-        table.add_row('duplicates', self.config.duplicates)
-        table.add_section()
+        table.add_row('duplicates', self.config.duplicates, end_section=True)
         table.add_row('target', str(self.config.target))
         table.add_row('temp', str(self.config.temp))
         table.add_row('template', self.config.template)
