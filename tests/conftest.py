@@ -24,43 +24,64 @@ from tvrip import database
 
 
 @pytest.fixture()
-def db(request):
-    url = 'sqlite:///'  # uses :memory: database
-    session = database.init_session(url)
-    try:
-        yield session
-    finally:
-        session.close()
+def db(request, tmp_path):
+    with database.Database(tmp_path / 'tvrip.db') as db:
+        yield db
 
 
 @pytest.fixture()
-def with_config(request, db, tmp_path):
-    cfg = database.Configuration()
-    tmp = tmp_path / 'tmp'
-    tmp.mkdir()
-    cfg.temp = str(tmp)
-    target = tmp_path / 'videos'
-    target.mkdir()
-    cfg.target = str(target)
-    source = tmp_path / 'dvd'
-    source.touch(mode=0o644)
-    cfg.source = str(source)
-    db.add(cfg)
-    db.add(database.AudioLanguage(cfg, 'eng'))
-    db.add(database.SubtitleLanguage(cfg, 'eng'))
-    db.add(database.ConfigPath(cfg, 'handbrake', 'HandBrakeCLI'))
-    db.add(database.ConfigPath(cfg, 'atomicparsley', 'AtomicParsley'))
-    db.add(database.ConfigPath(cfg, 'vlc', 'vlc'))
-    db.commit()
+def with_schema(request, db):
+    with db:
+        db.migrate()
+        yield db.get_version()
+
+
+@pytest.fixture()
+def with_config(request, db, with_schema, tmp_path):
+    cfg = database.Config(
+        program=None,
+        season=None,
+        api_key='',
+        api_url='https://api.thetvdb.com/',
+        audio_all=False,
+        audio_encoding='av_aac',
+        audio_mix='dpl2',
+        audio_langs=['eng'],
+        decomb='auto',
+        duplicates='all',
+        duration=[dt.timedelta(minutes=40), dt.timedelta(minutes=50)],
+        dvdnav=True,
+        id_template='{season}x{episode:02d}',
+        max_resolution=[1920, 1080],
+        output_format='mp4',
+        paths={
+            'atomicparsley': Path('AtomicParsley'),
+            'handbrake': Path('HandBrakeCLI'),
+            'mkvpropedit': Path('mkvpropedit'),
+            'vlc': Path('vlc'),
+        },
+        source=tmp_path / 'dvd',
+        subtitle_all=False,
+        subtitle_default=False,
+        subtitle_format='none',
+        subtitle_langs=['eng'],
+        target=tmp_path / 'videos',
+        template='{program} - {id} - {name}.{ext}',
+        temp=tmp_path / 'tmp',
+        video_style='tv',
+    )
+    cfg.temp.mkdir()
+    cfg.target.mkdir()
+    cfg.source.touch(mode=0o644)
+    with db.transaction():
+        db.set_config(cfg)
     yield cfg
 
 
 @pytest.fixture()
 def with_program(request, db, with_config):
     cfg = with_config
-    prog = database.Program('Foo & Bar')
-    db.add(prog)
-    cfg.program = prog
+    program = 'Foo & Bar'
     data = [
         (1, 1, 'Foo'),
         (1, 2, 'Bar'),
@@ -72,14 +93,16 @@ def with_program(request, db, with_config):
         (2, 3, 'Foo Baz'),
         (2, 4, 'Foo Quux'),
     ]
-    for (season_num,), episodes in groupby(data, key=lambda row: row[:1]):
-        season = database.Season(prog, season_num)
-        db.add(season)
-        cfg.season = season
-        for season_num, episode_num, episode_name in episodes:
-            episode = database.Episode(season, episode_num, episode_name)
-            db.add(episode)
-    yield prog
+    with db.transaction():
+        db.add_program(program)
+        cfg = db.set_config(cfg._replace(program=program))
+        for (season,), episodes in groupby(data, key=lambda row: row[:1]):
+            db.add_season(season)
+            cfg = db.set_config(cfg._replace(season=season))
+            for season, episode, title in episodes:
+                db.add_episode(episode, title)
+        cfg = db.set_config(cfg._replace(season=1))
+    yield cfg
 
 
 def make_disc(tracks, play_all_tracks=None, audio_tracks=('eng', 'eng'),

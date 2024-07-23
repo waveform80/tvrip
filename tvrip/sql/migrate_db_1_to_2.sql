@@ -1,11 +1,14 @@
 -- Work around broken foreign keys in old versions
-INSERT INTO NEW.programs
+INSERT INTO NEW.programs(program)
     SELECT program_name FROM episodes
     UNION
     SELECT * FROM programs;
 
 -- Work around broken foreign keys in old versions
-INSERT INTO NEW.seasons
+INSERT INTO NEW.seasons (
+    program,
+    season
+)
     SELECT program_name, season_number FROM episodes
     UNION
     SELECT * FROM seasons;

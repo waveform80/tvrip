@@ -1,45 +1,46 @@
 CREATE TABLE NEW.version (
-    version INTEGER NOT NULL DEFAULT 2
+    version INTEGER NOT NULL
 );
+INSERT INTO NEW.version (version) VALUES (2);
 
 CREATE TABLE NEW.programs (
-        name VARCHAR(200) NOT NULL,
+        program  VARCHAR(200) NOT NULL,
 
         CONSTRAINT programs_pk
-            PRIMARY KEY (name)
+            PRIMARY KEY (program)
 );
 
 CREATE TABLE NEW.seasons (
-        program_name VARCHAR(200) NOT NULL,
-        number       INTEGER NOT NULL,
+        program  VARCHAR(200) NOT NULL,
+        season   INTEGER NOT NULL,
 
         CONSTRAINT seasons_pk
-            PRIMARY KEY (program_name, number),
+            PRIMARY KEY (program, season),
         CONSTRAINT seasons_program_fk
-            FOREIGN KEY(program_name)
-            REFERENCES programs (name)
+            FOREIGN KEY(program)
+            REFERENCES programs (program)
             ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT seasons_number_ck
-            CHECK (number >= 0)
+        CONSTRAINT seasons_season_ck
+            CHECK (season >= 0)
 );
 
 CREATE TABLE NEW.episodes (
-        program_name  VARCHAR(200) NOT NULL,
-        season_number INTEGER NOT NULL,
-        number        INTEGER NOT NULL,
-        name          VARCHAR(200) NOT NULL,
+        program       VARCHAR(200) NOT NULL,
+        season        INTEGER NOT NULL,
+        episode       INTEGER NOT NULL,
+        title         VARCHAR(200) NOT NULL,
         disc_id       VARCHAR(200),
         disc_title    INTEGER DEFAULT NULL,
         start_chapter INTEGER DEFAULT NULL,
         end_chapter   INTEGER DEFAULT NULL,
         CONSTRAINT episodes_pk
-            PRIMARY KEY (program_name, season_number, number),
+            PRIMARY KEY (program, season, episode),
         CONSTRAINT episodes_season_fk
-            FOREIGN KEY(program_name, season_number)
-            REFERENCES seasons (program_name, number)
+            FOREIGN KEY(program, season)
+            REFERENCES seasons (program, season)
             ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT episodes_number_ck
-            CHECK (number >= 1),
+        CONSTRAINT episodes_episode_ck
+            CHECK (episode >= 1),
         CONSTRAINT episodes_chapter_ck
             CHECK (
                 (end_chapter IS NULL AND start_chapter IS NULL) OR
@@ -48,24 +49,24 @@ CREATE TABLE NEW.episodes (
 );
 
 CREATE TABLE NEW.config (
-        id               VARCHAR(100) DEFAULT 'default' NOT NULL,
-        program_name     VARCHAR(200) DEFAULT NULL,
-        season_number    INTEGER DEFAULT NULL,
-        config           TEXT NOT NULL,
+        id        VARCHAR(100) DEFAULT 'default' NOT NULL,
+        program   VARCHAR(200) DEFAULT NULL,
+        season    INTEGER DEFAULT NULL,
+        config    TEXT NOT NULL,
 
         CONSTRAINT config_pk
             PRIMARY KEY (id),
         CONSTRAINT config_program_fk
-            FOREIGN KEY(program_name)
-            REFERENCES programs (name)
+            FOREIGN KEY(program)
+            REFERENCES programs (program)
             ON DELETE SET NULL ON UPDATE CASCADE,
         CONSTRAINT config_season_fk
-            FOREIGN KEY(program_name, season_number)
-            REFERENCES seasons (program_name, number)
+            FOREIGN KEY(program, season)
+            REFERENCES seasons (program, season)
             ON DELETE SET NULL ON UPDATE CASCADE
 );
 
-INSERT INTO config(config) VALUES (
+INSERT INTO NEW.config(config) VALUES (
     json('
 {
     "source": "/dev/dvd",
@@ -75,6 +76,7 @@ INSERT INTO config(config) VALUES (
     "id_template": "{season}x{episode:02d}",
     "duration": [40, 50],
     "audio_all": false,
+    "audio_encoding": "av_aac",
     "audio_mix": "dpl2",
     "audio_langs": ["eng"],
     "subtitle_all": false,

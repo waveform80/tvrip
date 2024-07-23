@@ -18,16 +18,16 @@ def prefix(episodes):
     """
     # A crude heuristic based on episode titles ending in " - Part n", "(n)",
     # or subsequent episode titles being simply '"' (ditto)
-    first_name = episodes[0].name
+    first_name = episodes[0].title
     part = 1
     for part, episode in enumerate(episodes[1:], start=2):
-        if episode.name == '"': # ditto (continuation of prior episode)
+        if episode.title == '"': # ditto (continuation of prior episode)
             continue
-        if episode.name.endswith('Part %d' % part):
-            if episode.name[:-6] == first_name[:-6]:
+        if episode.title.endswith('Part %d' % part):
+            if episode.title[:-6] == first_name[:-6]:
                 continue
-        elif episode.name.endswith('(%d)' % part):
-            if episode.name[:-3] == first_name[:-3]:
+        elif episode.title.endswith('(%d)' % part):
+            if episode.title[:-3] == first_name[:-3]:
                 continue
         return part - 1
     return part
@@ -39,12 +39,12 @@ def name(episodes):
     any part suffix.
     """
     if len(episodes) == 1:
-        return episodes[0].name
-    elif all(e.name == '"' for e in episodes[1:]):  # ditto
-        return episodes[0].name
-    elif episodes[0].name.endswith('(1)'):
-        return episodes[0].name[:-3].rstrip(' -,:')
-    elif episodes[0].name.endswith('Part 1'):
-        return episodes[0].name[:-6].rstrip(' -,:')
+        return episodes[0].title
+    elif all(e.title == '"' for e in episodes[1:]):  # ditto
+        return episodes[0].title
+    elif episodes[0].title.endswith('(1)'):
+        return episodes[0].title[:-3].rstrip(' -,:')
+    elif episodes[0].title.endswith('Part 1'):
+        return episodes[0].title[:-6].rstrip(' -,:')
     else:
         raise ValueError('unable to extract multipart episode name')

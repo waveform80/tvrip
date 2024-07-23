@@ -12,8 +12,10 @@
 import os
 import sys
 import argparse
+from pathlib import Path
+from contextlib import contextmanager
 
-from .database import init_session
+from .database import Database
 from .ripcmd import RipCmd
 from .const import DATADIR
 
@@ -34,24 +36,24 @@ class TVRipApplication:
 
     def __call__(self, args=None):
         try:
-            debug = int(os.environ['DEBUG'])
+            self.debug = int(os.environ['DEBUG'])
         except (KeyError, ValueError):
-            debug = 0
-
+            self.debug = 0
         try:
             conf = self.parser.parse_args(args)
-            DATADIR.mkdir(parents=True, exist_ok=True)
-            with init_session(debug=bool(debug)) as session:
-                cmd = RipCmd(session)
+            db_path = Path(DATADIR) / 'tvrip.db'
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            with Database(db_path, debug=bool(self.debug)) as db:
+                cmd = RipCmd(db)
                 cmd.console.print(f'[green]TVRip {self.version}[/green]')
                 cmd.console.print(
                     'Type "[yellow]help[/yellow]" for more information.')
                 cmd.cmdloop()
         except Exception as e:
-            if not debug:
+            if not self.debug:
                 print(str(e), file=sys.stderr, flush=True)
                 return 1
-            elif debug == 1:
+            elif self.debug == 1:
                 raise
             else:
                 import pdb

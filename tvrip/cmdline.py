@@ -36,9 +36,10 @@ import os
 import re
 import cmd
 import readline
-from textwrap import dedent
 from unittest import mock
+from textwrap import dedent
 from importlib import resources
+from contextlib import ExitStack
 
 from rich import box
 from rich.console import Console
@@ -63,6 +64,22 @@ class CmdSyntaxError(CmdError):
 
     def __rich__(self):
         return f'[red]Syntax error:[/red] {self.args[0]}'
+
+
+class CmdContext:
+    def __init__(self, console):
+        self.console = console
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        exc_type, exc_value, exc_tb = exc_info
+        if exc_type is not None and issubclass(exc_type, CmdError):
+            self.console.print(exc_value)
+            return True
+        else:
+            return False
 
 
 class Cmd(cmd.Cmd):
@@ -161,14 +178,20 @@ class Cmd(cmd.Cmd):
             readline.set_history_length(self.history_size)
             readline.write_history_file(self.history_file)
 
+    def cmdcontext(self):
+        """
+        Provides a :class:`contextlib.ExitStack` which forms the context of
+        command execution by :meth:`onecmd`. By default, a :class:`CmdContext`
+        is in the stack to suppress all :exc:`CmdError` exceptions. This may
+        be overridden to add more context managers.
+        """
+        stack = ExitStack()
+        stack.enter_context(CmdContext(self.console))
+        return stack
+
     def onecmd(self, line):
-        # Just catch and report CmdError's; don't terminate execution because
-        # of them
-        try:
+        with self.cmdcontext() as stack:
             return super().onecmd(line)
-        except CmdError as exc:
-            self.console.print(exc)
-            return False
 
     whitespace_re = re.compile(r'\s+$')
 

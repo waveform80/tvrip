@@ -15,11 +15,13 @@ import datetime as dt
 from pathlib import Path
 from unittest import mock
 from contextlib import closing, contextmanager
+from sqlalchemy import text
 from threading import Thread
 from itertools import tee
 
 import pytest
 
+from tvrip.database import Episode
 from tvrip.ripper import *
 from tvrip.ripcmd import *
 
@@ -210,54 +212,49 @@ def writer(request, stdin):
         thread.stop()
 
 
-def test_new_init_db(db, ripcmd):
-    # Without with_program, the db should be entirely blank, causing the
-    # initializer to handle creating all default structures
-    assert db.query(Configuration).one()
-
-
 def test_parse_episode(db, with_program, ripcmd):
-    ep = ripcmd.parse_episode('1')
-    assert isinstance(ep, Episode)
-    assert ep.number == 1
-    assert ripcmd.parse_episode('4').number == 4
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode('foo')
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode('-1')
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode('7')
-    ripcmd.config.season = None
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode('4')
-    ripcmd.config.program = None
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode('4')
+    with db.transaction():
+        ep = ripcmd.parse_episode('1')
+        assert isinstance(ep, Episode)
+        assert ep.episode == 1
+        assert ripcmd.parse_episode('4').episode == 4
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode('foo')
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode('-1')
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode('7')
+        with_program = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode('4')
+        with_program = db.set_config(with_program._replace(program=None))
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode('4')
 
 
 def test_parse_episode_range(db, with_program, ripcmd):
-    start, end = ripcmd.parse_episode_range('1-3')
-    assert isinstance(start, Episode)
-    assert isinstance(end, Episode)
-    assert start.number == 1
-    assert end.number == 3
-    with pytest.raises(CmdError):
-        ripcmd.parse_episode_range('1')
+    with db.transaction():
+        start, end = ripcmd.parse_episode_range('1-3')
+        assert isinstance(start, Episode)
+        assert isinstance(end, Episode)
+        assert start.episode == 1
+        assert end.episode == 3
+        with pytest.raises(CmdError):
+            ripcmd.parse_episode_range('1')
 
 
 def test_parse_episode_list(db, with_program, ripcmd):
-    ripcmd.config.season = ripcmd.config.program.seasons[0]
-    ripcmd.session.commit()
-    eps = ripcmd.parse_episode_list('1-3,5')
-    assert isinstance(eps, list)
-    assert [ep.number for ep in eps] == [1, 2, 3, 5]
-    eps = ripcmd.parse_episode_list('1')
-    assert isinstance(eps, list)
-    assert [ep.number for ep in eps] == [1]
-    with pytest.raises(CmdError):
-        eps = ripcmd.parse_episode_list('')
-    with pytest.raises(CmdError):
-        eps = ripcmd.parse_episode_list('foo')
+    with db.transaction():
+        eps = ripcmd.parse_episode_list('1-3,5')
+        assert isinstance(eps, list)
+        assert [ep.episode for ep in eps] == [1, 2, 3, 5]
+        eps = ripcmd.parse_episode_list('1')
+        assert isinstance(eps, list)
+        assert [ep.episode for ep in eps] == [1]
+        with pytest.raises(CmdError):
+            eps = ripcmd.parse_episode_list('')
+        with pytest.raises(CmdError):
+            eps = ripcmd.parse_episode_list('foo')
 
 
 def test_parse_title(db, with_config, drive, blank_disc, foo_disc1, ripcmd):
@@ -371,24 +368,6 @@ def test_parse_title_or_chapter_range(db, with_config, drive, foo_disc1, ripcmd)
     assert finish.number == 5
 
 
-def test_clear_episodes_default(db, with_program, ripcmd):
-    ripcmd.config.season = ripcmd.config.program.seasons[0]
-    ripcmd.session.commit()
-    assert ripcmd.config.season.episodes
-    ripcmd.clear_episodes()
-    ripcmd.session.commit()
-    assert not ripcmd.config.season.episodes
-
-
-def test_clear_episodes(db, with_program, ripcmd):
-    ripcmd.config.season = ripcmd.config.program.seasons[0]
-    ripcmd.session.commit()
-    assert ripcmd.config.season.episodes
-    ripcmd.clear_episodes(ripcmd.config.season)
-    ripcmd.session.commit()
-    assert not ripcmd.config.season.episodes
-
-
 def test_print_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     # Can't print before scanning disc, and none is inserted
     with pytest.raises(CmdError):
@@ -493,10 +472,11 @@ Title 1, duration: 2:31:26.000006, duplicate: no
 
 
 def test_print_programs(db, with_program, ripcmd, reader):
-    ripcmd.print_programs()
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    with db.transaction():
+        ripcmd.print_programs()
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
 ├───────────┼─────────┼──────────┼────────┤
@@ -506,34 +486,20 @@ def test_print_programs(db, with_program, ripcmd, reader):
 
 
 def test_print_seasons(db, with_program, ripcmd, reader):
-    # Printing seasons with no program selected is an error
-    ripcmd.config.program = None
-    with pytest.raises(CmdError):
+    with db.transaction():
+        # Printing seasons with no program selected is an error
+        ripcmd.config = db.set_config(with_program._replace(
+            program=None, season=None))
+        with pytest.raises(CmdError):
+            ripcmd.print_seasons()
+
+        # Select program and try again; check printed output
+        ripcmd.config = db.set_config(ripcmd.config._replace(
+            program=with_program.program))
         ripcmd.print_seasons()
-
-    # Select program and try again; check printed output
-    ripcmd.config.program = with_program
-    ripcmd.print_seasons()
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
-Seasons for program Foo & Bar
-
-╭─────┬──────────┬────────╮
-│ Num │ Episodes │ Ripped │
-├─────┼──────────┼────────┤
-│ 1   │        5 │   0.0% │
-│ 2   │        4 │   0.0% │
-╰─────┴──────────┴────────╯
-"""
-
-
-def test_print_seasons_specific(db, with_program, ripcmd, reader):
-    # Same test as above but with season explicitly specified in call
-    ripcmd.print_seasons(with_program)
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
@@ -546,37 +512,18 @@ Seasons for program Foo & Bar
 
 
 def test_print_episodes(db, with_program, ripcmd, reader):
-    # Printing episodes with no season selected is an error
-    ripcmd.config.season = None
-    with pytest.raises(CmdError):
+    with db.transaction():
+        # Printing episodes with no season selected is an error
+        ripcmd.config = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.print_episodes()
+
+        # Select a season and try again; check printed output
+        ripcmd.config = db.set_config(with_program)
         ripcmd.print_episodes()
-
-    # Select a season and try again; check printed output
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.print_episodes()
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
-Episodes for season 1 of program Foo & Bar
-
-╭─────┬───────┬────────╮
-│ Num │ Title │ Ripped │
-├─────┼───────┼────────┤
-│ 1   │ Foo   │        │
-│ 2   │ Bar   │        │
-│ 3   │ Baz   │        │
-│ 4   │ Quux  │        │
-│ 5   │ Xyzzy │        │
-╰─────┴───────┴────────╯
-"""
-
-
-def test_print_episodes_specific(db, with_program, ripcmd, reader):
-    # Same test as above but with an explicitly specified episode in the call
-    ripcmd.print_episodes(with_program.seasons[0])
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
@@ -592,22 +539,24 @@ Episodes for season 1 of program Foo & Bar
 
 
 def test_do_config(db, with_program, ripcmd, reader, tmp_path):
-    with pytest.raises(CmdError):
-        ripcmd.do_config('source')
+    with db.transaction():
+        with pytest.raises(CmdError):
+            ripcmd.do_config('source')
 
-    ripcmd.do_config('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    alphabetic = re.compile('[a-z]')
-    lines = [
-        line.rstrip(' │\n')
-        for line in reader.read_all()
-        if alphabetic.search(line)
-    ]
-    assert '\n'.join(lines) == f"""\
+        ripcmd.do_config('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        alphabetic = re.compile('[a-z]')
+        lines = [
+            line.rstrip(' │\n')
+            for line in reader.read_all()
+            if alphabetic.search(line)
+        ]
+        assert '\n'.join(lines) == f"""\
 │ Setting          │ Value
 │ atomicparsley    │ AtomicParsley
 │ handbrake        │ HandBrakeCLI
+│ mkvpropedit      │ mkvpropedit
 │ vlc              │ vlc
 │ source           │ {tmp_path}/dvd
 │ duration         │ 40.0-50.0 (mins)
@@ -618,7 +567,7 @@ def test_do_config(db, with_program, ripcmd, reader, tmp_path):
 │ id_template      │ {{season}}x{{episode:02d}}
 │ output_format    │ mp4
 │ max_resolution   │ 1920x1080
-│ decomb           │ off
+│ decomb           │ auto
 │ audio_mix        │ dpl2
 │ audio_all        │ off
 │ audio_langs      │ eng
@@ -650,7 +599,7 @@ def test_complete_set(ripcmd):
     assert completions(ripcmd, 'set template foo') is None
 
 
-def test_do_help(ripcmd, reader):
+def test_do_help(db, with_config, ripcmd, reader):
     ripcmd.do_help('')
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
@@ -684,7 +633,7 @@ def test_do_help(ripcmd, reader):
 """
 
 
-def test_do_help_with_arg(ripcmd, reader):
+def test_do_help_with_arg(db, with_config, ripcmd, reader):
     with warnings.catch_warnings():
         # Suppress the particularly silly PendingDeprecationWarning for
         # Node.traverse in docutils (the replacement doesn't even exist yet)
@@ -725,15 +674,16 @@ See also cmd_automap
 
 
 def test_set_executable(db, with_config, ripcmd, tmp_path):
-    assert ripcmd.config.get_path('vlc') == Path('vlc')
-    with pytest.raises(CmdError):
+    with db.transaction():
+        assert ripcmd.config.paths['vlc'] == Path('vlc')
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'vlc {tmp_path}/vlc')
+        (tmp_path / 'vlc').touch()
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'vlc {tmp_path}/vlc')
+        (tmp_path / 'vlc').chmod(0o755)
         ripcmd.do_set(f'vlc {tmp_path}/vlc')
-    (tmp_path / 'vlc').touch()
-    with pytest.raises(CmdError):
-        ripcmd.do_set(f'vlc {tmp_path}/vlc')
-    (tmp_path / 'vlc').chmod(0o755)
-    ripcmd.do_set(f'vlc {tmp_path}/vlc')
-    assert ripcmd.config.get_path('vlc') == tmp_path / 'vlc'
+        assert ripcmd.config.paths['vlc'] == tmp_path / 'vlc'
 
 
 def test_complete_set_executable(db, with_config, ripcmd, tmp_path):
@@ -749,15 +699,16 @@ def test_complete_set_executable(db, with_config, ripcmd, tmp_path):
 
 
 def test_set_directory(db, with_config, ripcmd, tmp_path):
-    (tmp_path / 'target').mkdir()
-    (tmp_path / 'bar').touch(mode=0o644)
-    assert ripcmd.config.target == tmp_path / 'videos'
-    with pytest.raises(CmdError):
-        ripcmd.do_set(f'target {tmp_path}/foo')
-    with pytest.raises(CmdError):
-        ripcmd.do_set(f'target {tmp_path}/bar')
-    ripcmd.do_set(f'target {tmp_path}/target')
-    assert ripcmd.config.target == tmp_path / 'target'
+    with db.transaction():
+        (tmp_path / 'target').mkdir()
+        (tmp_path / 'bar').touch(mode=0o644)
+        assert ripcmd.config.target == tmp_path / 'videos'
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'target {tmp_path}/foo')
+        with pytest.raises(CmdError):
+            ripcmd.do_set(f'target {tmp_path}/bar')
+        ripcmd.do_set(f'target {tmp_path}/target')
+        assert ripcmd.config.target == tmp_path / 'target'
 
 
 def test_complete_set_directory(db, with_config, ripcmd, tmp_path):
@@ -769,19 +720,20 @@ def test_complete_set_directory(db, with_config, ripcmd, tmp_path):
 
 
 def test_set_device(db, with_config, ripcmd, tmp_path):
-    with mock.patch('tvrip.ripcmd.Path.is_block_device') as is_block_device:
-        (tmp_path / 'null').touch(mode=0o644)
-        (tmp_path / 'sr0').touch(mode=0o644)
-        (tmp_path / 'sr1').touch(mode=0o644)
-        is_block_device.return_value = True
-        assert ripcmd.config.source == tmp_path / 'dvd'
-        ripcmd.do_set(f'source {tmp_path}/sr0')
-        assert ripcmd.config.source == tmp_path / 'sr0'
-        is_block_device.return_value = False
-        with pytest.raises(CmdError):
-            ripcmd.do_set(f'source {tmp_path}/null')
-        with pytest.raises(CmdError):
-            ripcmd.do_set(f'source {tmp_path}/foo')
+    with db.transaction():
+        with mock.patch('tvrip.ripcmd.Path.is_block_device') as is_block_device:
+            (tmp_path / 'null').touch(mode=0o644)
+            (tmp_path / 'sr0').touch(mode=0o644)
+            (tmp_path / 'sr1').touch(mode=0o644)
+            is_block_device.return_value = True
+            assert ripcmd.config.source == tmp_path / 'dvd'
+            ripcmd.do_set(f'source {tmp_path}/sr0')
+            assert ripcmd.config.source == tmp_path / 'sr0'
+            is_block_device.return_value = False
+            with pytest.raises(CmdError):
+                ripcmd.do_set(f'source {tmp_path}/null')
+            with pytest.raises(CmdError):
+                ripcmd.do_set(f'source {tmp_path}/foo')
 
 
 def test_complete_set_device(db, with_config, ripcmd, tmp_path):
@@ -797,11 +749,12 @@ def test_complete_set_device(db, with_config, ripcmd, tmp_path):
 
 
 def test_set_duplicates(db, with_config, ripcmd):
-    assert ripcmd.config.duplicates == 'all'
-    ripcmd.do_set('duplicates first')
-    assert ripcmd.config.duplicates == 'first'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('duplicates foo')
+    with db.transaction():
+        assert ripcmd.config.duplicates == 'all'
+        ripcmd.do_set('duplicates first')
+        assert ripcmd.config.duplicates == 'first'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('duplicates foo')
 
 
 def test_complete_set_duplicates(db, with_config, ripcmd):
@@ -811,11 +764,12 @@ def test_complete_set_duplicates(db, with_config, ripcmd):
 
 
 def test_set_dvdnav(db, with_config, ripcmd):
-    assert ripcmd.config.dvdnav
-    ripcmd.do_set('dvdnav off')
-    assert not ripcmd.config.dvdnav
-    with pytest.raises(CmdError):
-        ripcmd.do_set('dvdnav foo')
+    with db.transaction():
+        assert ripcmd.config.dvdnav
+        ripcmd.do_set('dvdnav off')
+        assert not ripcmd.config.dvdnav
+        with pytest.raises(CmdError):
+            ripcmd.do_set('dvdnav foo')
 
 
 def test_complete_set_dvdnav(db, with_config, ripcmd):
@@ -826,23 +780,25 @@ def test_complete_set_dvdnav(db, with_config, ripcmd):
 
 
 def test_set_duration(db, with_config, ripcmd):
-    assert ripcmd.config.duration_min == dt.timedelta(minutes=40)
-    assert ripcmd.config.duration_max == dt.timedelta(minutes=50)
-    ripcmd.do_set('duration 25-35')
-    assert ripcmd.config.duration_min == dt.timedelta(minutes=25)
-    assert ripcmd.config.duration_max == dt.timedelta(minutes=35)
-    with pytest.raises(CmdError):
-        ripcmd.do_set('duration 20')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('duration 20-abc')
+    with db.transaction():
+        assert ripcmd.config.duration == (
+            dt.timedelta(minutes=40), dt.timedelta(minutes=50))
+        ripcmd.do_set('duration 25-35')
+        assert ripcmd.config.duration == (
+            dt.timedelta(minutes=25), dt.timedelta(minutes=35))
+        with pytest.raises(CmdError):
+            ripcmd.do_set('duration 20')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('duration 20-abc')
 
 
 def test_set_video_style(db, with_config, ripcmd):
-    assert ripcmd.config.video_style == 'tv'
-    ripcmd.do_set('video_style anim')
-    assert ripcmd.config.video_style == 'animation'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('video_style noir')
+    with db.transaction():
+        assert ripcmd.config.video_style == 'tv'
+        ripcmd.do_set('video_style anim')
+        assert ripcmd.config.video_style == 'animation'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('video_style noir')
 
 
 def test_complete_set_video_style(db, with_config, ripcmd):
@@ -852,13 +808,12 @@ def test_complete_set_video_style(db, with_config, ripcmd):
 
 
 def test_set_langs(db, with_config, ripcmd):
-    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng'}
-    ripcmd.do_set('audio_langs eng fra jpn')
-    ripcmd.session.commit()
-    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng', 'fra', 'jpn'}
-    ripcmd.do_set('audio_langs eng jpn')
-    ripcmd.session.commit()
-    assert set(l.lang for l in ripcmd.config.audio_langs) == {'eng', 'jpn'}
+    with db.transaction():
+        assert set(ripcmd.config.audio_langs) == {'eng'}
+        ripcmd.do_set('audio_langs eng fra jpn')
+        assert set(ripcmd.config.audio_langs) == {'eng', 'fra', 'jpn'}
+        ripcmd.do_set('audio_langs eng jpn')
+        assert set(ripcmd.config.audio_langs) == {'eng', 'jpn'}
 
 
 def test_complete_set_langs(db, with_config, ripcmd):
@@ -868,11 +823,12 @@ def test_complete_set_langs(db, with_config, ripcmd):
 
 
 def test_set_audio_mix(db, with_config, ripcmd):
-    assert ripcmd.config.audio_mix == 'dpl2'
-    ripcmd.do_set('audio_mix stereo')
-    assert ripcmd.config.audio_mix == 'stereo'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('audio_mix foo')
+    with db.transaction():
+        assert ripcmd.config.audio_mix == 'dpl2'
+        ripcmd.do_set('audio_mix stereo')
+        assert ripcmd.config.audio_mix == 'stereo'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('audio_mix foo')
 
 
 def test_complete_set_audio_mix(db, with_config, ripcmd):
@@ -882,11 +838,12 @@ def test_complete_set_audio_mix(db, with_config, ripcmd):
 
 
 def test_set_subtitle_format(db, with_config, ripcmd):
-    assert ripcmd.config.subtitle_format == 'none'
-    ripcmd.do_set('subtitle_format vobsub')
-    assert ripcmd.config.subtitle_format == 'vobsub'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('subtitle_format foo')
+    with db.transaction():
+        assert ripcmd.config.subtitle_format == 'none'
+        ripcmd.do_set('subtitle_format vobsub')
+        assert ripcmd.config.subtitle_format == 'vobsub'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('subtitle_format foo')
 
 
 def test_complete_set_subtitle_format(db, with_config, ripcmd):
@@ -896,11 +853,12 @@ def test_complete_set_subtitle_format(db, with_config, ripcmd):
 
 
 def test_set_decomb(db, with_config, ripcmd):
-    assert ripcmd.config.decomb == 'off'
-    ripcmd.do_set('decomb auto')
-    assert ripcmd.config.decomb == 'auto'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('decomb foo')
+    with db.transaction():
+        assert ripcmd.config.decomb == 'auto'
+        ripcmd.do_set('decomb off')
+        assert ripcmd.config.decomb == 'off'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('decomb foo')
 
 
 def test_complete_set_decomb(db, with_config, ripcmd):
@@ -910,37 +868,38 @@ def test_complete_set_decomb(db, with_config, ripcmd):
 
 
 def test_set_template(db, with_config, ripcmd):
-    assert ripcmd.config.template == '{program} - {id} - {name}.{ext}'
-    ripcmd.do_set('template {program}_{id}_{name}.{ext}')
-    assert ripcmd.config.template == '{program}_{id}_{name}.{ext}'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('template {foo}.{ext}')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('template {foo')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('template {{now:%k}')
+    with db.transaction():
+        assert ripcmd.config.template == '{program} - {id} - {name}.{ext}'
+        ripcmd.do_set('template {program}_{id}_{name}.{ext}')
+        assert ripcmd.config.template == '{program}_{id}_{name}.{ext}'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('template {foo}.{ext}')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('template {foo')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('template {{now:%k}')
 
 
 def test_set_id_template(db, with_config, ripcmd):
-    assert ripcmd.config.id_template == '{season}x{episode:02d}'
-    ripcmd.do_set('id_template S{season:02d}E{episode:02d}')
-    assert ripcmd.config.id_template == 'S{season:02d}E{episode:02d}'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('id_template {foo}')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('id_template {{season}')
+    with db.transaction():
+        assert ripcmd.config.id_template == '{season}x{episode:02d}'
+        ripcmd.do_set('id_template S{season:02d}E{episode:02d}')
+        assert ripcmd.config.id_template == 'S{season:02d}E{episode:02d}'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('id_template {foo}')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('id_template {{season}')
 
 
 def test_set_max_resolution(db, with_config, ripcmd):
-    assert ripcmd.config.width_max == 1920
-    assert ripcmd.config.height_max == 1080
-    ripcmd.do_set('max_resolution 1280x720')
-    assert ripcmd.config.width_max == 1280
-    assert ripcmd.config.height_max == 720
-    with pytest.raises(CmdError):
-        ripcmd.do_set('max_resolution foo')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('max_resolution 10x10')
+    with db.transaction():
+        assert ripcmd.config.max_resolution == (1920, 1080)
+        ripcmd.do_set('max_resolution 1280x720')
+        assert ripcmd.config.max_resolution == (1280, 720)
+        with pytest.raises(CmdError):
+            ripcmd.do_set('max_resolution foo')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('max_resolution 10x10')
 
 
 def test_complete_set_max_resolution(db, with_config, ripcmd):
@@ -950,11 +909,12 @@ def test_complete_set_max_resolution(db, with_config, ripcmd):
 
 
 def test_set_output_format(db, with_config, ripcmd):
-    assert ripcmd.config.output_format == 'mp4'
-    ripcmd.do_set('output_format mkv')
-    assert ripcmd.config.output_format == 'mkv'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('output_format foo')
+    with db.transaction():
+        assert ripcmd.config.output_format == 'mp4'
+        ripcmd.do_set('output_format mkv')
+        assert ripcmd.config.output_format == 'mkv'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('output_format foo')
 
 
 def test_complete_set_output_format(db, with_config, ripcmd):
@@ -964,19 +924,21 @@ def test_complete_set_output_format(db, with_config, ripcmd):
 
 
 def test_set_api_key(db, with_config, ripcmd):
-    assert ripcmd.config.api_key == ''
-    ripcmd.do_set('api_key 12345678deadd00d12345678beefface')
-    assert ripcmd.config.api_key == '12345678deadd00d12345678beefface'
-    with pytest.raises(CmdError):
-        ripcmd.do_set('api_key foo')
-    with pytest.raises(CmdError):
-        ripcmd.do_set('api_key 12345678')
+    with db.transaction():
+        assert ripcmd.config.api_key == ''
+        ripcmd.do_set('api_key 12345678deadd00d12345678beefface')
+        assert ripcmd.config.api_key == '12345678deadd00d12345678beefface'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('api_key foo')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('api_key 12345678')
 
 
 def test_set_api_url(db, with_config, ripcmd):
-    assert ripcmd.config.api_url == 'https://api.thetvdb.com/'
-    ripcmd.do_set('api_url https://example.com/')
-    assert ripcmd.config.api_url == 'https://example.com/'
+    with db.transaction():
+        assert ripcmd.config.api_url == 'https://api.thetvdb.com/'
+        ripcmd.do_set('api_url https://example.com/')
+        assert ripcmd.config.api_url == 'https://example.com/'
 
 
 def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, reader):
@@ -1014,99 +976,89 @@ def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, reader):
 
 
 def test_do_episode(db, with_program, ripcmd):
-    prog = with_program
+    with db.transaction():
+        prog = with_program
 
-    # Cannot edit episodes without a season
-    ripcmd.config.program = prog
-    ripcmd.config.season = None
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
+        # Cannot edit episodes without a season
+        ripcmd.config = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.do_episode('delete 4')
+
+        ripcmd.config = db.set_config(with_program._replace(season=2))
+        assert len(db.get_episodes()) == 4
+        assert db.get_episode(4).title == 'Foo Quux'
+
+        # Test insertion of an episode in the middle of a season
+        ripcmd.do_episode('insert 4 Foo Bar Baz')
+        assert len(db.get_episodes()) == 5
+        assert db.get_episode(4).title == 'Foo Bar Baz'
+        assert db.get_episode(5).title == 'Foo Quux'
+
+        # Test deletion of the previously inserted episode
         ripcmd.do_episode('delete 4')
+        assert len(db.get_episodes()) == 4
+        assert db.get_episode(4).title == 'Foo Quux'
 
-    ripcmd.config.season = prog.seasons[1]
-    ripcmd.session.commit()
-    assert len(ripcmd.config.season.episodes) == 4
-    assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
+        # Test re-writing an existing episode
+        ripcmd.do_episode('update 4 Foo Bar Baz')
+        assert len(db.get_episodes()) == 4
+        assert db.get_episode(4).title == 'Foo Bar Baz'
 
-    # Test insertion of an episode in the middle of a season
-    ripcmd.do_episode('insert 4 Foo Bar Baz')
-    ripcmd.session.commit()
-    assert len(ripcmd.config.season.episodes) == 5
-    assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
-    assert ripcmd.config.season.episodes[4].name == 'Foo Quux'
-
-    # Test deletion of the previously inserted episode
-    ripcmd.do_episode('delete 4')
-    ripcmd.session.commit()
-    assert len(ripcmd.config.season.episodes) == 4
-    assert ripcmd.config.season.episodes[3].name == 'Foo Quux'
-
-    # Test re-writing an existing episode
-    ripcmd.do_episode('update 4 Foo Bar Baz')
-    ripcmd.session.commit()
-    assert len(ripcmd.config.season.episodes) == 4
-    assert ripcmd.config.season.episodes[3].name == 'Foo Bar Baz'
-
-    # Cover various syntax errors
-    with pytest.raises(CmdError):
-        ripcmd.do_episode('foo')
-    with pytest.raises(CmdError):
-        ripcmd.do_episode('insert 2')
-    with pytest.raises(CmdError):
-        ripcmd.do_episode('insert two Foo Bar')
-    with pytest.raises(CmdError):
-        ripcmd.do_episode('foo two Foo Bar')
+        # Cover various syntax errors
+        with pytest.raises(CmdError):
+            ripcmd.do_episode('foo')
+        with pytest.raises(CmdError):
+            ripcmd.do_episode('insert 2')
+        with pytest.raises(CmdError):
+            ripcmd.do_episode('insert two Foo Bar')
+        with pytest.raises(CmdError):
+            ripcmd.do_episode('foo two Foo Bar')
 
 
 def test_do_episodes(db, with_program, ripcmd, writer):
-    prog = with_program
+    with db.transaction():
+        prog = with_program
 
-    # Cannot re-define episodes without a season
-    ripcmd.config.program = prog
-    ripcmd.config.season = None
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
+        # Cannot re-define episodes without a season
+        ripcmd.config = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.do_episodes('5')
+
+        # Cover various syntax errors
+        ripcmd.config = db.set_config(with_program._replace(season=2))
+        with pytest.raises(CmdError):
+            ripcmd.do_episodes('five')
+        with pytest.raises(CmdError):
+            ripcmd.do_episodes('-5')
+        with pytest.raises(CmdError):
+            ripcmd.do_episodes('1000000000')
+
+        # Test manual re-definition of the episodes in a season
+        assert [e.title for e in db.get_episodes()] == [
+            'Foo Bar - Part 1', 'Foo Bar - Part 2', 'Foo Baz', 'Foo Quux']
+        writer.write('Foo for Thought\n')
+        writer.write('Raising the Bar\n')
+        writer.write('Baz the Magnificent\n')
+        ripcmd.do_episodes('3')
+        assert [e.title for e in db.get_episodes()] == [
+            'Foo for Thought', 'Raising the Bar', 'Baz the Magnificent']
+
+        # Same test with early termination of episode entry
+        writer.write('Foo for Thought\n')
+        writer.write('Raising the Bar\n')
+        writer.write('Baz the Terrible\n')
+        writer.write('\n') # terminate early
         ripcmd.do_episodes('5')
-
-    # Cover various syntax errors
-    ripcmd.config.season = prog.seasons[1]
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_episodes('five')
-    with pytest.raises(CmdError):
-        ripcmd.do_episodes('-5')
-    with pytest.raises(CmdError):
-        ripcmd.do_episodes('1000000000')
-
-    # Test manual re-definition of the episodes in a season
-    assert [e.name for e in ripcmd.config.season.episodes] == [
-        'Foo Bar - Part 1', 'Foo Bar - Part 2', 'Foo Baz', 'Foo Quux']
-    writer.write('Foo for Thought\n')
-    writer.write('Raising the Bar\n')
-    writer.write('Baz the Magnificent\n')
-    ripcmd.do_episodes('3')
-    ripcmd.session.commit()
-    assert [e.name for e in ripcmd.config.season.episodes] == [
-        'Foo for Thought', 'Raising the Bar', 'Baz the Magnificent']
-
-    # Same test with early termination of episode entry
-    writer.write('Foo for Thought\n')
-    writer.write('Raising the Bar\n')
-    writer.write('Baz the Terrible\n')
-    writer.write('\n') # terminate early
-    ripcmd.do_episodes('5')
-    ripcmd.session.commit()
-    assert [e.name for e in ripcmd.config.season.episodes] == [
-        'Foo for Thought', 'Raising the Bar', 'Baz the Terrible']
+        assert [e.title for e in db.get_episodes()] == [
+            'Foo for Thought', 'Raising the Bar', 'Baz the Terrible']
 
 
 def test_do_episodes_print(db, with_program, ripcmd, reader):
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-    ripcmd.do_episodes('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    with db.transaction():
+        ripcmd.do_episodes('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 Episodes for season 1 of program Foo & Bar
 
 ╭─────┬───────┬────────╮
@@ -1122,66 +1074,60 @@ Episodes for season 1 of program Foo & Bar
 
 
 def test_do_season(db, with_program, ripcmd, writer):
-    prog = with_program
+    with db.transaction():
 
     # Selecting season without a program is an error
-    ripcmd.config.program = None
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
+        ripcmd.config = db.set_config(with_program._replace(
+            program=None, season=None))
+        with pytest.raises(CmdError):
+            ripcmd.do_season('1')
+
+        # Cover some syntax errors
+        ripcmd.config = db.set_config(with_program._replace(season=2))
+        with pytest.raises(CmdError):
+            ripcmd.do_season('three')
+        with pytest.raises(CmdError):
+            ripcmd.do_season('-3')
+
+        # Test selection of an existing season
         ripcmd.do_season('1')
+        assert ripcmd.config.season == 1
 
-    # Cover some syntax errors
-    ripcmd.config.program = prog
-    ripcmd.config.season = prog.seasons[1]
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_season('three')
-    with pytest.raises(CmdError):
-        ripcmd.do_season('-3')
+        # Test manual entry of episodes for new season
+        writer.write('3\n')
+        writer.write('Foo for Thought\n')
+        writer.write('Raising the Bar\n')
+        writer.write('Baz the Imperfect\n')
+        ripcmd.do_season('3')
+        assert ripcmd.config.season == 3
+        assert db.get_episode(1).title == 'Foo for Thought'
 
-    # Test selection of an existing season
-    ripcmd.do_season('1')
-    ripcmd.session.commit()
-    assert ripcmd.config.season == prog.seasons[0]
-
-    # Test manual entry of episodes for new season
-    writer.write('3\n')
-    writer.write('Foo for Thought\n')
-    writer.write('Raising the Bar\n')
-    writer.write('Baz the Imperfect\n')
-    ripcmd.do_season('3')
-    ripcmd.session.commit()
-    assert ripcmd.config.season.number == 3
-    assert ripcmd.config.season.episodes[0].name == 'Foo for Thought'
-
-    # Test aborting manual entry of new season
-    writer.write('0\n')
-    ripcmd.do_season('4')
-    ripcmd.session.commit()
-    assert ripcmd.config.season.number == 4
-    assert len(ripcmd.config.season.episodes) == 0
+        # Test aborting manual entry of new season
+        writer.write('0\n')
+        ripcmd.do_season('4')
+        assert ripcmd.config.season == 4
+        assert len(db.get_episodes()) == 0
 
 
 def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writer):
-    ripcmd.config.api_key = 's3cret'
-    ripcmd.config.api_url = tvdb.url
-    ripcmd.set_api()
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            api_key='s3cret', api_url=tvdb.url))
+        ripcmd.set_api()
 
-    # Test selecting new season from TVDB results
-    assert len(ripcmd.config.program.seasons) == 2
-    writer.write('1\n') # select program 1 from results table
-    ripcmd.do_season('3')
-    assert len(ripcmd.config.program.seasons) == 3
-    ripcmd.session.commit()
+        # Test selecting new season from TVDB results
+        assert len(list(db.get_seasons())) == 2
+        writer.write('1\n') # select program 1 from results table
+        ripcmd.do_season('3')
+        assert len(list(db.get_seasons())) == 3
 
-    # Test fallback to manual entry (with abort) after requesting non-existing
-    # season from TVDB
-    writer.write('1\n') # select program 1 from results table
-    writer.write('0\n') # don't define episodes
-    ripcmd.do_season('4')
-    assert len(ripcmd.config.program.seasons) == 4
-    assert len(ripcmd.config.season.episodes) == 0
+        # Test fallback to manual entry (with abort) after requesting non-existing
+        # season from TVDB
+        writer.write('1\n') # select program 1 from results table
+        writer.write('0\n') # don't define episodes
+        ripcmd.do_season('4')
+        assert len(list(db.get_seasons())) == 4
+        assert len(db.get_episodes()) == 0
 
 
 def test_complete_do_season(db, with_program, ripcmd):
@@ -1190,12 +1136,11 @@ def test_complete_do_season(db, with_program, ripcmd):
 
 
 def test_do_seasons(db, with_program, ripcmd, reader):
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-    ripcmd.do_seasons('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    with db.transaction():
+        ripcmd.do_seasons('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 Seasons for program Foo & Bar
 
 ╭─────┬──────────┬────────╮
@@ -1208,73 +1153,79 @@ Seasons for program Foo & Bar
 
 
 def test_do_program(db, with_config, ripcmd, writer):
-    with pytest.raises(CmdError):
-        ripcmd.do_program('')
+    with db.transaction():
+        with pytest.raises(CmdError):
+            ripcmd.do_program('')
 
-    # Test manual definition of new program (note fixture is with_config, so
-    # the Foo & Bar program isn't defined)
-    assert ripcmd.config.program is None
-    writer.write('2\n') # define 2 seasons
-    writer.write('5\n') # define 5 episodes of season 1
-    writer.write('Foo\n')
-    writer.write('Bar\n')
-    writer.write('Baz\n')
-    writer.write('Quux\n')
-    writer.write('Xyzzy\n')
-    writer.write('4\n') # define 4 episodes of season 2
-    writer.write('Foo Bar - Part 1\n')
-    writer.write('Foo Bar - Part 2\n')
-    writer.write('Foo Baz\n')
-    writer.write('Foo Quux\n')
-    ripcmd.do_program('Foo & Bar')
-    assert ripcmd.config.program.name == 'Foo & Bar'
-    assert len(ripcmd.config.program.seasons) == 2
-    assert ripcmd.config.season.number == 1
-    assert len(ripcmd.config.season.episodes) == 5
+        # Test manual definition of new program (note fixture is with_config,
+        # so the Foo & Bar program isn't defined)
+        assert ripcmd.config.program is None
+        writer.write('2\n') # define 2 seasons
+        writer.write('5\n') # define 5 episodes of season 1
+        writer.write('Foo\n')
+        writer.write('Bar\n')
+        writer.write('Baz\n')
+        writer.write('Quux\n')
+        writer.write('Xyzzy\n')
+        writer.write('4\n') # define 4 episodes of season 2
+        writer.write('Foo Bar - Part 1\n')
+        writer.write('Foo Bar - Part 2\n')
+        writer.write('Foo Baz\n')
+        writer.write('Foo Quux\n')
+        ripcmd.do_program('Foo & Bar')
+        assert ripcmd.config.program == 'Foo & Bar'
+        assert len(list(db.get_seasons())) == 2
+        assert ripcmd.config.season == 1
+        assert len(db.get_episodes()) == 5
 
 
 def test_do_program_existing(db, with_program, ripcmd):
-    # Test selection of existing program
-    ripcmd.config.program = None
-    ripcmd.do_program('Foo & Bar')
-    assert ripcmd.config.program.name == 'Foo & Bar'
+    with db.transaction():
+        # Test selection of existing program
+        ripcmd.config = db.set_config(with_program._replace(
+            program=None, season=None))
+        ripcmd.do_program('Foo & Bar')
+        assert ripcmd.config.program == 'Foo & Bar'
 
 
 def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
-    # Test selection of new program that exists in TVDB
-    ripcmd.config.api_key = 's3cret'
-    ripcmd.config.api_url = tvdb.url
-    ripcmd.set_api()
-    writer.write('1\n')
-    ripcmd.do_program('Up')
-    assert ripcmd.config.program.name == 'Up North'
-    assert ripcmd.config.season.number == 1
-    assert len(ripcmd.config.program.seasons) == 2
+    with db.transaction():
+        # Test selection of new program that exists in TVDB
+        ripcmd.config = db.set_config(with_program._replace(
+            api_key='s3cret', api_url=tvdb.url))
+        ripcmd.set_api()
+        writer.write('1\n')
+        ripcmd.do_program('Up North')
+        assert ripcmd.config.program == 'Up North'
+        assert ripcmd.config.season == 1
+        assert len(list(db.get_seasons())) == 2
 
 
 def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdb):
-    # Test ignoring TVDB results and performing manual entry (with abort)
-    ripcmd.config.api_key = 's3cret'
-    ripcmd.config.api_url = tvdb.url
-    ripcmd.set_api()
-    writer.write('0\n')
-    writer.write('0\n')
-    ripcmd.do_program('The Worst')
-    assert ripcmd.config.program.name == 'The Worst'
-    assert ripcmd.config.season is None
-    assert len(ripcmd.config.program.seasons) == 0
+    with db.transaction():
+        # Test ignoring TVDB results and performing manual entry (with abort)
+        ripcmd.config = db.set_config(with_program._replace(
+            api_key='s3cret', api_url=tvdb.url))
+        ripcmd.set_api()
+        writer.write('0\n')
+        writer.write('0\n')
+        ripcmd.do_program('The Worst')
+        assert ripcmd.config.program == 'The Worst'
+        assert ripcmd.config.season is None
+        assert len(list(db.get_seasons())) == 0
 
 
 def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
-    # Test selecting something not found in TVDB
-    ripcmd.config.api_key = 's3cret'
-    ripcmd.config.api_url = tvdb.url
-    ripcmd.set_api()
-    writer.write('0\n')
-    ripcmd.do_program('Something New')
-    assert ripcmd.config.program.name == 'Something New'
-    assert ripcmd.config.season is None
-    assert len(ripcmd.config.program.seasons) == 0
+    with db.transaction():
+        # Test selecting something not found in TVDB
+        ripcmd.config = db.set_config(with_program._replace(
+            api_key='s3cret', api_url=tvdb.url))
+        ripcmd.set_api()
+        writer.write('0\n')
+        ripcmd.do_program('Something New')
+        assert ripcmd.config.program == 'Something New'
+        assert ripcmd.config.season is None
+        assert len(list(db.get_seasons())) == 0
 
 
 def test_complete_do_program(db, with_program, ripcmd):
@@ -1283,12 +1234,11 @@ def test_complete_do_program(db, with_program, ripcmd):
 
 
 def test_do_programs(db, with_program, ripcmd, reader):
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-    ripcmd.do_programs('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == """\
+    with db.transaction():
+        ripcmd.do_programs('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == """\
 ╭───────────┬─────────┬──────────┬────────╮
 │ Program   │ Seasons │ Episodes │ Ripped │
 ├───────────┼─────────┼──────────┼────────┤
@@ -1409,21 +1359,6 @@ def test_do_play(db, with_config, drive, foo_disc1, ripcmd):
         ripcmd.do_play('9')
 
 
-def test_do_scan_no_source(db, with_config, ripcmd):
-    ripcmd.config.source = ''
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_scan('')
-
-
-def test_do_scan_no_duration(db, with_config, ripcmd):
-    ripcmd.config.duration_min = dt.timedelta(0)
-    ripcmd.config.duration_max = dt.timedelta(0)
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_scan('')
-
-
 def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader):
     drive.disc = foo_disc1
     ripcmd.do_scan('1')
@@ -1481,286 +1416,296 @@ def test_do_scan_bad_title(db, with_config, drive, foo_disc1, ripcmd):
 
 
 def test_do_scan_already_ripped_title(db, with_program, drive, foo_disc1, ripcmd):
-    # Simulate already having ripped the first three episodes from this disc
-    season = ripcmd.config.season
-    for i in range(3):
-        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-        season.episodes[i].disc_title = i + 2
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate already having ripped the first three episodes from this
+        # disc
+        drive.disc = foo_disc1
+        disc = Disc(with_program)
+        for i in (1, 2, 3):
+            db.rip_episode(i, disc.titles[i])
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    # After the scan the pre-ripped episodes are already mapped to their
-    # corresponding titles
-    assert len(ripcmd.episode_map) == 3
-    assert {e.number for e in ripcmd.episode_map.keys()} == {1, 2, 3}
-    assert {t.number for t in ripcmd.episode_map.values()} == {2, 3, 4}
+        ripcmd.do_scan('')
+        # After the scan the pre-ripped episodes are already mapped to their
+        # corresponding titles
+        assert len(ripcmd.episode_map) == 3
+        assert {e.episode for e in ripcmd.episode_map.keys()} == {1, 2, 3}
+        assert {t.number for t in ripcmd.episode_map.values()} == {2, 3, 4}
 
 
 def test_do_scan_already_ripped_chapters(db, with_program, drive, foo_disc1, ripcmd):
-    # Simulate already having ripped the first three episodes from this disc
-    season = ripcmd.config.season
-    for i in range(3):
-        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-        season.episodes[i].disc_title = 1
-        season.episodes[i].start_chapter = (i * 2) + 1
-        season.episodes[i].end_chapter = (i * 2) + 2
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate already having ripped the first three episodes from this
+        # disc via chapter mappings
+        drive.disc = foo_disc1
+        disc = Disc(with_program)
+        for i in (1, 2, 3):
+            db.rip_episode(i, (
+                disc.titles[0].chapters[(i - 1) * 2],
+                disc.titles[0].chapters[(i - 1) * 2 + 1]))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    # After the scan the pre-ripped episodes are already mapped to their
-    # corresponding chapters
-    assert len(ripcmd.episode_map) == 3
-    assert {e.number for e in ripcmd.episode_map.keys()} == {1, 2, 3}
-    assert {
-        (start.number, finish.number)
-        for start, finish in ripcmd.episode_map.values()
-    } == {(1, 2), (3, 4), (5, 6)}
+        ripcmd.do_scan('')
+        # After the scan the pre-ripped episodes are already mapped to their
+        # corresponding chapters
+        assert len(ripcmd.episode_map) == 3
+        assert {e.episode for e in ripcmd.episode_map.keys()} == {1, 2, 3}
+        assert {
+            (start.number, finish.number)
+            for start, finish in ripcmd.episode_map.values()
+        } == {(1, 2), (3, 4), (5, 6)}
 
 
 def test_do_scan_ripped_title_missing(db, with_program, drive, foo_disc1, ripcmd, reader):
-    # Simulate having ripped a title that doesn't exist
-    season = ripcmd.config.season
-    season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-    season.episodes[0].disc_title = 12
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate having a ripped title that doesn't exist
+        db._check_rowcount(db._conn.execute(text(
+            """
+            UPDATE episodes SET
+                disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf',
+                disc_title = 12
+            WHERE (program, season) = (
+                SELECT program, season
+                FROM config
+                WHERE id = 'default'
+            )
+            AND episode = 1
+            """)))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert len(ripcmd.episode_map) == 0
-    assert 'Warning: previously ripped title 12 not found' in ''.join(reader.read_all())
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert len(ripcmd.episode_map) == 0
+        assert 'Warning: previously ripped title 12 not found' in ''.join(reader.read_all())
 
 
 def test_do_scan_ripped_missing(db, with_program, drive, foo_disc1, ripcmd, reader):
-    # Simulate having ripped a chapter that doesn't exist
-    season = ripcmd.config.season
-    season.episodes[0].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-    season.episodes[0].disc_title = 1
-    season.episodes[0].start_chapter = 24
-    season.episodes[0].end_chapter = 26
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate having ripped a chapter that doesn't exist
+        db._check_rowcount(db._conn.execute(text(
+            """
+            UPDATE episodes SET
+                disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf',
+                disc_title = 1,
+                start_chapter = 24,
+                end_chapter = 26
+            WHERE (program, season) = (
+                SELECT program, season
+                FROM config
+                WHERE id = 'default'
+            )
+            AND episode = 1
+            """)))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    # After the scan the pre-ripped episodes are already mapped
-    assert len(ripcmd.episode_map) == 0
-    assert 'Warning: previously ripped chapters 24, 26 not found' in ''.join(reader.read_all())
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        # After the scan the pre-ripped episodes are already mapped
+        assert len(ripcmd.episode_map) == 0
+        assert 'Warning: previously ripped chapters 24, 26 not found' in ''.join(reader.read_all())
 
 
 def test_do_automap_default(db, with_program, drive, foo_disc1, ripcmd):
-    # Automap all 5 episodes of season 1 of Foo & Bar implicitly to all
-    # non-duplicate tracks of foo_disc1
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        # Automap all 5 episodes of season 1 of Foo & Bar implicitly to all
+        # non-duplicate tracks of foo_disc1
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    assert not ripcmd.episode_map
-    ripcmd.do_scan('')
-    ripcmd.do_automap('')
-    assert {
-        (episode.number, title.number)
-        for episode, title in ripcmd.episode_map.items()
-    } == {(1, 2), (2, 3), (3, 5), (4, 6), (5, 8)}
+        drive.disc = foo_disc1
+        assert not ripcmd.episode_map
+        ripcmd.do_scan('')
+        ripcmd.do_automap('')
+        assert {
+            (episode.episode, title.number)
+            for episode, title in ripcmd.episode_map.items()
+        } == {(1, 2), (2, 3), (3, 5), (4, 6), (5, 8)}
 
 
 def test_do_automap_episodes(db, with_program, drive, foo_disc1, ripcmd):
-    # Only automap the first three episodes
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        # Only automap the first three episodes
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    assert not ripcmd.episode_map
-    ripcmd.do_scan('')
-    ripcmd.do_automap('1-3')
-    assert {
-        (episode.number, title.number)
-        for episode, title in ripcmd.episode_map.items()
-    } == {(1, 2), (2, 3), (3, 5)}
+        drive.disc = foo_disc1
+        assert not ripcmd.episode_map
+        ripcmd.do_scan('')
+        ripcmd.do_automap('1-3')
+        assert {
+            (episode.episode, title.number)
+            for episode, title in ripcmd.episode_map.items()
+        } == {(1, 2), (2, 3), (3, 5)}
 
 
 def test_do_automap_manual(db, with_program, drive, foo_disc1, ripcmd):
-    # Automap the first three episodes to the first three (non-aggregate)
-    # titles of foo_disc1
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'all'
-    ripcmd.session.commit()
+    with db.transaction():
+        # Automap the first three episodes to the first three (non-aggregate)
+        # titles of foo_disc1
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='all'))
 
-    drive.disc = foo_disc1
-    assert not ripcmd.episode_map
-    ripcmd.do_scan('')
-    ripcmd.do_automap('1-3 2-4')
-    assert {
-        (episode.number, title.number)
-        for episode, title in ripcmd.episode_map.items()
-    } == {(1, 2), (2, 3), (3, 4)}
+        drive.disc = foo_disc1
+        assert not ripcmd.episode_map
+        ripcmd.do_scan('')
+        ripcmd.do_automap('1-3 2-4')
+        assert {
+            (episode.episode, title.number)
+            for episode, title in ripcmd.episode_map.items()
+        } == {(1, 2), (2, 3), (3, 4)}
 
 
 def test_do_automap_chapters(db, with_program, drive, foo_disc1, ripcmd):
-    # Automap all five episodes of season 1 of Foo & Bar to the aggregated
-    # title on foo_disc1
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        # Automap all five episodes of season 1 of Foo & Bar to the aggregated
+        # title on foo_disc1
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    assert not ripcmd.episode_map
-    ripcmd.do_scan('')
-    ripcmd.do_automap('* 1')
-    assert {
-        (episode.number, start.number, end.number)
-        for episode, (start, end) in ripcmd.episode_map.items()
-    } == {(1, 1, 5), (2, 6, 10), (3, 11, 15), (4, 16, 19), (5, 20, 24)}
+        drive.disc = foo_disc1
+        assert not ripcmd.episode_map
+        ripcmd.do_scan('')
+        ripcmd.do_automap('* 1')
+        assert {
+            (episode.episode, start.number, end.number)
+            for episode, (start, end) in ripcmd.episode_map.items()
+        } == {(1, 1, 5), (2, 6, 10), (3, 11, 15), (4, 16, 19), (5, 20, 24)}
 
 
 def test_do_automap_chapters_with_ambiguity(
-    db, with_program, drive, foo_disc1, ripcmd, reader, writer):
-    # Automap all five episodes of season 1 of Foo & Bar to the aggregated
-    # title on foo_disc1 using a duration limit that's weak enough to allow
-    # ambiguity in the chapter selection. Use the writer fixture to inject
-    # appropriate responses to resolve the ambiguity
-    ripcmd.config.duration_min = dt.timedelta(minutes=28)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    db, with_program, drive, foo_disc1, ripcmd, reader, writer
+):
+    with db.transaction():
+        # Automap all five episodes of season 1 of Foo & Bar to the aggregated
+        # title on foo_disc1 using a duration limit that's weak enough to allow
+        # ambiguity in the chapter selection. Use the writer fixture to inject
+        # appropriate responses to resolve the ambiguity
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=28), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.stdout.flush()
-    assert not ripcmd.episode_map
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.stdout.flush()
+        assert not ripcmd.episode_map
 
-    with mock.patch('tvrip.cmdline.Cmd.input') as cmd_input:
-        def user_response(prompt):
-            m = re.match(
-                r'^Is chapter (?P<title>\d+)\.(?P<chapter>\d+) the start of '
-                r'episode (?P<episode>\d+)\?.*', prompt)
-            if m:
-                return (
-                    'y'
-                    if (int(m.group('episode')), int(m.group('chapter')))
-                    in {(1, 1), (2, 6), (3, 11), (4, 16), (5, 20)} else
-                    'n')
-            else:
-                return ''
-        cmd_input.side_effect = user_response
-        ripcmd.do_automap('* 1')
+        with mock.patch('tvrip.cmdline.Cmd.input') as cmd_input:
+            def user_response(prompt):
+                m = re.match(
+                    r'^Is chapter (?P<title>\d+)\.(?P<chapter>\d+) the start '
+                    r'of episode (?P<episode>\d+)\?.*', prompt)
+                if m:
+                    return (
+                        'y'
+                        if (int(m.group('episode')), int(m.group('chapter')))
+                        in {(1, 1), (2, 6), (3, 11), (4, 16), (5, 20)} else
+                        'n')
+                else:
+                    return ''
+            cmd_input.side_effect = user_response
+            ripcmd.do_automap('* 1')
 
-    assert {
-        (episode.number, start.number, end.number)
-        for episode, (start, end) in ripcmd.episode_map.items()
-    } == {(1, 1, 5), (2, 6, 10), (3, 11, 15), (4, 16, 19), (5, 20, 24)}
+        assert {
+            (episode.episode, start.number, end.number)
+            for episode, (start, end) in ripcmd.episode_map.items()
+        } == {(1, 1, 5), (2, 6, 10), (3, 11, 15), (4, 16, 19), (5, 20, 24)}
 
 
 def test_do_automap_chapters_ambiguous_and_quit(
-    # Same test as immediately above, but test replay and abort works
-    db, with_program, drive, foo_disc1, tmp_path, ripcmd, reader, writer):
-    ripcmd.config.duration_min = dt.timedelta(minutes=28)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    db, with_program, drive, foo_disc1, ripcmd, reader, writer
+):
+    with db.transaction():
+        # Same test as immediately above, but test replay and abort works
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=28), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.stdout.flush()
-    assert not ripcmd.episode_map
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.stdout.flush()
+        assert not ripcmd.episode_map
 
-    with mock.patch('tvrip.cmdline.Cmd.input') as cmd_input:
-        replay = True
-        garbage = True
-        def user_response(prompt):
-            nonlocal replay, garbage
-            m = re.match(
-                r'^Is chapter (?P<title>\d+)\.(?P<chapter>\d+) the start of '
-                r'episode (?P<episode>\d+)\?.*', prompt)
-            if m:
-                if m.group('episode') == '2':
-                    if replay:
-                        replay = False
-                        return 'r'
-                    elif garbage:
-                        garbage = False
-                        return 'foo'
+        with mock.patch('tvrip.cmdline.Cmd.input') as cmd_input:
+            replay = True
+            garbage = True
+            def user_response(prompt):
+                nonlocal replay, garbage
+                m = re.match(
+                    r'^Is chapter (?P<title>\d+)\.(?P<chapter>\d+) the start '
+                    r'of episode (?P<episode>\d+)\?.*', prompt)
+                if m:
+                    if m.group('episode') == '2':
+                        if replay:
+                            replay = False
+                            return 'r'
+                        elif garbage:
+                            garbage = False
+                            return 'foo'
+                        else:
+                            return 'y'
                     else:
-                        return 'y'
+                        return 'q'
                 else:
-                    return 'q'
-            else:
-                return ''
-        cmd_input.side_effect = user_response
-        with pytest.raises(CmdError):
-            ripcmd.do_automap('* 1')
+                    return ''
+            cmd_input.side_effect = user_response
+            with pytest.raises(CmdError):
+                ripcmd.do_automap('* 1')
 
-    # There should be three executions of VLC; the first for chapter 5/6,
-    # then again after the replay request, then for chapter 9/10/11, at which
-    # point the user quits early
-    vlc_chapters = [
-        call.args[0][-1].rsplit('#', 1)[1]
-        for call in drive.run.call_args_list
-        if call.args[0][0] == 'vlc'
-    ]
-    assert vlc_chapters in [
-        ['1:5', '1:5', '1:9'],
-        ['1:6', '1:6', '1:9'],
-        ['1:5', '1:5', '1:10'],
-        ['1:6', '1:6', '1:10'],
-        ['1:5', '1:5', '1:11'],
-        ['1:6', '1:6', '1:11'],
-    ]
+        # There should be three executions of VLC: the first for chapter 5/6,
+        # then again after the replay request, then for chapter 9/10/11, at
+        # which point the user quits early
+        vlc_chapters = [
+            call.args[0][-1].rsplit('#', 1)[1]
+            for call in drive.run.call_args_list
+            if call.args[0][0] == 'vlc'
+        ]
+        assert vlc_chapters in [
+            ['1:5', '1:5', '1:9'],
+            ['1:6', '1:6', '1:9'],
+            ['1:5', '1:5', '1:10'],
+            ['1:6', '1:6', '1:10'],
+            ['1:5', '1:5', '1:11'],
+            ['1:6', '1:6', '1:11'],
+        ]
 
 
 def test_do_map_empty(db, with_program, ripcmd, reader):
-    ripcmd.config.program = None
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_map('')
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            program=None, season=None))
+        with pytest.raises(CmdError):
+            ripcmd.do_map('')
 
-    ripcmd.config.program = with_program
-    ripcmd.config.season = None
-    ripcmd.session.commit()
-    with pytest.raises(CmdError):
-        ripcmd.do_map('')
-    with pytest.raises(CmdError):
-        ripcmd.do_map('1')
+        ripcmd.config = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.do_map('')
+        with pytest.raises(CmdError):
+            ripcmd.do_map('1')
 
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-    ripcmd.do_map('')
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert 'Episode map is currently empty' in ''.join(reader.read_all())
+        ripcmd.config = db.set_config(with_program)
+        ripcmd.do_map('')
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert 'Episode map is currently empty' in ''.join(reader.read_all())
 
 
 def test_do_map_set_titles(
     db, with_program, tmp_path, drive, foo_disc1, ripcmd, reader
 ):
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-
-    drive.disc = foo_disc1
-    with suppress_stdout(ripcmd):
-        ripcmd.do_scan('')
-    ripcmd.do_map('1 2')
-    ripcmd.do_map('2 3')
-    ripcmd.do_map()
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == f"""\
+    with db.transaction():
+        drive.disc = foo_disc1
+        with suppress_stdout(ripcmd):
+            ripcmd.do_scan('')
+        ripcmd.do_map('1 2')
+        ripcmd.do_map('2 3')
+        ripcmd.do_map()
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == f"""\
 Mapping title 2 (duration 0:30:00.000002) to 1 "Foo"
 Mapping title 3 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
@@ -1777,18 +1722,16 @@ Episode Mapping for Foo & Bar season 1:
 def test_do_map_set_chapters(
     db, with_program, tmp_path, drive, foo_disc1, ripcmd, reader
 ):
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-
-    drive.disc = foo_disc1
-    with suppress_stdout(ripcmd):
-        ripcmd.do_scan('')
-    ripcmd.do_map('1 1.1-5')
-    ripcmd.do_map('2 1.6-10')
-    ripcmd.do_map()
-    ripcmd.stdout.flush()
-    ripcmd.stdout.close()
-    assert ''.join(reader.read_all()) == f"""\
+    with db.transaction():
+        drive.disc = foo_disc1
+        with suppress_stdout(ripcmd):
+            ripcmd.do_scan('')
+        ripcmd.do_map('1 1.1-5')
+        ripcmd.do_map('2 1.6-10')
+        ripcmd.do_map()
+        ripcmd.stdout.flush()
+        ripcmd.stdout.close()
+        assert ''.join(reader.read_all()) == f"""\
 Mapping chapters 1.01-05 (duration 0:30:00.000002) to 1 "Foo"
 Mapping chapters 1.06-10 (duration 0:30:00.000001) to 2 "Bar"
 Episode Mapping for Foo & Bar season 1:
@@ -1810,209 +1753,204 @@ def test_do_unmap_bad(db, with_program, ripcmd):
 
 
 def test_do_unmap_everything(db, with_program, drive, foo_disc1, ripcmd):
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_automap('')
-    ripcmd.do_unmap('*')
-    assert not ripcmd.episode_map
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_automap('')
+        ripcmd.do_unmap('*')
+        assert not ripcmd.episode_map
 
 
 def test_do_unmap_episode(db, with_program, drive, foo_disc1, ripcmd):
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_automap('')
-    ripcmd.do_unmap('1')
-    assert {
-        (episode.number, title.number)
-        for episode, title in ripcmd.episode_map.items()
-    } == {(2, 3), (3, 5), (4, 6), (5, 8)}
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_automap('')
+        ripcmd.do_unmap('1')
+        assert {
+            (episode.episode, title.number)
+            for episode, title in ripcmd.episode_map.items()
+        } == {(2, 3), (3, 5), (4, 6), (5, 8)}
 
 
 def test_do_rip_mapped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
-    assert not ripcmd.episode_map
-    with pytest.raises(CmdError):
+    with db.transaction():
+        assert not ripcmd.episode_map
+        with pytest.raises(CmdError):
+            ripcmd.do_rip('')
+
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_map('1 2')
+        ripcmd.do_map('2 3')
         ripcmd.do_rip('')
-
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_map('1 2')
-    ripcmd.do_map('2 3')
-    ripcmd.do_rip('')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
-    assert ('-t', '2') in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
-    assert cmdlines[3][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[3]
-    assert ('-t', '3') in pairwise(cmdlines[3])
-    assert cmdlines[4][0] == 'AtomicParsley'
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
+        assert ('-t', '2') in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
+        assert cmdlines[3][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[3]
+        assert ('-t', '3') in pairwise(cmdlines[3])
+        assert cmdlines[4][0] == 'AtomicParsley'
 
 
 def test_do_rip_manual(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
-    assert not ripcmd.episode_map
-    with pytest.raises(CmdError):
-        ripcmd.do_rip('')
+    with db.transaction():
+        assert not ripcmd.episode_map
+        with pytest.raises(CmdError):
+            ripcmd.do_rip('')
 
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.session.commit()
-
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_map('1 2')
-    ripcmd.do_map('2 3')
-    ripcmd.do_rip('2')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x02 - Bar.mp4')) in pairwise(cmdlines[1])
-    assert ('-t', '3') in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_map('1 2')
+        ripcmd.do_map('2 3')
+        ripcmd.do_rip('2')
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x02 - Bar.mp4')) in pairwise(cmdlines[1])
+        assert ('-t', '3') in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
 
 
 def test_do_rip_skip_ripped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
-    # Simulate already having ripped the first four episodes from this disc
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    season = ripcmd.config.season
-    for episode, title in [(0, 2), (1, 3), (2, 5), (3, 6)]:
-        season.episodes[episode].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-        season.episodes[episode].disc_title = title
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate already having ripped the first four episodes from this disc
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
+        drive.disc = foo_disc1
+        disc = Disc(with_program)
+        for episode, title in [(1, 2), (2, 3), (3, 5), (4, 6)]:
+            db.rip_episode(episode, disc.titles[title - 1])
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_automap('')
-    ripcmd.do_rip('')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-t', '8') in pairwise(cmdlines[1])
-    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x05 - Xyzzy.mp4')) in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
+        drive.run.reset_mock()
+        ripcmd.do_scan('')
+        ripcmd.do_automap('')
+        ripcmd.do_rip('')
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-t', '8') in pairwise(cmdlines[1])
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x05 - Xyzzy.mp4')) in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
 
 
 def test_do_rip_chapters(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_map('1 1.1-5')
-    ripcmd.do_rip('')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
-    assert ('-t', '1') in pairwise(cmdlines[1])
-    assert ('-c', '1-5') in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_map('1 1.1-5')
+        ripcmd.do_rip('')
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
+        assert ('-t', '1') in pairwise(cmdlines[1])
+        assert ('-c', '1-5') in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
 
 
 def test_do_rip_all_audio_and_subs(db, with_program, drive, foo_disc1, ripcmd):
-    ripcmd.config.audio_all = True
-    ripcmd.config.subtitle_all = True
-    ripcmd.config.subtitle_format = 'vobsub'
-    ripcmd.config.duration_min = dt.timedelta(minutes=29)
-    ripcmd.config.duration_max = dt.timedelta(minutes=32)
-    ripcmd.config.season = with_program.seasons[0]
-    ripcmd.config.duplicates = 'first'
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            duration=(dt.timedelta(minutes=29), dt.timedelta(minutes=32)),
+            duplicates='first', audio_all=True, subtitle_all=True,
+            subtitle_format='vobsub'))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    ripcmd.do_map('1 1.1-5')
-    ripcmd.do_rip('')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-a', '1,2') in pairwise(cmdlines[1])
-    assert ('-s', '1,2') in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        ripcmd.do_map('1 1.1-5')
+        ripcmd.do_rip('')
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-a', '1,2') in pairwise(cmdlines[1])
+        assert ('-s', '1,2') in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
 
 
 def test_do_rip_multi_episode_title(db, with_program, tmp_path, drive, foo_disc2, ripcmd):
-    ripcmd.config.season = with_program.seasons[1]
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            season=2))
 
-    drive.disc = foo_disc2
-    ripcmd.do_scan('')
-    ripcmd.do_map('1 2')
-    ripcmd.do_map('2 2')
-    ripcmd.do_rip('')
-    cmdlines = [call.args[0] for call in drive.run.call_args_list]
-    assert cmdlines[0][0] == 'HandBrakeCLI'
-    assert '--scan' in cmdlines[0]
-    assert cmdlines[1][0] == 'HandBrakeCLI'
-    assert '--scan' not in cmdlines[1]
-    assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 2x01 2x02 - Foo Bar.mp4')) in pairwise(cmdlines[1])
-    assert ('-t', '2') in pairwise(cmdlines[1])
-    assert cmdlines[2][0] == 'AtomicParsley'
+        drive.disc = foo_disc2
+        ripcmd.do_scan('')
+        ripcmd.do_map('1 2')
+        ripcmd.do_map('2 2')
+        ripcmd.do_rip('')
+        cmdlines = [call.args[0] for call in drive.run.call_args_list]
+        assert cmdlines[0][0] == 'HandBrakeCLI'
+        assert '--scan' in cmdlines[0]
+        assert cmdlines[1][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[1]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 2x01 2x02 - Foo Bar.mp4')) in pairwise(cmdlines[1])
+        assert ('-t', '2') in pairwise(cmdlines[1])
+        assert cmdlines[2][0] == 'AtomicParsley'
 
 
 def test_do_rip_failed(db, with_program, drive, foo_disc1, ripcmd):
-    ripcmd.config.season = with_program.seasons[1]
-    ripcmd.session.commit()
+    with db.transaction():
+        ripcmd.config = db.set_config(with_program._replace(
+            season=2))
 
-    drive.disc = foo_disc1
-    ripcmd.do_scan('')
-    # Title 9 always fails
-    ripcmd.do_map('1 9')
-    with pytest.raises(CmdError):
-        ripcmd.do_rip('')
+        drive.disc = foo_disc1
+        ripcmd.do_scan('')
+        # Title 9 always fails
+        ripcmd.do_map('1 9')
+        with pytest.raises(CmdError):
+            ripcmd.do_rip('')
 
 
 def test_do_unrip(db, with_program, drive, foo_disc1, ripcmd):
-    # Simulate already having ripped the first three episodes from this disc
-    season = ripcmd.config.season
-    for i in range(3):
-        season.episodes[i].disc_id = '$H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf'
-        season.episodes[i].disc_title = i + 2
-    ripcmd.session.commit()
+    with db.transaction():
+        # Simulate already having ripped the first three episodes from this
+        # disc
+        drive.disc = foo_disc1
+        disc = Disc(with_program)
+        for i in (1, 2, 3):
+            db.rip_episode(i, disc.titles[i])
 
-    with pytest.raises(CmdError):
-        ripcmd.do_unrip('')
+        with pytest.raises(CmdError):
+            ripcmd.do_unrip('')
 
-    assert season.episodes[0].disc_id is not None
-    ripcmd.do_unrip('1')
-    assert season.episodes[0].disc_id is None
-    assert season.episodes[1].disc_id is not None
-    ripcmd.do_unrip('*')
-    assert season.episodes[1].disc_id is None
-    assert season.episodes[2].disc_id is None
-    # It's not an error to specify episodes that don't exist
-    ripcmd.do_unrip('1-10')
+        episodes = db.get_episodes()
+        assert episodes[0].disc_id is not None
+        ripcmd.do_unrip('1')
+        episodes = db.get_episodes()
+        assert episodes[0].disc_id is None
+        assert episodes[1].disc_id is not None
+        ripcmd.do_unrip('*')
+        episodes = db.get_episodes()
+        assert episodes[1].disc_id is None
+        assert episodes[2].disc_id is None
+        # It's not an error to specify episodes that don't exist
+        ripcmd.do_unrip('1-10')
 
 
 def test_interactive(db, with_program, tmp_path, drive, foo_disc1, ripcmd, reader, writer):

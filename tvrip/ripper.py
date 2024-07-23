@@ -118,7 +118,7 @@ class Disc:
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
         cmdline = [
-            str(config.get_path('handbrake')),
+            str(config.paths['handbrake']),
             '-i', str(config.source), # specify the input device
             '-t', str(title),         # select the specified title
             '--min-duration', '300',  # only scan titles >5 minutes
@@ -237,7 +237,7 @@ class Disc:
         else:
             assert False
         cmdline = [
-            str(config.get_path('vlc')),
+            str(config.paths['vlc']),
             '--quiet', '--avcodec-hw', 'none', mrl
         ]
         proc.run(cmdline, check=True, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
@@ -251,14 +251,14 @@ class Disc:
                 raise ValueError(f'{item} does not belong to {title}')
         file_id = ' '.join(
             config.id_template.format(
-                season=episode.season.number,
-                episode=episode.number
+                season=config.season,
+                episode=episode.episode
             )
-            for episode in sorted(episodes, key=attrgetter('number'))
+            for episode in sorted(episodes, key=attrgetter('episode'))
         )
         filename = config.template.format(
-            program=config.program.name,
-            season=config.season.number,
+            program=config.program,
+            season=config.season,
             id=file_id,
             name=multipart.name(episodes),
             now=dt.datetime.now(),
@@ -277,15 +277,15 @@ class Disc:
             for track in subtitle_tracks
         ]
         cmdline = [
-            str(config.get_path('handbrake')),
+            str(config.paths['handbrake']),
             '-i', str(config.source),
             '-t', str(title.number),
             '-o', str(config.target / filename),
             '-f', f'av_{config.output_format}',
             '-O',            # optimize for streaming
             '-m',            # include chapter markers
-            '-X', str(config.width_max),
-            '-Y', str(config.height_max),
+            '-X', str(config.max_resolution[0]),
+            '-Y', str(config.max_resolution[1]),
             '--encoder', 'x264',
             '--encoder-preset', 'medium',
             '--encoder-profile', 'high',
@@ -349,19 +349,19 @@ class Disc:
             tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
             try:
                 cmdline = [
-                    str(config.get_path('atomicparsley')),
+                    str(config.paths['atomicparsley']),
                     str(config.target / filename),
                     '-o', tmpfile,
                     '--stik', 'TV Show',
                     # set tags for TV shows
-                    '--TVShowName',   episodes[0].season.program.name,
-                    '--TVSeasonNum',  str(episodes[0].season.number),
-                    '--TVEpisodeNum', str(episodes[0].number),
+                    '--TVShowName',   config.program,
+                    '--TVSeasonNum',  str(config.season),
+                    '--TVEpisodeNum', str(episodes[0].episode),
                     '--TVEpisode',    multipart.name(episodes),
                     # also set tags for music files as these have wider support
-                    '--artist',       episodes[0].season.program.name,
-                    '--album',        f'Season {episodes[0].season.number}',
-                    '--tracknum',     str(episodes[0].number),
+                    '--artist',       config.program,
+                    '--album',        f'Season {config.season}',
+                    '--tracknum',     str(episodes[0].episode),
                     '--title',        multipart.name(episodes),
                 ]
                 with (config.temp / 'tvrip.log').open('a') as log:
@@ -372,16 +372,6 @@ class Disc:
                 os.rename(tmpfile, config.target / filename)
             finally:
                 os.close(tmphandle)
-        # Update the database with the ripped titles
-        for episode in episodes:
-            episode.disc_id = title.disc.ident
-            episode.disc_title = title.number
-            if start_chapter:
-                episode.start_chapter = start_chapter.number
-                episode.end_chapter = end_chapter.number
-            else:
-                episode.start_chapter = None
-                episode.end_chapter = None
 
 
 class Title():
