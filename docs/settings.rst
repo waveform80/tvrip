@@ -19,6 +19,7 @@ application).
    var_api_url
    var_atomicparsley
    var_audio_all
+   var_audio_encoding
    var_audio_langs
    var_audio_mix
    var_decomb

@@ -570,6 +570,7 @@ def test_do_config(db, with_program, ripcmd, reader, tmp_path):
 │ decomb           │ auto
 │ audio_mix        │ dpl2
 │ audio_all        │ off
+│ audio_encoding   │ av_aac
 │ audio_langs      │ eng
 │ subtitle_format  │ none
 │ subtitle_all     │ off
@@ -594,7 +595,8 @@ def test_do_set(ripcmd):
 def test_complete_set(ripcmd):
     assert completions(ripcmd, 'set foo') == []
     assert completions(ripcmd, 'set dvd') == ['dvdnav']
-    assert set(completions(ripcmd, 'set audio')) == {'audio_mix', 'audio_all', 'audio_langs'}
+    assert set(completions(ripcmd, 'set audio')) == {
+        'audio_mix', 'audio_all', 'audio_langs', 'audio_encoding'}
     assert completions(ripcmd, 'set foo bar') is None
     assert completions(ripcmd, 'set template foo') is None
 
@@ -835,6 +837,22 @@ def test_complete_set_audio_mix(db, with_config, ripcmd):
     assert completions(ripcmd, 'set audio_mix f') == []
     assert completions(ripcmd, 'set audio_mix m') == ['mono']
     assert set(completions(ripcmd, 'set audio_mix s')) == {'stereo', 'surround'}
+
+
+def test_set_audio_encoding(db, with_config, ripcmd):
+    with db.transaction():
+        assert ripcmd.config.audio_encoding == 'av_aac'
+        ripcmd.do_set('audio_encoding mp3')
+        assert ripcmd.config.audio_encoding == 'mp3'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('audio_encoding foo')
+
+
+def test_complete_set_audio_encoding(db, with_config, ripcmd):
+    assert completions(ripcmd, 'set audio_encoding z') == []
+    assert completions(ripcmd, 'set audio_encoding m') == ['mp3']
+    assert set(completions(ripcmd, 'set audio_encoding fl')) == {
+        'flac', 'flac16', 'flac24'}
 
 
 def test_set_subtitle_format(db, with_config, ripcmd):

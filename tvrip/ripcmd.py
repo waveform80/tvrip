@@ -55,6 +55,7 @@ class RipCmd(Cmd):
             'api_url':          self.set_api_url,
             'atomicparsley':    self.set_executable,
             'audio_all':        self.set_bool,
+            'audio_encoding':   self.set_audio_encoding,
             'audio_langs':      self.set_langs,
             'audio_mix':        self.set_audio_mix,
             'decomb':           self.set_decomb,
@@ -467,6 +468,7 @@ class RipCmd(Cmd):
         table.add_row('decomb', self.config.decomb)
         table.add_row('audio_mix', self.config.audio_mix)
         table.add_row('audio_all', bool_str[self.config.audio_all])
+        table.add_row('audio_encoding', self.config.audio_encoding)
         table.add_row('audio_langs', ' '.join(self.config.audio_langs))
         table.add_row('subtitle_format', self.config.subtitle_format)
         table.add_row('subtitle_all', bool_str[self.config.subtitle_all])
@@ -781,6 +783,45 @@ class RipCmd(Cmd):
             {'mono', 'stereo', 'dpl1', 'dpl2', 'surround', 'prologic'})
 
     set_audio_mix.complete = set_complete_audio_mix
+
+    def set_audio_encoding(self, var, value):
+        """
+        This configuration option specifies the audio encoder. Validd values
+        are "av_aac", "fdk_aac", "fdk_haac", "mp3", "vorbis", "opus", "flac16",
+        "flac24", "ac3", and "eac3"
+        """
+        assert var == 'audio_encoding'
+        try:
+            value = {
+                'av-aac':   'av_aac',
+                'av_aac':   'av_aac',
+                'fdk-aac':  'fdk_aac',
+                'fdk_aac':  'fdk_aac',
+                'fdk-haac': 'fdk_haac',
+                'fdk_haac': 'fdk_haac',
+                'mp3':      'mp3',
+                'lame':     'mp3',
+                'vorbis':   'vorbis',
+                'opus':     'opus',
+                'flac':     'flac16',
+                'flac16':   'flac16',
+                'flac24':   'flac24',
+                'ac3':      'ac3',
+                'eac3':     'eac3',
+            }[value]
+        except KeyError:
+            raise CmdSyntaxError(f'Invalid audio encoding {value}')
+        else:
+            return var, value
+
+    def set_complete_audio_encoding(self, text, line, start, finish):
+        return self.set_complete_one(
+            line, start, {
+                'av-aac', 'av_aac', 'fdk-aac', 'fdk_aac', 'fdk-haac',
+                'fdk_haac', 'mp3', 'lame', 'vorbis', 'opus', 'flac', 'flac16',
+                'flac24', 'ac3', 'eac3'})
+
+    set_audio_encoding.complete = set_complete_audio_encoding
 
     def set_subtitle_format(self, var, value):
         """
