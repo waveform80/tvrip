@@ -1,12 +1,12 @@
 # vim: set noet sw=4 ts=4 fileencoding=utf-8:
 
 # External utilities
-PYTHON=python3
-PIP=pip3
-PYTEST=pytest
-TWINE=twine
-PYFLAGS=
-DEST_DIR=/
+PYTHON ?= python3
+PIP ?= pip3
+PYTEST ?= pytest
+TWINE ?= twine
+PYFLAGS ?=
+DEST_DIR ?= /
 
 # Calculate the base names of the distribution, the location of all source,
 # documentation, packaging, icon, and executable script files
@@ -28,8 +28,8 @@ SUBDIRS:=
 
 # Calculate the name of all outputs
 DIST_WHEEL=dist/$(WHEEL_NAME)-$(VER)-py3-none-any.whl
-DIST_TAR=dist/$(NAME)-$(VER).tar.gz
-DIST_ZIP=dist/$(NAME)-$(VER).zip
+DIST_TAR=dist/$(WHEEL_NAME)-$(VER).tar.gz
+DIST_ZIP=dist/$(WHEEL_NAME)-$(VER).zip
 MAN_PAGES=man/tvrip.1
 
 # Default target
@@ -38,6 +38,7 @@ all:
 	@echo "make develop - Install symlinks for development"
 	@echo "make test - Run tests"
 	@echo "make doc - Generate HTML and PDF documentation"
+	@echo "make preview - Preview HTML documentation with local server"
 	@echo "make source - Create source package"
 	@echo "make wheel - Generate a PyPI wheel package"
 	@echo "make zip - Generate a source zip package"
@@ -70,7 +71,7 @@ tar: $(DIST_TAR)
 
 dist: $(DIST_WHEEL) $(DIST_TAR) $(DIST_ZIP)
 
-develop: tags
+develop:
 	@# These have to be done separately to avoid a cockup...
 	$(PIP) install -U setuptools
 	$(PIP) install -U pip
@@ -82,15 +83,15 @@ test:
 	$(PYTEST)
 
 clean:
-	rm -fr dist/ build/ man/ .pytest_cache/ .mypy_cache/ $(WHEEL_NAME).egg-info/ tags .coverage
-	for dir in $(SUBDIRS); do \
+	rm -fr build/ dist/ man/ .pytest_cache/ .mypy_cache/ $(WHEEL_NAME).egg-info/ tags .coverage*
+	for dir in docs $(SUBDIRS); do \
 		$(MAKE) -C $$dir clean; \
 	done
 	find $(CURDIR) -name "*.pyc" -delete
 	find $(CURDIR) -name "__pycache__" -delete
 
 tags: $(PY_SOURCES)
-	ctags -R --exclude="build/*" --exclude="docs/*" --languages="Python"
+	ctags -R --languages="Python" $(PY_SOURCES)
 
 lint: $(PY_SOURCES)
 	pylint $(WHEEL_NAME)
