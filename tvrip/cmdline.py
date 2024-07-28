@@ -234,7 +234,8 @@ class Cmd(cmd.Cmd):
             if not hasattr(self, f'do_{arg}'):
                 raise CmdError(f'Unknown command {arg}')
             with resources.files('tvrip') as root:
-                source = RestructuredText.from_path(root / f'cmd_{arg}.rst')
+                source = RestructuredText.from_path(
+                    root / 'docs' / f'cmd_{arg}.rst')
                 self.console.print(source)
         else:
             table = Table(box=box.ROUNDED)

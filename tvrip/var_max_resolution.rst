@@ -1,1 +1,0 @@
-../docs/var_max_resolution.rst

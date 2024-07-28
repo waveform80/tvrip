@@ -1,0 +1,1 @@
+../../docs/var_video_style.rst

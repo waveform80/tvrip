@@ -1,0 +1,1 @@
+../../docs/cmd_seasons.rst

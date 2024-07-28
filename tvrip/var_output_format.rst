@@ -1,1 +1,0 @@
-../docs/var_output_format.rst

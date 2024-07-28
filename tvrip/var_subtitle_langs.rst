@@ -1,1 +1,0 @@
-../docs/var_subtitle_langs.rst

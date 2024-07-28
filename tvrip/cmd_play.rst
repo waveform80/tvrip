@@ -1,1 +1,0 @@
-../docs/cmd_play.rst

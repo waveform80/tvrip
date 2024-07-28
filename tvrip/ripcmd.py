@@ -536,7 +536,8 @@ class RipCmd(Cmd):
             if arg not in self.config_handlers:
                 raise
             with resources.files('tvrip') as root:
-                source = RestructuredText.from_path(root / f'var_{arg}.rst')
+                source = RestructuredText.from_path(
+                    root / 'docs' / f'var_{arg}.rst')
                 self.console.print(source)
 
     def set_complete_one(self, line, start, valid):

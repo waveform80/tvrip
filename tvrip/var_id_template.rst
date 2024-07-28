@@ -1,1 +1,0 @@
-../docs/var_id_template.rst
