@@ -24,7 +24,7 @@ from .ripper import Disc, Title
 from .episodemap import EpisodeMap, MapError
 from .cmdline import Cmd, CmdError, CmdSyntaxError
 from .const import DATADIR
-from .tvdb import TVDB
+from .tvdb import TVDBv3
 from . import multipart
 
 
@@ -81,7 +81,7 @@ class RipCmd(Cmd):
 
     def set_api(self):
         if self.config.api_url and self.config.api_key:
-            self.api = TVDB(self.config.api_key, self.config.api_url)
+            self.api = TVDBv3(self.config.api_url, self.config.api_key)
         else:
             self.api = None
 

@@ -367,7 +367,7 @@ JSON Title Set: {json.dumps(data)}
         yield proc
 
 
-class MockTVDBHandler(BaseHTTPRequestHandler):
+class MockTVDBv3Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         query = parse_qs(url.query)
@@ -451,11 +451,11 @@ class MockTVDBHandler(BaseHTTPRequestHandler):
         })
 
 
-class MockTVDBServer(ThreadingMixIn, HTTPServer):
+class MockTVDBv3Server(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
 
     def __init__(self, key='s3cret'):
-        super().__init__(('127.0.0.1', 0), MockTVDBHandler)
+        super().__init__(('127.0.0.1', 0), MockTVDBv3Handler)
         hostname, port, *other = self.server_address
         self.url = f'http://{hostname}:{port}/'
         self.key = key
@@ -517,8 +517,8 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
 
 
 @pytest.fixture()
-def tvdb(request):
-    server = MockTVDBServer()
+def tvdbv3(request):
+    server = MockTVDBv3Server()
     server_thread = Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()

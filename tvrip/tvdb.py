@@ -14,10 +14,10 @@ within specific programs (which is pretty much all tvrip requires).
 .. _The TVDB: https://thetvdb.com/
 """
 
-from datetime import datetime
-from urllib.parse import urlsplit
-from collections import namedtuple
 from itertools import count
+from datetime import datetime
+from collections import namedtuple
+from urllib.parse import urlsplit, urlencode
 
 import requests
 
@@ -32,9 +32,10 @@ class SearchResult(namedtuple('SearchResult', (
     "Represents an individual search result returned from :meth:`TVDB.search`."
 
 
-class TVDB:
+class TVDBv3:
     """
-    Provides a trivial interface to `The TVDB`_ service.
+    Provides a trivial interface to `The TVDB`_ service, specifically the
+    legacy API.
 
     Instances are constructed with a mandatory API *key* and an optional API
     *url*. The :meth:`search` method can be used to find programs matching a
@@ -43,10 +44,11 @@ class TVDB:
 
     .. _The TVDB: https://thetvdb.com/
     """
+    api_url = 'https://api.thetvdb.com/'
 
-    def __init__(self, key, url='https://api.thetvdb.com/'):
-        self.key = key
+    def __init__(self, url, key):
         self.url = urlsplit(url)
+        self.key = key
         self._token = None
 
     @property
@@ -58,12 +60,16 @@ class TVDB:
                 'Accept':       'application/vnd.thetvdb.v3',
             }
             resp = requests.post(
-                self.url._replace(path='/login').geturl(),
+                self._resolve_path('/login'),
                 headers=headers,
                 json={'apikey': self.key})
             resp.raise_for_status()
             self._token = resp.json()['token']
         return self._token
+
+    def _resolve_path(self, path):
+        new_path = self.url.path.rstrip('/') + '/' + path.lstrip('/')
+        return self.url._replace(path=new_path).geturl()
 
     def _get(self, path, params):
         headers = {
@@ -72,7 +78,7 @@ class TVDB:
             'Authorization': f'Bearer {self.token}',
         }
         resp = requests.get(
-            self.url._replace(path=path).geturl(),
+            self._resolve_path(path),
             headers=headers,
             params=params)
         resp.raise_for_status()
@@ -103,7 +109,8 @@ class TVDB:
         Given a *program_id*, returns an iterable of integers representing the
         available seasons of the program that currently exist. Note that these
         do **not** have to start at 1. For example, several historical
-        collections number their "seasons" by year of release.
+        collections number their "seasons" by year of release, and "specials"
+        typically appear under season 0.
         """
         return [
             int(season)
@@ -130,3 +137,121 @@ class TVDB:
                         yield (entry['airedEpisodeNumber'], entry['episodeName'])
             if page >= resp['links']['last']:
                 break
+
+
+class TVDBv4:
+    """
+    Provides a trivial interface to `The TVDB`_ service, specifically the newer
+    v4 API.
+
+    Instances are constructed with a mandatory API *key* and an optional API
+    *url*. The :meth:`search` method can be used to find programs matching a
+    particular sub-string. After establishing a program ID, the :meth:`seasons`
+    and :meth:`episodes` methods can be used to retrieve program contents.
+
+    .. _The TVDB: https://thetvdb.com/
+    """
+    api_url = 'https://api4.thetvdb.com/v4'
+
+    def __init__(self, url, key):
+        self.url = urlsplit(url)
+        self.key = key
+        self._token = None
+
+    @property
+    def token(self):
+        "Returns the current session authorization token."
+        if self._token is None:
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept':       'application/vnd.thetvdb.v4',
+            }
+            resp = requests.post(
+                self.url._replace(path=self._resolve_path('/login')).geturl(),
+                headers=headers,
+                json={'apikey': self.key})
+            resp.raise_for_status()
+            self._token = resp.json()['data']['token']
+        return self._token
+
+    def _resolve_path(self, path):
+        return self.url.path.rstrip('/') + '/' + path.lstrip('/')
+
+    def _get(self, path, params):
+        return self._get_url(self._get_url._replace(
+            path=self._resolve_path(path),
+            query=urlencode(params, doseq=True)).geturl())
+
+    def _get_url(self, url):
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept':       'application/vnd.thetvdb.v4',
+            'Authorization': f'Bearer {self.token}',
+        }
+        resp = requests.get(url, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+    def search(self, program):
+        """
+        Given a *program* name to search for, returns an iterable of
+        :class:`SearchResult` entities representing all matching programs.
+        """
+        return [
+            SearchResult(
+                int(entry['tvdb_id']),
+                entry.get('translations', {}).get('eng', entry['name']),
+                datetime.strptime(entry['first_air_time'], '%Y-%m-%d')
+                    if entry.get('first_air_time') else None,
+                entry['status'],
+                entry.get('overviews', {}).get('eng', entry.get('overview', '')),
+            )
+            for entry in self._get(
+                '/search/series', {
+                    'query': program,
+                    'type': 'series',
+                    'limit': 20,
+                })['data']
+            # Series without an overview are usually extremely niche;
+            # exclude them
+            if entry.get('overview')
+            or entry.get('overviews', {}).get('eng', '')
+        ]
+
+    def seasons(self, program_id):
+        """
+        Given a *program_id*, returns an iterable of integers representing the
+        available seasons of the program that currently exist. Note that these
+        do **not** have to start at 1. For example, several historical
+        collections number their "seasons" by year of release, and "specials"
+        typically appear under season 0.
+        """
+        return [
+            season['number']
+            for season in self._get(
+                f'/series/{program_id}/extended',
+                {'meta': 'episodes', 'short': 'true'})['data']['seasons']
+            if season.get('type', {}).get('type', 'official') == 'official'
+        ]
+
+    def episodes(self, program_id, season):
+        """
+        Given a *program_id* and a *season* (presumably a value returned by
+        :meth:`seasons` with the equivalent *program_id*), returns an iterable
+        of (episode-number, episode-name) tuples.
+        """
+        resp = self._get(
+            f'/series/{program_id}/episodes/official',
+            {'season': season, 'page': 0})
+        while True:
+            for entry in resp['data']:
+                # Exclude entries with episode number 0 (these tend to be
+                # broken), same for things with a NULL episode name
+                if entry['number'] > 0:
+                    if entry.get('name') is not None:
+                        yield (entry['number'], entry['name'])
+            next_url = resp['links'].get('next')
+            if next_url is None:
+                break
+            else:
+                resp = self._get_url(next_url)

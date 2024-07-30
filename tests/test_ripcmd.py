@@ -1127,10 +1127,10 @@ def test_do_season(db, with_program, ripcmd, writer):
         assert len(db.get_episodes()) == 0
 
 
-def test_do_season_from_tvdb(db, with_program, ripcmd, tvdb, writer):
+def test_do_season_from_tvdb(db, with_program, ripcmd, tvdbv3, writer):
     with db.transaction():
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdb.url))
+            api_key='s3cret', api_url=tvdbv3.url))
         ripcmd.set_api()
 
         # Test selecting new season from TVDB results
@@ -1206,11 +1206,11 @@ def test_do_program_existing(db, with_program, ripcmd):
         assert ripcmd.config.program == 'Foo & Bar'
 
 
-def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
+def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test selection of new program that exists in TVDB
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdb.url))
+            api_key='s3cret', api_url=tvdbv3.url))
         ripcmd.set_api()
         writer.write('1\n')
         ripcmd.do_program('Up North')
@@ -1219,11 +1219,11 @@ def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
         assert len(list(db.get_seasons())) == 2
 
 
-def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdb):
+def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test ignoring TVDB results and performing manual entry (with abort)
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdb.url))
+            api_key='s3cret', api_url=tvdbv3.url))
         ripcmd.set_api()
         writer.write('0\n')
         writer.write('0\n')
@@ -1233,11 +1233,11 @@ def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdb):
         assert len(list(db.get_seasons())) == 0
 
 
-def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writer, tvdb):
+def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test selecting something not found in TVDB
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdb.url))
+            api_key='s3cret', api_url=tvdbv3.url))
         ripcmd.set_api()
         writer.write('0\n')
         ripcmd.do_program('Something New')
