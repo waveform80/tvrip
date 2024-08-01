@@ -11,6 +11,7 @@ import subprocess
 import datetime as dt
 from pathlib import Path
 from unittest import mock
+from binascii import crc32
 from threading import Thread
 from itertools import groupby
 from ctypes import create_string_buffer
@@ -367,7 +368,11 @@ JSON Title Set: {json.dumps(data)}
         yield proc
 
 
-class MockTVDBv3Handler(BaseHTTPRequestHandler):
+class MockTVDBHandler(BaseHTTPRequestHandler):
+    pass
+
+
+class MockTVDBv3Handler(MockTVDBHandler):
     def do_GET(self):
         url = urlparse(self.path)
         query = parse_qs(url.query)
@@ -451,11 +456,274 @@ class MockTVDBv3Handler(BaseHTTPRequestHandler):
         })
 
 
-class MockTVDBv3Server(ThreadingMixIn, HTTPServer):
+class MockTVDBv4Handler(MockTVDBHandler):
+    seasons_re = re.compile(
+        r'/v4/series/(?P<program>.+)/extended$')
+    episodes_re = re.compile(
+        r'/v4/series/(?P<program>.+)/episodes/(?P<season_type>.+)$')
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        if url.path == '/v4/search':
+            self.handle_search(
+                query['query'][0],
+                query['type'][0],
+                limit=int(query.get('limit', [20])[0]))
+            return
+        elif matched := self.seasons_re.match(unquote(url.path)):
+            try:
+                self.handle_seasons(
+                    matched.group('program'),
+                    meta=query['meta'][0],
+                    short=query['short'][0] == 'true')
+            except KeyError:
+                pass
+            else:
+                return
+        elif matched := self.episodes_re.match(unquote(url.path)):
+            try:
+                self.handle_episodes(
+                    matched.group('program'),
+                    season=query['season'][0],
+                    season_type=matched.group('season_type'),
+                    page=int(query['page'][0]))
+            except KeyError:
+                pass
+            else:
+                return
+        self.send_error(404, 'Not found')
+
+    def do_POST(self):
+        if self.path == '/v4/login':
+            assert self.headers['Accept'] == 'application/vnd.thetvdb.v4'
+            assert self.headers['Content-Type'] == 'application/json'
+            body_len = int(self.headers.get('Content-Length', 0))
+            assert body_len > 0
+            body = json.loads(self.rfile.read(body_len))
+            if body['apikey'] == self.server.key:
+                self.send_json({'token': 'foo'})
+            else:
+                self.send_error(401, 'Not authorized')
+            return
+        self.send_error(404, 'Not found')
+
+    def send_json(self, data):
+        buf = json.dumps(data).encode('utf-8')
+        self.send_response(200, 'OK')
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', len(buf))
+        self.end_headers()
+        self.wfile.write(buf)
+
+    def handle_search(self, program, program_type='series', limit=20):
+        results = {
+            key: data for key, data in self.server.programs.items()
+            if program in key and program_types == 'series'
+        }
+        self.send_json(
+            {
+                'status': 'success',
+                'data': [
+                    {
+                        'objectID': f'series-{id}',
+                        'aliases': [],
+                        'country': 'usa',
+                        'id': f'series-{id}',
+                        'name': key,
+                        'first_air_time': dt.datetime(
+                            2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
+                        'overview': data['description'],
+                        'primary_language': 'eng',
+                        'primary_type': program_type,
+                        'status': 'Ended',
+                        'type': program_type,
+                        'tvdb_id': str(id),
+                        'year': '2020',
+                        'network': 'BBC USA',
+                        'remote_ids': [],
+                    }
+                    for key, data in results.items()
+                    for id in (crc32(key.encode('utf-8')),)
+                ][:limit],
+                'links': {
+                    'prev': None,
+                    'self': (
+                        f'{self.server.url}/v4/search?query={program}&'
+                        f'types={program_type}&page=0'),
+                    'next': (
+                        f'{self.server.url}/v4/search?query={program}&'
+                        f'types={program_type}&page=1'),
+                    'total_items': len(results),
+                    'page_size': limit,
+                }
+            }
+        )
+
+    def handle_seasons(self, program, meta='episodes', short=True):
+        self.send_json(
+            {
+                'status': 'success',
+                'data': {
+                    'id': crc32(key.encode('utf-8')),
+                    'name': key,
+                    'firstAired': dt.datetime(2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
+                    'lastAired': '',
+                    'nextAired': '',
+                    'score': 100,
+                    'status': {
+                        'id': 2,
+                        'name': 'Ended',
+                        'recordType': 'series',
+                        'keepUpdated': False,
+                    },
+                    'originalCountry': 'usa',
+                    'originalLanguage': 'eng',
+                    'defaultSeasonType': 1,
+                    'isOrderRandomized': False,
+                    'averageRuntime': 35,
+                    'overview': data['description'],
+                    'year': '2020',
+                    'artworks': None,
+                    'companies': [],
+                    'originalNetwork': {},
+                    'latestNetwork': {},
+                    'genres': [],
+                    'trailers': [],
+                    'lists': [],
+                    'characters': None,
+                    'airsDays': {
+                        'monday':    True,
+                        'tuesday':   False,
+                        'wednesday': False,
+                        'thursday':  False,
+                        'friday':    False,
+                        'saturday':  False,
+                        'sunday':    False,
+                    },
+                    'airsTime': '13:37',
+                    'episodes': [
+                        {
+                            'id': crc32(f'{key}-S{season:02d}E{episode:02d}'.encode('utf-8')),
+                            'seriesId': crc32(key.encode('utf-8')),
+                            'name': key,
+                            'aired': (
+                                dt.datetime(2020, 1, 1, 13, 37) +
+                                dt.timedelta(weeks=episode - 1)
+                            ).strftime('%Y-%m-%d'),
+                            'runtime': 35,
+                            'overview': '',
+                            'isMovie': 0,
+                            'seasons': None,
+                            'number': episode,
+                            'absoluteNumber': 0,
+                            'seasonNumber': season,
+                            'year': '2020',
+                        }
+                        for season, episodes in data['seasons'].items()
+                        for episode, title in episodes.items()
+                    ],
+                    'seasons': [
+                        {
+                            'id': crc32(f'{key}-S{season:02d}'.encode('utf-8')),
+                            'seriesId': crc32(key.encode('utf-8')),
+                            'type': {
+                                'id': 1,
+                                'name': 'Aired Order',
+                                'type': 'official',
+                                'alternateName': None,
+                            },
+                            'number': season,
+                        }
+                        for season, episodes in data['seasons'].items()
+                    ],
+                    'tags': [],
+                    'contentRatings': [],
+                    'seasonTypes': [
+                        {
+                            'id': 1,
+                            'name': 'Aired Order',
+                            'type': 'official',
+                            'alternateName': None,
+                        }
+                    ],
+                }
+            }
+            for key, data in self.server.programs.items()
+            if crc32(key.encode('utf-8')) == program
+        )
+
+    def handle_episodes(self, program, season, season_type, page=0):
+        self.send_json(
+            {
+                'status': 'success',
+                'data': {
+                    'series': {
+                        'id': crc32(key.encode('utf-8')),
+                        'name': key,
+                        'firstAired': dt.datetime(
+                            2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
+                        'lastAired': '',
+                        'nextAired': '',
+                        'score': 100,
+                        'status': {
+                            'id': 2,
+                            'name': 'Ended',
+                            'recordType': 'series',
+                            'keepUpdated': False,
+                        },
+                        'originalCountry': 'usa',
+                        'originalLanguage': 'eng',
+                        'defaultSeasonType': 1,
+                        'isOrderRandomized': false,
+                        'averageRuntime': 35,
+                        'overview': data['description'],
+                        'episodes': None,
+                        'year': '2020',
+                    },
+                    'episodes': [
+                        {
+                            'id': crc32(f'{key}-S{int(season):02d}E{episode:02d}'.encode('utf-8')),
+                            'seriesId': crc32(key.encode('utf-8')),
+                            'name': key,
+                            'aired': (
+                                dt.datetime(2020, 1, 1, 13, 37) +
+                                dt.timedelta(weeks=episode - 1)
+                            ).strftime('%Y-%m-%d'),
+                            'runtime': 35,
+                            'overview': '',
+                            'isMovie': 0,
+                            'seasons': None,
+                            'number': episode,
+                            'absoluteNumber': 0,
+                            'seasonNumber': int(season),
+                            'year': '2020',
+                        }
+                        for episode, title
+                        in self.server.programs[program]['seasons'][int(season)].items()
+                    ],
+                },
+                'links': {
+                    'prev': None,
+                    'self': (
+                        f'/v4/series/{program}/episodes/{season_type}'
+                        f'?season={season}&page={page}'
+                    ),
+                    'next': None,
+                    'total_items': len(
+                        self.server.programs[program]['seasons'][str(season)]),
+                    'page_size': limit,
+                }
+            }
+        )
+
+
+class MockTVDBServer(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, key='s3cret'):
-        super().__init__(('127.0.0.1', 0), MockTVDBv3Handler)
+    def __init__(self, handler, key='s3cret'):
+        assert issubclass(handler, MockTVDBHandler)
+        super().__init__(('127.0.0.1', 0), handler)
         hostname, port, *other = self.server_address
         self.url = f'http://{hostname}:{port}/'
         self.key = key
@@ -516,9 +784,8 @@ class MockTVDBv3Server(ThreadingMixIn, HTTPServer):
         }
 
 
-@pytest.fixture()
-def tvdbv3(request):
-    server = MockTVDBv3Server()
+def tvdb_fixture(handler):
+    server = MockTVDBServer(handler)
     server_thread = Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
@@ -527,3 +794,23 @@ def tvdbv3(request):
     finally:
         server.shutdown()
         server.server_close()
+
+
+@pytest.fixture()
+def tvdbv3(request):
+    yield from tvdb_fixture(MockTVDBv3Handler)
+
+
+@pytest.fixture()
+def tvdbv4(request):
+    yield from tvdb_fixture(MockTVDBv4Handler)
+
+
+@pytest.fixture(params=[
+    ('tvdbv3', MockTVDBv3Handler),
+    ('tvdbv4', MockTVDBv4Handler),
+])
+def tvdb(request):
+    name, handler = request.param
+    for server in tvdb_fixture(handler):
+        yield name, server

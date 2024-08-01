@@ -190,7 +190,11 @@ class TVDBv4:
         }
         resp = requests.get(url, headers=headers)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if data['status'] != 'success':
+            raise RuntimeError(
+                f'TVDBv4 API call failed with status {data["status"]}')
+        return data
 
     def search(self, program):
         """
