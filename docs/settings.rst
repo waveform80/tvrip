@@ -15,8 +15,8 @@ application).
 .. toctree::
    :maxdepth: 1
 
+   var_api
    var_api_key
-   var_api_url
    var_atomicparsley
    var_audio_all
    var_audio_encoding
