@@ -154,12 +154,15 @@ class TVDBv4:
     .. _The TVDB: https://thetvdb.com/
     """
     api_url = 'https://api4.thetvdb.com/v4'
+    api_key = '6c479d57-cdde-4bec-8e7e-2d547908d52d'
 
     def __init__(self, key, url=None):
         if url is None:
             url = self.api_url
         self.url = urlsplit(url)
-        self.key = key
+        # We ignore the initializer's key here as we only want to use the
+        # application-specified key
+        self.key = self.api_key
         self._token = None
 
     @property
@@ -182,7 +185,7 @@ class TVDBv4:
         return self.url.path.rstrip('/') + '/' + path.lstrip('/')
 
     def _get(self, path, params):
-        return self._get_url(self._get_url._replace(
+        return self._get_url(self.url._replace(
             path=self._resolve_path(path),
             query=urlencode(params, doseq=True)).geturl())
 
@@ -215,7 +218,7 @@ class TVDBv4:
                 entry.get('overviews', {}).get('eng', entry.get('overview', '')),
             )
             for entry in self._get(
-                '/search/series', {
+                '/search', {
                     'query': program,
                     'type': 'series',
                     'limit': 20,
@@ -252,7 +255,7 @@ class TVDBv4:
             f'/series/{program_id}/episodes/official',
             {'season': season, 'page': 0})
         while True:
-            for entry in resp['data']:
+            for entry in resp['data']['episodes']:
                 # Exclude entries with episode number 0 (these tend to be
                 # broken), same for things with a NULL episode name
                 if entry['number'] > 0:
