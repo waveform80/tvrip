@@ -66,36 +66,4 @@ CREATE TABLE NEW.config (
             ON DELETE SET NULL ON UPDATE CASCADE
 );
 
-INSERT INTO NEW.config(config) VALUES (
-    json('
-{
-    "source": "/dev/dvd",
-    "target": "~/Videos",
-    "temp": "/tmp",
-    "template": "{program} - {id} - {name}.{ext}",
-    "id_template": "{season}x{episode:02d}",
-    "duration": [40, 50],
-    "audio_all": false,
-    "audio_encoding": "av_aac",
-    "audio_mix": "dpl2",
-    "audio_langs": ["eng"],
-    "subtitle_all": false,
-    "subtitle_default": false,
-    "subtitle_format": "none",
-    "subtitle_langs": ["eng"],
-    "decomb": "auto",
-    "dvdnav": true,
-    "video_style": "tv",
-    "duplicates": "all",
-    "output_format": "mp4",
-    "api_key": "",
-    "api_url": "https://api.thetvdb.com/",
-    "max_resolution": [1920, 1080],
-    "paths": {
-        "vlc": "/usr/bin/vlc",
-        "handbrake": "/usr/bin/HandBrakeCLI",
-        "atomicparsley": "/usr/bin/AtomicParsley",
-        "mkvpropedit": "/usr/bin/mkvpropedit"
-    }
-}
-'));
+INSERT INTO NEW.config(config) VALUES (json('{}'));

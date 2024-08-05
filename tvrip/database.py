@@ -29,41 +29,61 @@ from .ripper import Disc, Title, Chapter
 class Config(t.NamedTuple):
     program: t.Optional[str]
     season: t.Optional[int]
-    api_key: str
-    api_url: str
-    audio_all: bool
-    audio_encoding: str
-    audio_langs: list[str]
-    audio_mix: str
-    decomb: str
-    duplicates: str
-    duration: tuple[timedelta, timedelta]
-    dvdnav: bool
-    id_template: str
-    max_resolution: tuple[int, int]
-    output_format: str
-    paths: dict[str, Path]
-    source: Path
-    subtitle_all: bool
-    subtitle_default: bool
-    subtitle_format: str
-    subtitle_langs: list[str]
-    target: Path
-    template: str
-    temp: Path
-    video_style: str
+    paths: dict[str, Path] = {
+        'vlc':           Path('/usr/bin/vlc'),
+        'handbrake':     Path('/usr/bin/HandBrakeCLI'),
+        'atomicparsley': Path('/usr/bin/AtomicParsley'),
+        'mkvpropedit':   Path('/usr/bin/mkvpropedit'),
+    }
+    api: str = ''
+    api_key: str = ''
+    audio_all: bool = False
+    audio_encoding: str = 'av_aac'
+    audio_langs: list[str] = ['eng']
+    audio_mix: str = 'dpl2'
+    decomb: str = 'auto'
+    duplicates: str = 'all'
+    duration: tuple[timedelta, timedelta] = (
+        timedelta(minutes=40), timedelta(minutes=50))
+    dvdnav: bool = True
+    id_template: str = '{season}x{espiode:02d}'
+    max_resolution: tuple[int, int] = (1920, 1080)
+    output_format: str = 'mp4'
+    source: Path = Path('/dev/dvd')
+    subtitle_all: bool = False
+    subtitle_default: bool = False
+    subtitle_format: str = 'none'
+    subtitle_langs: list[str] = ['eng']
+    target: Path = Path('~/Videos')
+    template: str = '{program} - {id} - {name}.{ext}'
+    temp: Path = '/tmp'
+    video_style: str = 'tv'
 
     @classmethod
     def from_row(cls, row):
         conf = json.loads(row.config)
-        conf['duration'] = tuple(
-            timedelta(minutes=i) for i in conf['duration'])
-        conf['max_resolution'] = tuple(conf['max_resolution'])
-        conf['paths'] = {
-            key: Path(path) for key, path in conf['paths'].items()}
-        conf['source'] = Path(conf['source'])
-        conf['target'] = Path(conf['target'])
-        conf['temp'] = Path(conf['temp'])
+        if isinstance(conf, dict):
+            if 'duration' in conf:
+                conf['duration'] = tuple(
+                    timedelta(minutes=i) for i in conf['duration'])
+            if 'max_resolution' in conf:
+                conf['max_resolution'] = tuple(conf['max_resolution'])
+            if 'paths' in conf:
+                conf['paths'] = {
+                    key: Path(path) for key, path in conf['paths'].items()}
+            if 'source' in conf:
+                conf['source'] = Path(conf['source'])
+            if 'target' in conf:
+                conf['target'] = Path(conf['target'])
+            if 'temp' in conf:
+                conf['temp'] = Path(conf['temp'])
+            conf = {
+                key: value
+                for key, value in conf.items()
+                if key in cls._fields
+            }
+        else:
+            conf = {}
         return cls(
             program=row.program,
             season=row.season,
