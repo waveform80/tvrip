@@ -224,10 +224,11 @@ def test_parse_episode(db, with_program, ripcmd):
             ripcmd.parse_episode('-1')
         with pytest.raises(CmdError):
             ripcmd.parse_episode('7')
-        with_program = db.set_config(with_program._replace(season=None))
+        ripcmd.config = db.set_config(with_program._replace(season=None))
         with pytest.raises(CmdError):
             ripcmd.parse_episode('4')
-        with_program = db.set_config(with_program._replace(program=None))
+        ripcmd.config = db.set_config(with_program._replace(
+            program=None, season=None))
         with pytest.raises(CmdError):
             ripcmd.parse_episode('4')
 
@@ -515,6 +516,9 @@ def test_print_episodes(db, with_program, ripcmd, reader):
     with db.transaction():
         # Printing episodes with no season selected is an error
         ripcmd.config = db.set_config(with_program._replace(season=None))
+        with pytest.raises(CmdError):
+            ripcmd.print_episodes()
+        ripcmd.config = db.set_config(with_program._replace(program=None))
         with pytest.raises(CmdError):
             ripcmd.print_episodes()
 
@@ -816,6 +820,10 @@ def test_set_langs(db, with_config, ripcmd):
         assert set(ripcmd.config.audio_langs) == {'eng', 'fra', 'jpn'}
         ripcmd.do_set('audio_langs eng jpn')
         assert set(ripcmd.config.audio_langs) == {'eng', 'jpn'}
+        with pytest.raises(CmdError):
+            ripcmd.do_set('audio_langs English')
+        with pytest.raises(CmdError):
+            ripcmd.do_set('audio_langs 123')
 
 
 def test_complete_set_langs(db, with_config, ripcmd):
@@ -875,6 +883,8 @@ def test_set_decomb(db, with_config, ripcmd):
         assert ripcmd.config.decomb == 'auto'
         ripcmd.do_set('decomb off')
         assert ripcmd.config.decomb == 'off'
+        ripcmd.do_set('decomb auto')
+        assert ripcmd.config.decomb == 'auto'
         with pytest.raises(CmdError):
             ripcmd.do_set('decomb foo')
 
@@ -946,6 +956,8 @@ def test_set_api_key(db, with_config, ripcmd):
         assert ripcmd.config.api_key == ''
         ripcmd.do_set('api_key 12345678deadd00d12345678beefface')
         assert ripcmd.config.api_key == '12345678deadd00d12345678beefface'
+        ripcmd.do_set('api_key -')
+        assert ripcmd.config.api_key == ''
         with pytest.raises(CmdError):
             ripcmd.do_set('api_key foo')
         with pytest.raises(CmdError):
@@ -957,6 +969,8 @@ def test_set_api(db, with_config, ripcmd):
         assert ripcmd.config.api == ''
         ripcmd.do_set('api TVDBv3')
         assert ripcmd.config.api == 'tvdb3'
+        with pytest.raises(CmdError):
+            ripcmd.do_set('api MyAPI')
 
 
 def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, reader):
