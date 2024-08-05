@@ -10,14 +10,17 @@ api_key
 
 ::
 
-    set api_key 1234567890abcdefbeeffacedcafe000
+    set api_key 1234567890abcdefbeeffacedcafe000|-
 
-Sets your API key for the `TVDB`_. By default this is blank meaning that all
-entry of program, season, and episode information is manual. If this is set to
-a valid value, starting a new program or season (with :doc:`cmd_program` or
-:doc:`cmd_season`) will query the TVDB for information, and automatically fill
-out the necessary entries.
+Sets the API key for use with the service specified by :doc:`var_api`. This is
+used by tvrip to look up episode information for new programs and seasons. By
+default this is blank (represented by a single dash "-") meaning the default
+key for the service (if any) is used. If no default key is available, all entry
+or program, season, and episode information is manual.
 
-See also :doc:`var_api_key`, :doc:`cmd_program`, :doc:`cmd_season`
+If a default key is available, or this is set to a valid value, starting a new
+program or season (with :doc:`cmd_program` or :doc:`cmd_season`) will query the
+specified service for information, and automatically fill out the necessary
+entries.
 
-.. _TVDB: https://thetvdb.com/
+See also :doc:`var_api`, :doc:`cmd_program`, :doc:`cmd_season`

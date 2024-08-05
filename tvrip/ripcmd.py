@@ -971,6 +971,8 @@ class RipCmd(Cmd):
     def set_api_key(self, var, value):
         "Sets the API key for use with TVDB"
         assert var == 'api_key'
+        if value == '-':
+            value = ''
         if set(value) - set('0123456789abcdef'):
             raise CmdSyntaxError('API key contains non-hex digits')
         if len(value) not in (0, 32):
