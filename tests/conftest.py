@@ -43,7 +43,7 @@ def with_config(request, db, with_schema, tmp_path):
         program=None,
         season=None,
         api_key='',
-        api_url='https://api.thetvdb.com/',
+        api='',
         audio_all=False,
         audio_encoding='av_aac',
         audio_mix='dpl2',
@@ -798,19 +798,24 @@ def tvdb_fixture(handler):
 
 @pytest.fixture()
 def tvdbv3(request):
-    yield from tvdb_fixture(MockTVDBv3Handler)
+    for server in tvdb_fixture(MockTVDBv3Handler):
+        with mock.patch('tvrip.tvdb.TVDBv3.api_url', server.url):
+            yield server
 
 
 @pytest.fixture()
 def tvdbv4(request):
-    yield from tvdb_fixture(MockTVDBv4Handler)
+    for server in tvdb_fixture(MockTVDBv4Handler):
+        with mock.patch('tvrip.tvdb.TVDBv4.api_url', server.url):
+            yield server
 
 
 @pytest.fixture(params=[
-    ('tvdbv3', MockTVDBv3Handler),
-    ('tvdbv4', MockTVDBv4Handler),
+    ('tvdbv3', MockTVDBv3Handler, 'tvrip.tvdb.TVDBv3.api_url'),
+    ('tvdbv4', MockTVDBv4Handler, 'tvrip.tvdb.TVDBv4.api_url'),
 ])
 def tvdb(request):
-    name, handler = request.param
+    name, handler, mock_url = request.param
     for server in tvdb_fixture(handler):
-        yield name, server
+        with mock.patch(mock_url, server.url):
+            yield name, server

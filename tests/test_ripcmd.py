@@ -578,7 +578,7 @@ def test_do_config(db, with_program, ripcmd, reader, tmp_path):
 │ subtitle_langs   │ eng
 │ video_style      │ tv
 │ dvdnav           │ on
-│ api_url          │ https://api.thetvdb.com/
+│ api
 │ api_key"""
 
 
@@ -952,11 +952,11 @@ def test_set_api_key(db, with_config, ripcmd):
             ripcmd.do_set('api_key 12345678')
 
 
-def test_set_api_url(db, with_config, ripcmd):
+def test_set_api(db, with_config, ripcmd):
     with db.transaction():
-        assert ripcmd.config.api_url == 'https://api.thetvdb.com/'
-        ripcmd.do_set('api_url https://example.com/')
-        assert ripcmd.config.api_url == 'https://example.com/'
+        assert ripcmd.config.api == ''
+        ripcmd.do_set('api TVDBv3')
+        assert ripcmd.config.api == 'tvdb3'
 
 
 def test_do_duplicate(db, with_config, drive, foo_disc1, ripcmd, reader):
@@ -1130,8 +1130,8 @@ def test_do_season(db, with_program, ripcmd, writer):
 def test_do_season_from_tvdb(db, with_program, ripcmd, tvdbv3, writer):
     with db.transaction():
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdbv3.url))
-        ripcmd.set_api()
+            api_key='s3cret', api='tvdb3'))
+        ripcmd.get_api()
 
         # Test selecting new season from TVDB results
         assert len(list(db.get_seasons())) == 2
@@ -1210,8 +1210,8 @@ def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test selection of new program that exists in TVDB
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdbv3.url))
-        ripcmd.set_api()
+            api_key='s3cret', api='tvdb3'))
+        ripcmd.get_api()
         writer.write('1\n')
         ripcmd.do_program('Up North')
         assert ripcmd.config.program == 'Up North'
@@ -1223,8 +1223,8 @@ def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test ignoring TVDB results and performing manual entry (with abort)
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdbv3.url))
-        ripcmd.set_api()
+            api_key='s3cret', api='tvdb3'))
+        ripcmd.get_api()
         writer.write('0\n')
         writer.write('0\n')
         ripcmd.do_program('The Worst')
@@ -1237,8 +1237,8 @@ def test_do_program_not_found_in_tvdb(db, with_program, ripcmd, writer, tvdbv3):
     with db.transaction():
         # Test selecting something not found in TVDB
         ripcmd.config = db.set_config(with_program._replace(
-            api_key='s3cret', api_url=tvdbv3.url))
-        ripcmd.set_api()
+            api_key='s3cret', api='tvdb3'))
+        ripcmd.get_api()
         writer.write('0\n')
         ripcmd.do_program('Something New')
         assert ripcmd.config.program == 'Something New'

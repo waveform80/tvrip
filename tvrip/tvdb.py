@@ -46,7 +46,9 @@ class TVDBv3:
     """
     api_url = 'https://api.thetvdb.com/'
 
-    def __init__(self, url, key):
+    def __init__(self, key, url=None):
+        if url is None:
+            url = self.api_url
         self.url = urlsplit(url)
         self.key = key
         self._token = None
@@ -153,7 +155,9 @@ class TVDBv4:
     """
     api_url = 'https://api4.thetvdb.com/v4'
 
-    def __init__(self, url, key):
+    def __init__(self, key, url=None):
+        if url is None:
+            url = self.api_url
         self.url = urlsplit(url)
         self.key = key
         self._token = None

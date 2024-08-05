@@ -24,7 +24,7 @@ from .ripper import Disc, Title
 from .episodemap import EpisodeMap, MapError
 from .cmdline import Cmd, CmdError, CmdSyntaxError
 from .const import DATADIR
-from .tvdb import TVDBv3
+from .tvdb import TVDBv3, TVDBv4
 from . import multipart
 
 
@@ -49,10 +49,10 @@ class RipCmd(Cmd):
         # Read the configuration from the database
         with self.db.transaction():
             self.config = self.db.get_config()
-        self.set_api()
+        self.get_api()
         self.config_handlers = {
+            'api':              self.set_api,
             'api_key':          self.set_api_key,
-            'api_url':          self.set_api_url,
             'atomicparsley':    self.set_executable,
             'audio_all':        self.set_bool,
             'audio_encoding':   self.set_audio_encoding,
@@ -79,10 +79,13 @@ class RipCmd(Cmd):
             'vlc':              self.set_executable,
         }
 
-    def set_api(self):
-        if self.config.api_url and self.config.api_key:
-            self.api = TVDBv3(self.config.api_url, self.config.api_key)
-        else:
+    def get_api(self):
+        try:
+            self.api = {
+                'tvdb3': TVDBv3,
+                'tvdb4': TVDBv4,
+            }[self.config.api](self.config.api_key)
+        except (KeyError, ValueError):
             self.api = None
 
     def cmdcontext(self):
@@ -476,7 +479,7 @@ class RipCmd(Cmd):
         table.add_row('subtitle_langs', ' '.join(self.config.subtitle_langs))
         table.add_row('video_style', self.config.video_style)
         table.add_row('dvdnav', bool_str[self.config.dvdnav])
-        table.add_row('api_url', self.config.api_url)
+        table.add_row('api', self.config.api)
         table.add_row('api_key', self.config.api_key)
 
         self.console.print(table)
@@ -496,8 +499,8 @@ class RipCmd(Cmd):
         else:
             self.config = self.db.set_config(self.config._replace(
                 **{var: value}))
-            if var in ('api_url', 'api_key'):
-                self.set_api()
+            if var in ('api', 'api_key'):
+                self.get_api()
 
     set_re = re.compile(r'^set\s+')
     set_var_re = re.compile(r'^set\s+([a-z_]+)\s+')
@@ -974,11 +977,20 @@ class RipCmd(Cmd):
             raise CmdSyntaxError('API key must be blank or 32 hex-digits')
         return var, value
 
-    def set_api_url(self, var, value):
-        "Sets the URL to contact TVDB on"
-        assert var == 'api_url'
-        # TODO: Parse the URL and check scheme? Check if endpoint can be
-        # reached?
+    def set_api(self, var, value):
+        "Selects the API to use when looking up episodes"
+        assert var == 'api'
+        try:
+            value = {
+                'tvdb3':  'tvdb3',
+                'tvdbv3': 'tvdb3',
+                'tvdb':   'tvdb4',
+                'tvdb4':  'tvdb4',
+                'tvdbv4': 'tvdb4',
+            }[value.strip().lower()]
+        except KeyError:
+            raise CmdSyntaxError('{value} is not a valid API')
+        # TODO: Check if endpoint can be reached?
         return var, value
 
     def do_duplicate(self, arg):

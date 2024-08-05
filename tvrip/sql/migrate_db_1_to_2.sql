@@ -61,7 +61,10 @@ config_transform AS (
             'duplicates', c.duplicates,
             'output_format', c.output_format,
             'max_resolution', json_array(c.width_max, c.height_max),
-            'api_url', c.api_url,
+            'api', CASE c.api_url
+                WHEN 'https://api.thetvdb.com/' THEN 'tvdb3'
+                ELSE ''
+            END,
             'api_key', c.api_key,
             'paths', json(p.paths)
         ) AS config
