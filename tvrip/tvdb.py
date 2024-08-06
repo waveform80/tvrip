@@ -45,11 +45,14 @@ class TVDBv3:
     .. _The TVDB: https://thetvdb.com/
     """
     api_url = 'https://api.thetvdb.com/'
+    api_key = ''
 
     def __init__(self, key, url=None):
         if url is None:
             url = self.api_url
         self.url = urlsplit(url)
+        if not key:
+            key = self.api_key
         self.key = key
         self._token = None
 
@@ -160,9 +163,9 @@ class TVDBv4:
         if url is None:
             url = self.api_url
         self.url = urlsplit(url)
-        # We ignore the initializer's key here as we only want to use the
-        # application-specified key
-        self.key = self.api_key
+        if not key:
+            key = self.api_key
+        self.key = key
         self._token = None
 
     @property

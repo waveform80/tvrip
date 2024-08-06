@@ -1230,7 +1230,7 @@ def test_do_program_found_in_tvdb(db, with_program, ripcmd, writer, tvdbv3):
         ripcmd.do_program('Up North')
         assert ripcmd.config.program == 'Up North'
         assert ripcmd.config.season == 1
-        assert len(list(db.get_seasons())) == 2
+        assert len(list(db.get_seasons())) == 3
 
 
 def test_do_program_found_ignored(db, with_program, ripcmd, writer, tvdbv3):

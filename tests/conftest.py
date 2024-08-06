@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from tvrip import database
+from tvrip.tvdb import TVDBv3, TVDBv4
 
 
 @pytest.fixture()
@@ -458,14 +459,14 @@ class MockTVDBv3Handler(MockTVDBHandler):
 
 class MockTVDBv4Handler(MockTVDBHandler):
     seasons_re = re.compile(
-        r'/v4/series/(?P<program>.+)/extended$')
+        r'/series/(?P<program_id>\d+)/extended$')
     episodes_re = re.compile(
-        r'/v4/series/(?P<program>.+)/episodes/(?P<season_type>.+)$')
+        r'/series/(?P<program_id>\d+)/episodes/(?P<season_type>.+)$')
 
     def do_GET(self):
         url = urlparse(self.path)
         query = parse_qs(url.query)
-        if url.path == '/v4/search':
+        if url.path == '/search':
             self.handle_search(
                 query['query'][0],
                 query['type'][0],
@@ -474,7 +475,7 @@ class MockTVDBv4Handler(MockTVDBHandler):
         elif matched := self.seasons_re.match(unquote(url.path)):
             try:
                 self.handle_seasons(
-                    matched.group('program'),
+                    int(matched.group('program_id')),
                     meta=query['meta'][0],
                     short=query['short'][0] == 'true')
             except KeyError:
@@ -484,8 +485,8 @@ class MockTVDBv4Handler(MockTVDBHandler):
         elif matched := self.episodes_re.match(unquote(url.path)):
             try:
                 self.handle_episodes(
-                    matched.group('program'),
-                    season=query['season'][0],
+                    int(matched.group('program_id')),
+                    season=int(query['season'][0]),
                     season_type=matched.group('season_type'),
                     page=int(query['page'][0]))
             except KeyError:
@@ -495,14 +496,14 @@ class MockTVDBv4Handler(MockTVDBHandler):
         self.send_error(404, 'Not found')
 
     def do_POST(self):
-        if self.path == '/v4/login':
+        if self.path == '/login':
             assert self.headers['Accept'] == 'application/vnd.thetvdb.v4'
             assert self.headers['Content-Type'] == 'application/json'
             body_len = int(self.headers.get('Content-Length', 0))
             assert body_len > 0
             body = json.loads(self.rfile.read(body_len))
             if body['apikey'] == self.server.key:
-                self.send_json({'token': 'foo'})
+                self.send_json({'status': 'success', 'data': {'token': 'foo'}})
             else:
                 self.send_error(401, 'Not authorized')
             return
@@ -517,56 +518,64 @@ class MockTVDBv4Handler(MockTVDBHandler):
         self.wfile.write(buf)
 
     def handle_search(self, program, program_type='series', limit=20):
-        results = {
-            key: data for key, data in self.server.programs.items()
-            if program in key and program_types == 'series'
-        }
-        self.send_json(
-            {
-                'status': 'success',
-                'data': [
-                    {
-                        'objectID': f'series-{id}',
-                        'aliases': [],
-                        'country': 'usa',
-                        'id': f'series-{id}',
-                        'name': key,
-                        'first_air_time': dt.datetime(
-                            2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
-                        'overview': data['description'],
-                        'primary_language': 'eng',
-                        'primary_type': program_type,
-                        'status': 'Ended',
-                        'type': program_type,
-                        'tvdb_id': str(id),
-                        'year': '2020',
-                        'network': 'BBC USA',
-                        'remote_ids': [],
-                    }
-                    for key, data in results.items()
-                    for id in (crc32(key.encode('utf-8')),)
-                ][:limit],
-                'links': {
-                    'prev': None,
-                    'self': (
-                        f'{self.server.url}/v4/search?query={program}&'
-                        f'types={program_type}&page=0'),
-                    'next': (
-                        f'{self.server.url}/v4/search?query={program}&'
-                        f'types={program_type}&page=1'),
-                    'total_items': len(results),
-                    'page_size': limit,
-                }
+        if program == 'Fail!':
+            self.send_json({'status': 'failure'})
+        else:
+            results = {
+                key: data for key, data in self.server.programs.items()
+                if program in key and program_type == 'series'
             }
-        )
+            self.send_json(
+                {
+                    'status': 'success',
+                    'data': [
+                        {
+                            'objectID': f'series-{id}',
+                            'aliases': [],
+                            'country': 'usa',
+                            'id': f'series-{id}',
+                            'name': key,
+                            'first_air_time': dt.datetime(
+                                2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
+                            'overview': data['description'],
+                            'primary_language': 'eng',
+                            'primary_type': program_type,
+                            'status': 'Ended',
+                            'type': program_type,
+                            'tvdb_id': str(id),
+                            'year': '2020',
+                            'network': 'BBC USA',
+                            'remote_ids': [],
+                        }
+                        for key, data in results.items()
+                        for id in (crc32(key.encode('utf-8')),)
+                    ][:limit],
+                    'links': {
+                        'prev': None,
+                        'self': (
+                            f'{self.server.url}/search?query={program}&'
+                            f'types={program_type}&page=0'),
+                        'next': (
+                            f'{self.server.url}/search?query={program}&'
+                            f'types={program_type}&page=1'),
+                        'total_items': len(results),
+                        'page_size': limit,
+                    }
+                }
+            )
 
-    def handle_seasons(self, program, meta='episodes', short=True):
+    def handle_seasons(self, program_id, meta='episodes', short=True):
+        for program, data in self.server.programs.items():
+            if crc32(program.encode('utf-8')) == program_id:
+                break
+        else:
+            raise KeyError(program_id)
         self.send_json(
             {
                 'status': 'success',
                 'data': {
-                    'id': crc32(key.encode('utf-8')),
-                    'name': key,
+                    'id': program_id,
+                    'name': program,
                     'firstAired': dt.datetime(2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
                     'lastAired': '',
                     'nextAired': '',
@@ -604,9 +613,9 @@ class MockTVDBv4Handler(MockTVDBHandler):
                     'airsTime': '13:37',
                     'episodes': [
                         {
-                            'id': crc32(f'{key}-S{season:02d}E{episode:02d}'.encode('utf-8')),
-                            'seriesId': crc32(key.encode('utf-8')),
-                            'name': key,
+                            'id': crc32(f'{program}-S{season:02d}E{episode:02d}'.encode('utf-8')),
+                            'seriesId': program_id,
+                            'name': program,
                             'aired': (
                                 dt.datetime(2020, 1, 1, 13, 37) +
                                 dt.timedelta(weeks=episode - 1)
@@ -625,8 +634,8 @@ class MockTVDBv4Handler(MockTVDBHandler):
                     ],
                     'seasons': [
                         {
-                            'id': crc32(f'{key}-S{season:02d}'.encode('utf-8')),
-                            'seriesId': crc32(key.encode('utf-8')),
+                            'id': crc32(f'{program}-S{season:02d}'.encode('utf-8')),
+                            'seriesId': program_id,
                             'type': {
                                 'id': 1,
                                 'name': 'Aired Order',
@@ -649,18 +658,21 @@ class MockTVDBv4Handler(MockTVDBHandler):
                     ],
                 }
             }
-            for key, data in self.server.programs.items()
-            if crc32(key.encode('utf-8')) == program
         )
 
-    def handle_episodes(self, program, season, season_type, page=0):
+    def handle_episodes(self, program_id, season, season_type, page=0, limit=10):
+        for program, data in self.server.programs.items():
+            if crc32(program.encode('utf-8')) == program_id:
+                break
+        else:
+            raise KeyError(program_id)
         self.send_json(
             {
                 'status': 'success',
                 'data': {
                     'series': {
-                        'id': crc32(key.encode('utf-8')),
-                        'name': key,
+                        'id': program_id,
+                        'name': program,
                         'firstAired': dt.datetime(
                             2020, 1, 1, 13, 37).strftime('%Y-%m-%d'),
                         'lastAired': '',
@@ -675,7 +687,7 @@ class MockTVDBv4Handler(MockTVDBHandler):
                         'originalCountry': 'usa',
                         'originalLanguage': 'eng',
                         'defaultSeasonType': 1,
-                        'isOrderRandomized': false,
+                        'isOrderRandomized': False,
                         'averageRuntime': 35,
                         'overview': data['description'],
                         'episodes': None,
@@ -683,9 +695,9 @@ class MockTVDBv4Handler(MockTVDBHandler):
                     },
                     'episodes': [
                         {
-                            'id': crc32(f'{key}-S{int(season):02d}E{episode:02d}'.encode('utf-8')),
-                            'seriesId': crc32(key.encode('utf-8')),
-                            'name': key,
+                            'id': crc32(f'{program}-S{int(season):02d}E{episode:02d}'.encode('utf-8')),
+                            'seriesId': program_id,
+                            'name': title,
                             'aired': (
                                 dt.datetime(2020, 1, 1, 13, 37) +
                                 dt.timedelta(weeks=episode - 1)
@@ -696,22 +708,27 @@ class MockTVDBv4Handler(MockTVDBHandler):
                             'seasons': None,
                             'number': episode,
                             'absoluteNumber': 0,
-                            'seasonNumber': int(season),
+                            'seasonNumber': season,
                             'year': '2020',
                         }
                         for episode, title
-                        in self.server.programs[program]['seasons'][int(season)].items()
+                        in data['seasons'].get(season, {}).items()
+                        if (page * limit) <= episode < ((page + 1) * limit)
                     ],
                 },
                 'links': {
                     'prev': None,
                     'self': (
-                        f'/v4/series/{program}/episodes/{season_type}'
-                        f'?season={season}&page={page}'
+                        f'{self.server.url}series/{program_id}/episodes/'
+                        f'{season_type}?season={season}&page={page}'
                     ),
-                    'next': None,
-                    'total_items': len(
-                        self.server.programs[program]['seasons'][str(season)]),
+                    'next': (
+                        f'{self.server.url}series/{program_id}/episodes/'
+                        f'{season_type}?season={season}&page={page + 1}'
+                    )
+                    if (page + 1) * limit < len(data['seasons'].get(season, {}))
+                    else None,
+                    'total_items': len(data['seasons'].get(season, {})),
                     'page_size': limit,
                 }
             }
@@ -745,7 +762,7 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
                         3: "Silent",
                         4: "Two in the Bush",
                     },
-
+                    3: {},
                 },
             },
             'Foo & Bar': {
@@ -781,6 +798,49 @@ class MockTVDBServer(ThreadingMixIn, HTTPServer):
                     "testing purposes.",
                 'seasons': {},
             },
+            'Edge of Testness': {
+                'description':
+                    "Yorkshireman Ron Coward investigates all the edge "
+                    "cases that the tests haven't yet covered...",
+                'seasons': {
+                    0: {
+                        0: 'Alternative Starting',
+                        1: None,
+                        6: 'Alternative Ending',
+                    },
+                    1: {
+                        1: 'Unwelcome Arrival',
+                        2: 'Into the Light',
+                        3: 'Albatross of Attestation',
+                        4: 'Breakthru',
+                        5: 'Southland',
+                        6: 'Fission',
+                    },
+                    2: {
+                        1: 'An',
+                        2: 'Overly',
+                        3: 'Long',
+                        4: 'Season',
+                        5: 'That',
+                        6: 'Just',
+                        7: 'Drags',
+                        8: 'On',
+                        9: 'and On',
+                        10: 'and On',
+                        11: 'and On',
+                        12: 'Which',
+                        13: 'Is - Part 1',
+                        14: 'Is - Part 2',
+                        15: 'Purely',
+                        16: 'An Excuse',
+                        17: 'To Test',
+                        18: 'Paging',
+                        19: 'In',
+                        20: 'The',
+                        21: 'Client',
+                    }
+                }
+            },
         }
 
 
@@ -811,11 +871,11 @@ def tvdbv4(request):
 
 
 @pytest.fixture(params=[
-    ('tvdbv3', MockTVDBv3Handler, 'tvrip.tvdb.TVDBv3.api_url'),
-    ('tvdbv4', MockTVDBv4Handler, 'tvrip.tvdb.TVDBv4.api_url'),
+    (TVDBv3, MockTVDBv3Handler, 'tvrip.tvdb.TVDBv3.api_url'),
+    (TVDBv4, MockTVDBv4Handler, 'tvrip.tvdb.TVDBv4.api_url'),
 ])
 def tvdb(request):
-    name, handler, mock_url = request.param
+    client, handler, mock_url = request.param
     for server in tvdb_fixture(handler):
         with mock.patch(mock_url, server.url):
-            yield name, server
+            yield client, server
