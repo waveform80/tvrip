@@ -47,6 +47,7 @@ Episode meta-data in tvrip is (optionally) downloaded from the excellent
    settings
    development
    license
+   changelog
 
 
 .. _TVDB: https://thetvdb.com/
