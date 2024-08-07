@@ -6,10 +6,12 @@
 
 import re
 import math
+from pathlib import Path
 
 from docutils import core, nodes, io
-from docutils.writers import Writer
-from docutils.parsers.rst import roles
+from docutils.readers.standalone import Reader
+from docutils.writers.null import Writer
+from docutils.parsers.rst import roles, Parser
 from rich import box
 from rich.console import Console, NewLine
 from rich.containers import Renderables
@@ -549,6 +551,7 @@ class RichTranslator(nodes.NodeVisitor):
 
     del _depart_admonition
 
+
 class RestructuredText:
     """
     A :mod:`rich` extension class which provides rendering of reStructuredText
@@ -560,15 +563,52 @@ class RestructuredText:
     usual.
     """
     def __init__(self, source, *, source_path, source_class,
-                 reader=None, reader_name='standalone', parser=None,
-                 parser_name='restructuredtext', settings=None,
-                 settings_spec=None, settings_overrides=None):
+                 settings=None, settings_spec=None, settings_overrides=None):
         if settings_overrides is None:
             settings_overrides = {'input_encoding': 'unicode'}
-        self.document = core.publish_doctree(
-            source, source_path, source_class, reader, reader_name, parser,
-            parser_name, settings, settings_spec, settings_overrides)
-        #print(self.document.pformat())
+        self.document = self._parse_doc(
+            source, source_path=source_path, source_class=source_class,
+            settings=settings, settings_spec=settings_spec,
+            settings_overrides=settings_overrides, resolve_doc_refs=True)
+
+    def _parse_doc(self, source, *, source_path, source_class,
+                   settings=None, settings_spec=None, settings_overrides=None,
+                   resolve_doc_refs=False):
+
+        def resolve_links(node):
+            if resolve_doc_refs and source_path is not None:
+                path = Path(source_path).with_stem(node['refname'])
+                with path.open('r') as sub_source:
+                    sub_doc = self._parse_doc(
+                        sub_source, source_path=str(path),
+                        source_class=io.FileInput)
+                for title_node in sub_doc.traverse(condition=nodes.title):
+                    title = title_node.astext()
+                    break
+                else:
+                    title = f"unknown-ref<{node['refname']}>"
+                node.clear()
+                node.append(nodes.Text(title))
+            del node['refname']
+            node.resolved = True
+            return True
+        resolve_links.priority = 100
+
+        parser = Parser()
+        reader = Reader(parser)
+        reader.unknown_reference_resolvers += (resolve_links,)
+        writer = Writer()
+        publisher = core.Publisher(
+            reader=reader, parser=parser, writer=writer,
+            settings=settings,
+            source_class=source_class, destination_class=io.NullOutput)
+        publisher.process_programmatic_settings(
+            settings_spec=None, settings_overrides=settings_overrides,
+            config_section=None)
+        publisher.set_source(source, source_path)
+        publisher.set_destination(None, None)
+        publisher.publish()
+        return publisher.document
 
     @classmethod
     def from_string(self, source):
@@ -645,7 +685,8 @@ def doc_ref_role(
     else:
         title = nodes.unescape(text)
         target = nodes.unescape(text)
-    node = nodes.Text(title)
+    node = nodes.reference(rawtext, '', nodes.Text(title), refname=target)
+    #print(repr(node))
     return [node], []
 roles.register_local_role('doc', doc_ref_role)
 
