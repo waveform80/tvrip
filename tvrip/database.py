@@ -35,7 +35,7 @@ class Config(t.NamedTuple):
         'atomicparsley': Path('/usr/bin/AtomicParsley'),
         'mkvpropedit':   Path('/usr/bin/mkvpropedit'),
     }
-    api: str = ''
+    api: str = 'tvdb4'
     api_key: str = ''
     audio_all: bool = False
     audio_encoding: str = 'av_aac'
