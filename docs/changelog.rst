@@ -11,6 +11,14 @@ Changelog
 .. currentmodule:: tvrip
 
 
+Release 3.1 (???)
+=================
+
+* Fix incorrect ``id_template`` default value
+* Fix disc type detection
+* Fix ``play`` command with Blu-ray discs
+
+
 Release 3.0 (2024-08-08)
 ========================
 
