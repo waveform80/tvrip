@@ -11,8 +11,8 @@ Changelog
 .. currentmodule:: tvrip
 
 
-Release 3.1 (???)
-=================
+Release 3.1 (2024-08-08)
+========================
 
 * Fix incorrect ``id_template`` default value
 * Fix incorrect ``api`` default and update tutorial examples
