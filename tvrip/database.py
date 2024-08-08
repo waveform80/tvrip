@@ -297,8 +297,8 @@ class Database:
         SQL. It understands ``--comments``, ``"quoted identifiers"``, and
         ``'string literals'`` and ``$delim$ extended strings $delim$``, but not
         ``/* C-style comments */``, or the compatibility ``[MS SQL Server
-        quoting]`` or ``\`MySQL quoting\```. If you start using such things in
-        the SQL scripts, you'll need to extend this function to accommodate
+        quoting]`` or ``\\`MySQL quoting\\```. If you start using such things
+        in the SQL scripts, you'll need to extend this function to accommodate
         them.
 
         It returns a generator which yields individiual statements from
