@@ -26,6 +26,7 @@ For example:
     ├──────────────────┼──────────────────────────────────┤
     │ atomicparsley    │ /usr/bin/AtomicParsley           │
     │ handbrake        │ /usr/local/bin/HandBrakeCLI      │
+    │ mkvpropedit      │ /usr/bin/mkvpropedit             │
     │ vlc              │ /usr/bin/vlc                     │
     ├──────────────────┼──────────────────────────────────┤
     │ source           │ /dev/sr1                         │
@@ -48,7 +49,7 @@ For example:
     │ subtitle_langs   │ eng                              │
     │ video_style      │ tv                               │
     │ dvdnav           │ on                               │
-    │ api_url          │ https://api.thetvdb.com/         │
+    │ api              │ tvdb4                            │
     │ api_key          │                                  │
     ╰──────────────────┴──────────────────────────────────╯
 

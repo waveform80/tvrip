@@ -262,10 +262,8 @@ the titles found on the disc.
     (tvrip) set source /dev/sr1
     (tvrip) scan
     Scanning disc in /dev/sr1
-    Disc type:
+    Disc type: DVD
     Disc identifier: $H1$8ee229fadd956e45341a85f6c24a445a3998bc27
-    Disc serial:
-    Disc name:
     Disc has 3 titles
 
     ╭───────┬──────────┬──────────┬─────┬───────╮
