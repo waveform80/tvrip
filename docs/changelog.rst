@@ -15,6 +15,7 @@ Release 3.1 (???)
 =================
 
 * Fix incorrect ``id_template`` default value
+* Fix incorrect ``api`` default and update tutorial examples
 * Fix disc type detection
 * Fix ``play`` command with Blu-ray discs
 
