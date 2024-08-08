@@ -61,7 +61,7 @@ settings that we want to correct.
     │ subtitle_langs   │ eng                             │
     │ video_style      │ tv                              │
     │ dvdnav           │ on                              │
-    │ api_url          │ https://api.thetvdb.com/        │
+    │ api              │ tvdb4                           │
     │ api_key          │                                 │
     ╰──────────────────┴─────────────────────────────────╯
 
@@ -110,7 +110,7 @@ We'll check the configuration now looks sensible.
     │ subtitle_langs   │ eng                             │
     │ video_style      │ tv                              │
     │ dvdnav           │ on                              │
-    │ api_url          │ https://api.thetvdb.com/        │
+    │ api              │ tvdb4                           │
     │ api_key          │                                 │
     ╰──────────────────┴─────────────────────────────────╯
 
