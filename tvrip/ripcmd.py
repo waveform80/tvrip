@@ -317,14 +317,21 @@ class RipCmd(Cmd):
                 {'first': '━┓', 'yes': ' ┃', 'last': '━┛', 'no': ''}[title.duplicate],
                 ' '.join(track.language for track in title.audio_tracks)
                 )
-        self.console.print(
+        output = [
             f'[green]Disc type:[/green] {self.disc.type}',
             f'[green]Disc identifier:[/green] {self.disc.ident}',
-            f'[green]Disc serial:[/green] {self.disc.serial}',
-            f'[green]Disc name:[/green] {self.disc.name}',
+        ]
+        if self.disc.type == 'DVD':
+            output.extend([
+                f'[green]Disc serial:[/green] {self.disc.serial}',
+                f'[green]Disc name:[/green] {self.disc.name}',
+            ])
+        output.extend([
             f'Disc has {len(self.disc.titles)} titles',
-            '', table,
-            sep='\n')
+            '',
+            table,
+        ])
+        self.console.print(*output, sep='\n')
 
     def print_title(self, title):
         "Prints the details of the specified disc title"
