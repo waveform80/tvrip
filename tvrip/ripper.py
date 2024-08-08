@@ -220,16 +220,20 @@ class Disc:
 
     def play(self, config, title_or_chapter=None):
         "Play the specified title or chapter"
+        scheme = {
+            'DVD': 'dvd',
+            'Blu-ray': 'bluray',
+        }[self.type]
         if title_or_chapter is None:
-            mrl = f'dvd://{config.source}'
+            mrl = f'{scheme}://{config.source}'
         elif isinstance(title_or_chapter, Title):
             title = title_or_chapter
             assert title.disc is self
-            mrl = f'dvd://{config.source}#{title.number}'
+            mrl = f'{scheme}://{config.source}#{title.number}'
         elif isinstance(title_or_chapter, Chapter):
             chapter = title_or_chapter
             assert chapter.title.disc is self
-            mrl = f'dvd://{config.source}#{chapter.title.number}:{chapter.number}'
+            mrl = f'{scheme}://{config.source}#{chapter.title.number}:{chapter.number}'
         else:
             assert False
         cmdline = [
