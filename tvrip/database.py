@@ -46,7 +46,7 @@ class Config(t.NamedTuple):
     duration: tuple[timedelta, timedelta] = (
         timedelta(minutes=40), timedelta(minutes=50))
     dvdnav: bool = True
-    id_template: str = '{season}x{espiode:02d}'
+    id_template: str = '{season}x{episode:02d}'
     max_resolution: tuple[int, int] = (1920, 1080)
     output_format: str = 'mp4'
     source: Path = Path('/dev/dvd')
