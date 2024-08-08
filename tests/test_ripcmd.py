@@ -382,7 +382,7 @@ def test_print_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
-Disc type:
+Disc type: DVD
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
 Disc name: FOO AND BAR
@@ -1287,7 +1287,7 @@ def test_do_disc(db, with_config, drive, foo_disc1, ripcmd, reader):
     ripcmd.stdout.flush()
     ripcmd.stdout.close()
     assert '\n'.join([l.rstrip() for l in reader.read_all()]) == """\
-Disc type:
+Disc type: DVD
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
 Disc name: FOO AND BAR
@@ -1398,7 +1398,7 @@ def test_do_scan_one(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader
     ripcmd.stdout.close()
     assert '\n'.join([l.rstrip() for l in reader.read_all()]) == f"""\
 Scanning disc in {tmp_path}/dvd
-Disc type:
+Disc type: DVD
 Disc identifier: $H1$6be864bc30cf66e5acb5adf3730fc60e2b4daa83
 Disc serial: 123456789
 Disc name: FOO AND BAR
@@ -1418,7 +1418,7 @@ def test_do_scan_all(db, with_config, drive, foo_disc1, tmp_path, ripcmd, reader
     ripcmd.stdout.close()
     assert '\n'.join([l.strip() for l in reader.read_all()]) == f"""\
 Scanning disc in {tmp_path}/dvd
-Disc type:
+Disc type: DVD
 Disc identifier: $H1$95b276dd0eed858ce07b113fb0d48521ac1a7caf
 Disc serial: 123456789
 Disc name: FOO AND BAR

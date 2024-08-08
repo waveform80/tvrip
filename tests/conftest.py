@@ -316,6 +316,7 @@ def drive(request, tmp_path):
                 ]
         if '--scan' in cmdline:
             stderr = f"""\
+scan: DVD has {len(proc.disc['TitleList'])} title(s)
 libdvdnav: Random stuff
 libdvdnav: DVD Title: FOO AND BAR
 libdvdnav: DVD Serial Number: 123456789
