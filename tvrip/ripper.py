@@ -147,25 +147,21 @@ class Disc:
         error2_re = re.compile(
             r'libdvdnav: vm: failed to open/read the .*', re.UNICODE)
 
-        match = None
-
-        def get_match(pattern, line):
-            nonlocal match
-            match = pattern.match(line)
-            return bool(match)
-
         for line in output.splitlines():
-            if get_match(error1_re, line) or get_match(error2_re, line):
+            if error1_re.search(line) or error2_re.search(line):
                 raise IOError(f'Unable to read disc in {config.source}')
-            if get_match(disc_name_re, line):
-                self.name = match.group('name')
-            elif get_match(disc_serial_re, line):
-                self.serial = match.group('serial')
-            elif get_match(disc_type_re, line):
+            if matched := disc_name_re.search(line):
+                self.name = matched.group('name')
+            elif matched := disc_serial_re.search(line):
+                self.serial = matched.group('serial')
+            elif matched := disc_type_re.search(line):
                 self.type = {
                     'DVD': 'DVD',
                     'BD': 'Blu-ray',
-                }[match.group('type')]
+                }[matched.group('type')]
+
+        if not self.type:
+            raise IOError('Failed to determine disc type')
 
     def _parse_scan_stdout(self, config, output):
         try:
