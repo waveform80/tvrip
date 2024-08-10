@@ -16,7 +16,7 @@ Sets the API key for use with the service specified by :doc:`var_api`. This is
 used by tvrip to look up episode information for new programs and seasons. By
 default this is blank (represented by a single dash "-") meaning the default
 key for the service (if any) is used. If no default key is available, all entry
-or program, season, and episode information is manual.
+of program, season, and episode information is manual.
 
 If a default key is available, or this is set to a valid value, starting a new
 program or season (with :doc:`cmd_program` or :doc:`cmd_season`) will query the

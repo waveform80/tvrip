@@ -23,6 +23,17 @@ For example::
     (tvrip) map 7 4
     (tvrip) map 5 2.1-12
 
-If no arguments are specified, the current episode map will be displayed.
+If no arguments are specified, the current episode map will be displayed. For
+example::
+
+    (tvrip) map
+    Episode Mapping for The Boys season 2:
+
+    ╭───────┬──────────┬────────┬─────────┬───────────────────────────────────╮
+    │ Title │ Duration │ Ripped │ Episode │ Name                              │
+    ├───────┼──────────┼────────┼─────────┼───────────────────────────────────┤
+    │ 1     │  0:52:05 │        │       7 │ Butcher, Baker, Candlestick Maker │
+    │ 2     │  1:04:30 │        │       8 │ What I Know                       │
+    ╰───────┴──────────┴────────┴─────────┴───────────────────────────────────╯
 
 See also :doc:`cmd_automap`, :doc:`cmd_unmap`
