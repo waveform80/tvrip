@@ -49,6 +49,7 @@ class Disc:
         self.name = ''
         self.serial = ''
         self.ident = None
+        self._loose_crop = ''
         if titles is None:
             titles = [0]
         for title in titles:
@@ -118,6 +119,18 @@ class Disc:
 
     def _scan_title(self, config, title):
         "Internal method for scanning (a) disc title(s)"
+        # Determine supported command line options
+        cmdline = [str(config.paths['handbrake']), '-h']
+        result = proc.run(cmdline, check=True, capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            if line.strip().startswith('--loose-crop'):
+                self._loose_crop = '--loose-crop'
+                break
+            elif line.strip().startswith('--crop-mode'):
+                self._loose_crop = '--crop-mode=conservative'
+                break
+        else:
+            raise IOError('Failed to find supported HandBrakeCLI options')
         cmdline = [
             str(config.paths['handbrake']),
             '-i', str(config.source), # specify the input device
@@ -299,7 +312,7 @@ class Disc:
             # disable cropping (otherwise vobsub subtitles screw up) but don't
             # sacrifice cropping for aligned storage
             '--crop', '0:0:0:0',
-            '--loose-crop',
+            self._loose_crop,
             # use efficient storage options (actually defaults but no harm in
             # explicitly specifying them)
             '--loose-anamorphic',

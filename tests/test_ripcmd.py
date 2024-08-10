@@ -1826,16 +1826,18 @@ def test_do_rip_mapped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
         ripcmd.do_rip('')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
-        assert ('-t', '2') in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
-        assert cmdlines[3][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[3]
-        assert ('-t', '3') in pairwise(cmdlines[3])
-        assert cmdlines[4][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[2])
+        assert ('-t', '2') in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
+        assert cmdlines[4][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[4]
+        assert ('-t', '3') in pairwise(cmdlines[4])
+        assert cmdlines[5][0] == 'AtomicParsley'
 
 
 def test_do_rip_manual(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
@@ -1851,12 +1853,14 @@ def test_do_rip_manual(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
         ripcmd.do_rip('2')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x02 - Bar.mp4')) in pairwise(cmdlines[1])
-        assert ('-t', '3') in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x02 - Bar.mp4')) in pairwise(cmdlines[2])
+        assert ('-t', '3') in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
 
 
 def test_do_rip_skip_ripped(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
@@ -1876,12 +1880,14 @@ def test_do_rip_skip_ripped(db, with_program, tmp_path, drive, foo_disc1, ripcmd
         ripcmd.do_rip('')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-t', '8') in pairwise(cmdlines[1])
-        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x05 - Xyzzy.mp4')) in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-t', '8') in pairwise(cmdlines[2])
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x05 - Xyzzy.mp4')) in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
 
 
 def test_do_rip_chapters(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
@@ -1896,13 +1902,15 @@ def test_do_rip_chapters(db, with_program, tmp_path, drive, foo_disc1, ripcmd):
         ripcmd.do_rip('')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[1])
-        assert ('-t', '1') in pairwise(cmdlines[1])
-        assert ('-c', '1-5') in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 1x01 - Foo.mp4')) in pairwise(cmdlines[2])
+        assert ('-t', '1') in pairwise(cmdlines[2])
+        assert ('-c', '1-5') in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
 
 
 def test_do_rip_all_audio_and_subs(db, with_program, drive, foo_disc1, ripcmd):
@@ -1918,12 +1926,14 @@ def test_do_rip_all_audio_and_subs(db, with_program, drive, foo_disc1, ripcmd):
         ripcmd.do_rip('')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-a', '1,2') in pairwise(cmdlines[1])
-        assert ('-s', '1,2') in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-a', '1,2') in pairwise(cmdlines[2])
+        assert ('-s', '1,2') in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
 
 
 def test_do_rip_multi_episode_title(db, with_program, tmp_path, drive, foo_disc2, ripcmd):
@@ -1938,12 +1948,14 @@ def test_do_rip_multi_episode_title(db, with_program, tmp_path, drive, foo_disc2
         ripcmd.do_rip('')
         cmdlines = [call.args[0] for call in drive.run.call_args_list]
         assert cmdlines[0][0] == 'HandBrakeCLI'
-        assert '--scan' in cmdlines[0]
+        assert '-h' in cmdlines[0]
         assert cmdlines[1][0] == 'HandBrakeCLI'
-        assert '--scan' not in cmdlines[1]
-        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 2x01 2x02 - Foo Bar.mp4')) in pairwise(cmdlines[1])
-        assert ('-t', '2') in pairwise(cmdlines[1])
-        assert cmdlines[2][0] == 'AtomicParsley'
+        assert '--scan' in cmdlines[1]
+        assert cmdlines[2][0] == 'HandBrakeCLI'
+        assert '--scan' not in cmdlines[2]
+        assert ('-o', str(tmp_path / 'videos' / 'Foo & Bar - 2x01 2x02 - Foo Bar.mp4')) in pairwise(cmdlines[2])
+        assert ('-t', '2') in pairwise(cmdlines[2])
+        assert cmdlines[3][0] == 'AtomicParsley'
 
 
 def test_do_rip_failed(db, with_program, drive, foo_disc1, ripcmd):

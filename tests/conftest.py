@@ -291,6 +291,18 @@ def drive(request, tmp_path):
             stdout='', stderr=f'Tagging {target}')
 
     def mock_handbrake(cmdline, **kwargs):
+        if '-h' in cmdline:
+            return subprocess.CompletedProcess(
+                args=cmdline, returncode=0, stdout="""\
+Usage: HandBrakeCLI [options] -i <source> -o <destination>
+
+Picture Options --------------------------------------------------------------
+
+   -w, --width  <number>   Set storage width in pixels
+   -l, --height <number>   Set storage height in pixels
+       --crop-mode <string> auto|conservative|none|custom
+                            Choose which crop mode to operate in.
+""", stderr="")
         source = cmdline[cmdline.index('-i') + 1]
         if proc.disc is None:
             if '--no-dvdnav' in cmdline:
