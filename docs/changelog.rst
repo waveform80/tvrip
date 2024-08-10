@@ -11,6 +11,13 @@ Changelog
 .. currentmodule:: tvrip
 
 
+Release 3.2 (2024-08-10)
+========================
+
+* Fix tutorial examples (api_url -> api)
+* Enhance logging output when DEBUG=1 in environment
+
+
 Release 3.1 (2024-08-08)
 ========================
 
