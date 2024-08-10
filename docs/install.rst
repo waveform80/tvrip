@@ -20,8 +20,8 @@ You can find pre-built binary packages for several platforms available from the
 `tvrip development site <https://github.com/waveform80/tvrip>`_. Installation
 instructions for specific platforms are included in the sections below.
 
-If your platform is *not* covered by one of the sections below, tvrip is
-also available from PyPI and can therefore be installed with the ``pip`` tool:
+If your platform is *not* covered by one of the sections below, tvrip is also
+available `from PyPI`_ and can therefore be installed with the ``pip`` tool:
 
 .. code-block:: console
 
@@ -48,10 +48,14 @@ versions of tvip should install these dependencies implicitly.
 Ubuntu Linux
 ============
 
-For Ubuntu Linux it is simplest to install from the PPA as follows:
+For Ubuntu Linux it is simplest to install from `the PPA`_ as follows:
 
 .. code-block:: console
 
-    $ sudo add-apt-repository ppa://waveform/tvrip
+    $ sudo add-apt-repository ppa:waveform/tvrip
     $ sudo apt-get update
     $ sudo apt-get install tvrip
+
+
+.. _from PyPI: https://pypi.org/project/tvrip/
+.. _the PPA: https://launchpad.net/~waveform/+archive/ubuntu/tvrip
