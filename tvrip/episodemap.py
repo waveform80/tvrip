@@ -31,6 +31,9 @@ __all__ = [
 ]
 
 
+logger = logging.getLogger('tvrip.episodemap')
+
+
 class MapError(Exception):
     "Base class for mapping errors"
 
@@ -227,19 +230,19 @@ def automap(
     if duration[1] < duration[0]:
         raise ValueError('max duration must be at least min duration')
     try:
-        logging.debug('Trying title-based mapping')
+        logger.debug('Trying title-based mapping')
         return automap_titles(
             episodes, titles, duration,
             permit_multipart=permit_multipart,
             strict_mapping=strict_mapping)
     except NoMappingError:
         try:
-            logging.debug('Trying chapter-based algorithm with longest title')
+            logger.debug('Trying chapter-based algorithm with longest title')
             return automap_chapters_longest(
                 episodes, titles, duration,
                 choose_mapping=choose_mapping)
         except NoSolutionsError:
-            logging.debug('Trying chapter-based algorithm with all titles')
+            logger.debug('Trying chapter-based algorithm with all titles')
             return automap_chapters_all(
                 episodes, titles, duration,
                 choose_mapping=choose_mapping)
@@ -255,7 +258,7 @@ def automap_titles(
     episodes = list(episodes)
     for title in titles:
         if not episodes:
-            logging.debug('Out of episodes for auto-mapping')
+            logger.debug('Out of episodes for auto-mapping')
             break
         if duration[0] <= title.duration <= duration[1]:
             result[episodes.pop(0)] = title
@@ -267,11 +270,11 @@ def automap_titles(
                     result[episodes.pop(0)] = title
                     parts -= 1
             else:
-                logging.debug(
+                logger.debug(
                     'Title %d is not an episode or multipart episode '
                     '(duration: %s)', title.number, title.duration)
         else:
-            logging.debug(
+            logger.debug(
                 'Title %d is not an episode (duration: %s)',
                 title.number, title.duration)
     if not result:
@@ -284,7 +287,7 @@ def automap_titles(
 def automap_chapters_longest(episodes, titles, duration, *, choose_mapping=None):
     "Auto-mapping with chapters from the longest title in the selecteion"
     longest_title = sorted(titles, key=attrgetter('duration'))[-1]
-    logging.debug(
+    logger.debug(
         'Longest title is %d (duration: %s), containing '
         '%d chapters',
         longest_title.number, longest_title.duration,
@@ -305,7 +308,7 @@ def automap_chapters(episodes, chapters, duration, *, choose_mapping=None):
     "Auto-mapping with a chapter-based algorithm"
     # XXX Remove trailing empty chapters
     solutions = calculate(episodes, chapters, duration)
-    logging.debug(
+    logger.debug(
         'Found %d chapter mapping solution(s)', len(solutions))
     if not solutions:
         raise NoSolutionsError('No chapter mappings found')

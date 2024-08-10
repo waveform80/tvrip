@@ -1368,6 +1368,8 @@ class RipCmd(Cmd):
 
     def do_automap(self, arg):
         "Maps episodes to titles or chapter ranges automatically"
+        if not self.disc:
+            raise CmdError('No disc has been scanned yet')
         self.console.print('Performing auto-mapping')
         # Generate the list of titles, either specified or implied in the
         # arguments

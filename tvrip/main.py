@@ -11,6 +11,8 @@
 
 import os
 import sys
+import shlex
+import logging
 import argparse
 from pathlib import Path
 from contextlib import contextmanager
@@ -34,16 +36,40 @@ class TVRipApplication:
         self.parser.add_argument(
             '--version', action='version', version=self.version)
 
+    def _audit_run(self, event, args):
+        if event == 'subprocess.Popen':
+            executable, args, cwd, env = args
+            logger = logging.getLogger('subprocess')
+            logger.info('run %s', shlex.join(args))
+
     def __call__(self, args=None):
         try:
             self.debug = int(os.environ['DEBUG'])
         except (KeyError, ValueError):
             self.debug = 0
+        logging_conf = {
+            'format': '%(asctime)s %(name)-30s %(levelname)-10s %(message)s'
+        }
+        if self.debug:
+            logging_conf['level'] = logging.DEBUG
+            debug_out = os.environ.get('DEBUG_OUT', '/tmp/tvrip.log')
+            if debug_out == '-':
+                logging_conf['stream'] = sys.stderr
+            else:
+                logging_conf['filename'] = debug_out
+            sys.addaudithook(self._audit_run)
+        else:
+            logging_conf['level'] = logging.CRITICAL
+        logging.basicConfig(**logging_conf)
+        logging.getLogger('tvrip').setLevel(logging_conf['level'])
+        logging.getLogger('sqlalchemy.engine').setLevel(logging_conf['level'])
+        logging.getLogger('subprocess').setLevel(logging_conf['level'])
+
         try:
             conf = self.parser.parse_args(args)
             db_path = Path(DATADIR) / 'tvrip.db'
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            with Database(db_path, debug=bool(self.debug)) as db:
+            with Database(db_path) as db:
                 cmd = RipCmd(db)
                 cmd.console.print(f'[green]TVRip {self.version}[/green]')
                 cmd.console.print(
@@ -54,6 +80,7 @@ class TVRipApplication:
                 print(str(e), file=sys.stderr, flush=True)
                 return 1
             elif self.debug == 1:
+                logging.getLogger('tvrip').exception('fatal error')
                 raise
             else:
                 import pdb

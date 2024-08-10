@@ -138,18 +138,18 @@ class Database:
     # disk will be migrated to
     latest_version = 2
 
-    def __init__(self, filename, debug=False):
+    def __init__(self, filename):
         try:
             self._url = URL.create('sqlite', database=str(filename))
             self._engine = None
             self._conn = None
-            self._open(debug=debug)
+            self._open()
         except exc.OperationalError:
             raise RuntimeError(
                 f"Cannot create or open database {self._url.database}")
 
-    def _open(self, *, debug=False):
-        self._engine = create_engine(self._url, echo=debug)
+    def _open(self):
+        self._engine = create_engine(self._url)
         self._conn = self._engine.connect()
         with self._conn.begin():
             self._conn.execute(text('PRAGMA foreign_keys = ON'))
@@ -223,10 +223,9 @@ class Database:
                 with self._conn.begin():
                     for statement in self._parse_script(migration_script):
                         self._conn.execute(text(statement))
-            debug = self._engine.echo
             self.close()
             Path(new_db).rename(Path(self._url.database))
-            self._open(debug=debug)
+            self._open()
 
     def _get_migration_script(self):
         """

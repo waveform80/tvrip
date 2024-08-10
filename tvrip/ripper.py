@@ -10,7 +10,7 @@
 import os
 import re
 import json
-import shutil
+import logging
 import tempfile
 import datetime as dt
 import subprocess as proc
@@ -43,6 +43,7 @@ class Disc:
 
     def __init__(self, config, titles=None):
         super().__init__()
+        self.logger = logging.getLogger('tvrip.ripper')
         self.type = ''
         self.titles = []
         self.name = ''
@@ -148,6 +149,7 @@ class Disc:
             r'libdvdnav: vm: failed to open/read the .*', re.UNICODE)
 
         for line in output.splitlines():
+            self.logger.debug('err: %s', line)
             if error1_re.search(line) or error2_re.search(line):
                 raise IOError(f'Unable to read disc in {config.source}')
             if matched := disc_name_re.search(line):
@@ -164,6 +166,8 @@ class Disc:
             raise IOError('Failed to determine disc type')
 
     def _parse_scan_stdout(self, config, output):
+        for line in output.splitlines():
+            self.logger.debug('out: %s', line)
         try:
             json_start = output.rindex('JSON Title Set:')
         except ValueError:
@@ -342,8 +346,14 @@ class Disc:
             cmdline.append('-5')
         # Create any paths for the target that don't exist
         (config.target / filename).parent.mkdir(parents=True, exist_ok=True)
-        with (config.temp / 'tvrip.log').open('a') as log:
-            proc.run(cmdline, check=True, stdout=log, stderr=log)
+        try:
+            result = proc.run(cmdline, capture_output=True, text=True)
+        finally:
+            for line in result.stdout.splitlines():
+                self.logger.debug('out: %s', line)
+            for line in result.stderr.splitlines():
+                self.logger.debug('err: %s', line)
+            result.check_returncode()
         # Tag the resulting file
         if config.output_format == 'mp4':
             tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
@@ -364,8 +374,12 @@ class Disc:
                     '--tracknum',     str(episodes[0].episode),
                     '--title',        multipart.name(episodes),
                 ]
-                with (config.temp / 'tvrip.log').open('a') as log:
-                    proc.run(cmdline, check=True, stdout=log, stderr=log)
+                result = proc.run(
+                    cmdline, check=True, capture_output=True, text=True)
+                for line in result.stdout.splitlines():
+                    self.logger.debug('out: %s', line)
+                for line in result.stderr.splitlines():
+                    self.logger.debug('err: %s', line)
                 os.fchmod(
                     tmphandle,
                     (config.target / filename).stat().st_mode)
