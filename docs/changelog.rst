@@ -11,6 +11,12 @@ Changelog
 .. currentmodule:: tvrip
 
 
+Release 3.3 (2024-08-10)
+========================
+
+* Handle ``--crop-mode`` option in newer revisions of ``HandBrakeCLI``
+
+
 Release 3.2 (2024-08-10)
 ========================
 

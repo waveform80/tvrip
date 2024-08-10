@@ -16,7 +16,7 @@ def test_help(capsys):
         main(['--version'])
     assert err.value.code == 0
     capture = capsys.readouterr()
-    assert capture.out.strip() == '3.2'
+    assert capture.out.strip() == '3.3'
 
     with pytest.raises(SystemExit) as err:
         main(['--help'])
