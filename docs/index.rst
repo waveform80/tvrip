@@ -43,6 +43,7 @@ Episode meta-data in tvrip is (optionally) downloaded from the excellent
 
    install
    tutorial
+   recipes
    commands
    settings
    development

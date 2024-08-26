@@ -14,11 +14,10 @@ While DVDs still seem to be the most common format for TV series, Blu-rays are
 becoming incresingly common. Unfortunately, ripping Blu-ray is rather more
 complex and requires some one-time setup to get started.
 
-Whilst the encryption on DVDs (:abbr:`CSS (Content Scrambling System)`) is
-relatively trivial for a modern machine to bypass, the encryption on Blu-rays
-(:abbr:`AACS (Advanced Access Content System)`) cannot be bypassed without
-some knowledge of the keys, which are periodically expired with new ones being
-released.
+Whilst the encryption on DVDs (`CSS`_) is relatively trivial for a modern
+machine to bypass, the encryption on Blu-rays (`AACS`_) cannot be bypassed
+without some knowledge of the keys, which are periodically expired with new
+ones being released.
 
 Thankfully, some extremely kind people maintain a database of the currently
 known keys at the `FindVUK Online Database`_. To configure your system to use
