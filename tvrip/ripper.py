@@ -359,7 +359,8 @@ class Disc:
             cmdline.append('-5')
         # Create any paths for the target that don't exist
         (config.target / filename).parent.mkdir(parents=True, exist_ok=True)
-        result = proc.run(cmdline, capture_output=True, text=True)
+        result = proc.run(
+            cmdline, capture_output=True, text=True, errors='replace')
         for line in result.stdout.splitlines():
             self.logger.debug('out: %s', line)
         for line in result.stderr.splitlines():
