@@ -80,7 +80,7 @@ becomes:
           Otto Flick's hat and chin.
 
 There are cases of sources which are *selectively* interlaced. This is fairly
-common on shows from the late 90s to early 2000s, in particular where visual
+common on shows from the late 90s to late 2000s, in particular where visual
 effects are concerned. The majority of the show appears progressively encoded,
 but whenever something computer generated is on screen (including overlaid
 title cards), combing suddenly appears. This was a result of combining video
