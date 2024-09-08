@@ -29,6 +29,7 @@ application).
    var_handbrake
    var_id_template
    var_max_resolution
+   var_mkvextract
    var_mkvpropedit
    var_output_format
    var_source
