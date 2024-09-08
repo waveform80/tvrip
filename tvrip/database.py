@@ -26,15 +26,19 @@ from .const import DATADIR
 from .ripper import Disc, Title, Chapter
 
 
+DEFAULT_PATHS = {
+    'vlc':           Path('/usr/bin/vlc'),
+    'handbrake':     Path('/usr/bin/HandBrakeCLI'),
+    'atomicparsley': Path('/usr/bin/AtomicParsley'),
+    'mkvpropedit':   Path('/usr/bin/mkvpropedit'),
+    'mkvextract':    Path('/usr/bin/mkvextract'),
+}
+
+
 class Config(t.NamedTuple):
     program: t.Optional[str]
     season: t.Optional[int]
-    paths: dict[str, Path] = {
-        'vlc':           Path('/usr/bin/vlc'),
-        'handbrake':     Path('/usr/bin/HandBrakeCLI'),
-        'atomicparsley': Path('/usr/bin/AtomicParsley'),
-        'mkvpropedit':   Path('/usr/bin/mkvpropedit'),
-    }
+    paths: t.Optional[dict[str, Path]]
     api: str = 'tvdb4'
     api_key: str = ''
     audio_all: bool = False
@@ -70,7 +74,11 @@ class Config(t.NamedTuple):
                 conf['max_resolution'] = tuple(conf['max_resolution'])
             if 'paths' in conf:
                 conf['paths'] = {
-                    key: Path(path) for key, path in conf['paths'].items()}
+                    key: Path(conf['paths'].get(key, default_path))
+                    for key, default_path in DEFAULT_PATHS.items()
+                }
+            else:
+                conf['paths'] = DEFAULT_PATHS.copy()
             if 'source' in conf:
                 conf['source'] = Path(conf['source'])
             if 'target' in conf:
@@ -83,7 +91,7 @@ class Config(t.NamedTuple):
                 if key in cls._fields
             }
         else:
-            conf = {}
+            conf = {'paths': DEFAULT_PATHS.copy()}
         return cls(
             program=row.program,
             season=row.season,

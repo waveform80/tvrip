@@ -66,6 +66,7 @@ class RipCmd(Cmd):
             'id_template':      self.set_id_template,
             'max_resolution':   self.set_max_resolution,
             'mkvpropedit':      self.set_executable,
+            'mkvextract':       self.set_executable,
             'output_format':    self.set_output_format,
             'source':           self.set_device,
             'subtitle_all':     self.set_bool,

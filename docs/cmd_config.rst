@@ -26,6 +26,7 @@ For example:
     ├──────────────────┼──────────────────────────────────┤
     │ atomicparsley    │ /usr/bin/AtomicParsley           │
     │ handbrake        │ /usr/local/bin/HandBrakeCLI      │
+    │ mkvextract       │ /usr/bin/mkvextract              │
     │ mkvpropedit      │ /usr/bin/mkvpropedit             │
     │ vlc              │ /usr/bin/vlc                     │
     ├──────────────────┼──────────────────────────────────┤
