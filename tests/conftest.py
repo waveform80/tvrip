@@ -60,6 +60,7 @@ def with_config(request, db, with_schema, tmp_path):
             'atomicparsley': Path('AtomicParsley'),
             'handbrake': Path('HandBrakeCLI'),
             'mkvpropedit': Path('mkvpropedit'),
+            'mkvextract': Path('mkvextract'),
             'vlc': Path('vlc'),
         },
         source=tmp_path / 'dvd',

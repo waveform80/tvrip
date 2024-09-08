@@ -305,7 +305,7 @@ class RipCmd(Cmd):
         if not self.disc:
             raise CmdError('No disc has been scanned yet')
         table = Table(box=box.ROUNDED)
-        table.add_column('Title', no_wrap=True)
+        table.add_column('Title', no_wrap=True, justify='right')
         table.add_column('Chapters', no_wrap=True, justify='right')
         table.add_column('Duration', no_wrap=True, justify='right')
         table.add_column('Dup', no_wrap=True)
@@ -344,7 +344,7 @@ class RipCmd(Cmd):
             f'Title {title.number}, duration: {title.duration}, '
             f'duplicate: {title.duplicate}')
         chapters_tbl = Table(box=box.ROUNDED)
-        chapters_tbl.add_column('Chapter', no_wrap=True)
+        chapters_tbl.add_column('Chapter', no_wrap=True, justify='right')
         chapters_tbl.add_column('Start', no_wrap=True, justify='right')
         chapters_tbl.add_column('Finish', no_wrap=True, justify='right')
         chapters_tbl.add_column('Duration', no_wrap=True, justify='right')
@@ -356,7 +356,7 @@ class RipCmd(Cmd):
                 str(chapter.duration),
                 )
         audio_tbl = Table(box=box.ROUNDED)
-        audio_tbl.add_column('Audio', no_wrap=True)
+        audio_tbl.add_column('Audio', no_wrap=True, justify='right')
         audio_tbl.add_column('Lang', no_wrap=True)
         audio_tbl.add_column('Name')
         audio_tbl.add_column('Encoding', no_wrap=True)
@@ -375,7 +375,7 @@ class RipCmd(Cmd):
                 suffix
                 )
         subtitle_tbl = Table(box=box.ROUNDED)
-        subtitle_tbl.add_column('Subtitle', no_wrap=True)
+        subtitle_tbl.add_column('Subtitle', no_wrap=True, justify='right')
         subtitle_tbl.add_column('Lang', no_wrap=True)
         subtitle_tbl.add_column('Name')
         subtitle_tbl.add_column('Format', no_wrap=True)
@@ -416,7 +416,7 @@ class RipCmd(Cmd):
         if self.config.program is None:
             raise CmdError('No program has been set')
         table = Table(box=box.ROUNDED)
-        table.add_column('Num', no_wrap=True)
+        table.add_column('Num', no_wrap=True, justify='right')
         table.add_column('Episodes', no_wrap=True, justify='right')
         table.add_column('Ripped', no_wrap=True, justify='right')
         for (season, episodes, ripped) in self.db.get_seasons():
@@ -436,7 +436,7 @@ class RipCmd(Cmd):
         if self.config.season is None:
             raise CmdError('No season has been set')
         table = Table(box=box.ROUNDED)
-        table.add_column('Num', no_wrap=True)
+        table.add_column('Num', no_wrap=True, justify='right')
         table.add_column('Title')
         table.add_column('Ripped', no_wrap=True, justify='center')
         for episode in self.db.get_episodes():
@@ -1510,11 +1510,11 @@ class RipCmd(Cmd):
         season = self.config.season
         if self.episode_map:
             table = Table(box=box.ROUNDED)
-            table.add_column('Title', no_wrap=True)
-            table.add_column('Duration', no_wrap=True, justify='right')
-            table.add_column('Ripped', no_wrap=True, justify='center')
             table.add_column('Episode', no_wrap=True, justify='right')
             table.add_column('Name')
+            table.add_column('Title', no_wrap=True, justify='right')
+            table.add_column('Duration', no_wrap=True, justify='right')
+            table.add_column('Ripped', no_wrap=True, justify='center')
             for episode, mapping in self.episode_map.items():
                 if isinstance(mapping, Title):
                     index = str(mapping.number)
@@ -1535,11 +1535,11 @@ class RipCmd(Cmd):
                             (end.title.number, end.number))
                         ), timedelta())
                 table.add_row(
+                    str(episode.episode),
+                    episode.title,
                     str(index),
                     str(duration),
-                    '✓' if episode.ripped else '',
-                    str(episode.episode),
-                    episode.title)
+                    '✓' if episode.ripped else '')
             self.console.print(
                 f'Episode Mapping for {program} season {season}:', '', table,
                 sep='\n')
