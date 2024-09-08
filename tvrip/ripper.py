@@ -14,6 +14,7 @@ import logging
 import tempfile
 import datetime as dt
 import subprocess as proc
+import xml.etree.ElementTree as et
 import hashlib
 from fractions import Fraction
 from operator import attrgetter
@@ -21,6 +22,7 @@ from itertools import groupby, chain
 from weakref import ref
 
 from . import multipart
+from .xml import tag
 
 
 AUDIO_MIX_ORDER = [
@@ -57,6 +59,17 @@ class Disc:
         self.ident = self._generate_ident()
         self._mark_duplicates()
         self._mark_best()
+
+    def _run(self, cmdline, check=True):
+        result = proc.run(
+            cmdline, capture_output=True, text=True, errors='replace')
+        for line in result.stdout.splitlines():
+            self.logger.debug('out: %s', line)
+        for line in result.stderr.splitlines():
+            self.logger.debug('err: %s', line)
+        if check:
+            result.check_returncode()
+        return result
 
     def _generate_ident(self):
         # Calculate a hash of disc serial, and track properties to form a
@@ -121,7 +134,7 @@ class Disc:
         "Internal method for scanning (a) disc title(s)"
         # Determine supported command line options
         cmdline = [str(config.paths['handbrake']), '-h']
-        result = proc.run(cmdline, check=True, capture_output=True, text=True)
+        result = self._run(cmdline)
         for line in result.stdout.splitlines():
             if line.strip().startswith('--loose-crop'):
                 self._loose_crop = '--loose-crop'
@@ -141,8 +154,7 @@ class Disc:
         ]
         if not config.dvdnav:
             cmdline.append('--no-dvdnav')
-        result = proc.run(cmdline, stdout=proc.PIPE, stderr=proc.PIPE,
-                          check=True, encoding='utf-8', errors='replace')
+        result = self._run(cmdline)
         self._parse_scan_stderr(config, result.stderr)
         self._parse_scan_stdout(config, result.stdout)
 
@@ -162,7 +174,6 @@ class Disc:
             r'libdvdnav: vm: failed to open/read the .*', re.UNICODE)
 
         for line in output.splitlines():
-            self.logger.debug('err: %s', line)
             if error1_re.search(line) or error2_re.search(line):
                 raise IOError(f'Unable to read disc in {config.source}')
             if matched := disc_name_re.search(line):
@@ -179,8 +190,6 @@ class Disc:
             raise IOError('Failed to determine disc type')
 
     def _parse_scan_stdout(self, config, output):
-        for line in output.splitlines():
-            self.logger.debug('out: %s', line)
         try:
             json_start = output.rindex('JSON Title Set:')
         except ValueError:
@@ -257,7 +266,7 @@ class Disc:
             str(config.paths['vlc']),
             '--quiet', '--avcodec-hw', 'none', mrl
         ]
-        proc.run(cmdline, check=True, stdout=proc.DEVNULL, stderr=proc.DEVNULL)
+        self._run(cmdline)
 
     def rip(self, config, episodes, title, audio_tracks, subtitle_tracks,
             start_chapter=None, end_chapter=None):
@@ -359,45 +368,87 @@ class Disc:
             cmdline.append('-5')
         # Create any paths for the target that don't exist
         (config.target / filename).parent.mkdir(parents=True, exist_ok=True)
-        result = proc.run(
-            cmdline, capture_output=True, text=True, errors='replace')
-        for line in result.stdout.splitlines():
-            self.logger.debug('out: %s', line)
-        for line in result.stderr.splitlines():
-            self.logger.debug('err: %s', line)
-        result.check_returncode()
+        self._run(cmdline)
+        return config.target / filename
+
+    def tag(self, filename, config, episodes):
         # Tag the resulting file
-        if config.output_format == 'mp4':
-            tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
-            try:
-                cmdline = [
-                    str(config.paths['atomicparsley']),
-                    str(config.target / filename),
-                    '-o', tmpfile,
-                    '--stik', 'TV Show',
-                    # set tags for TV shows
-                    '--TVShowName',   config.program,
-                    '--TVSeasonNum',  str(config.season),
-                    '--TVEpisodeNum', str(episodes[0].episode),
-                    '--TVEpisode',    multipart.name(episodes),
-                    # also set tags for music files as these have wider support
-                    '--artist',       config.program,
-                    '--album',        f'Season {config.season}',
-                    '--tracknum',     str(episodes[0].episode),
-                    '--title',        multipart.name(episodes),
-                ]
-                result = proc.run(
-                    cmdline, check=True, capture_output=True, text=True)
-                for line in result.stdout.splitlines():
-                    self.logger.debug('out: %s', line)
-                for line in result.stderr.splitlines():
-                    self.logger.debug('err: %s', line)
-                os.fchmod(
-                    tmphandle,
-                    (config.target / filename).stat().st_mode)
-                os.rename(tmpfile, config.target / filename)
-            finally:
-                os.close(tmphandle)
+        try:
+            handler = {
+                'mp4': self._tag_mp4,
+                'mkv': self._tag_mkv,
+            }[config.output_format]
+        except KeyError:
+            pass
+        else:
+            return handler(filename, config, episodes)
+
+    def _tag_mp4(self, filename, config, episodes):
+        tmphandle, tmpfile = tempfile.mkstemp(dir=config.temp)
+        try:
+            cmdline = [
+                str(config.paths['atomicparsley']),
+                str(filename),
+                '-o', tmpfile,
+                '--stik', 'TV Show',
+                # set tags for TV shows
+                '--TVShowName',   config.program,
+                '--TVSeasonNum',  str(config.season),
+                '--TVEpisodeNum', str(episodes[0].episode),
+                '--TVEpisode',    multipart.name(episodes),
+                # also set tags for music files as these have wider support
+                '--artist',       config.program,
+                '--album',        f'Season {config.season}',
+                '--tracknum',     str(episodes[0].episode),
+                '--title',        multipart.name(episodes),
+            ]
+            self._run(cmdline)
+            os.fchmod(
+                tmphandle,
+                (config.target / filename).stat().st_mode)
+            os.rename(tmpfile, config.target / filename)
+        finally:
+            os.close(tmphandle)
+
+    def _tag_mkv(self, filename, config, episodes):
+        cmdline = [
+            str(config.paths['mkvextract']),
+            str(filename),
+            'tags',
+            '-',  # write XML to stdout
+        ]
+        result = self._run(cmdline)
+        tags = et.fromstring(result.stdout)
+        assert tags.tag == 'Tags'
+        tags.append(
+            tag.Tag(
+                tag.Targets(tag.TargetTypeValue(70)),
+                tag.Simple(tag.Name('TITLE'), tag.String(config.program)),
+            ))
+        tags.append(
+            tag.Tag(
+                tag.Targets(tag.TargetTypeValue(60)),
+                tag.Simple(tag.Name('PART_NUMBER'), tag.String(config.season)),
+            ))
+        tags.append(
+            tag.Tag(
+                tag.Targets(tag.TargetTypeValue(50)),
+                tag.Simple(tag.Name('PART_NUMBER'), tag.String(episodes[0].episode)),
+                tag.Simple(tag.Name('TITLE'), tag.String(multipart.name(episodes))),
+            ))
+        with tempfile.NamedTemporaryFile(mode='w+', dir=config.temp) as f:
+            xml = et.tostring(tags, encoding='unicode', xml_declaration=True)
+            for line in xml.splitlines():
+                self.logger.debug('in: %s', line)
+            f.write(xml)
+            f.flush()
+            cmdline = [
+                str(config.paths['mkvpropedit']),
+                str(filename),
+                '--tags',
+                f'all:{config.temp / f.name!s}',
+            ]
+            self._run(cmdline)
 
 
 class Title():

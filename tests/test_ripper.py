@@ -178,9 +178,10 @@ def test_rip_with_defaults(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -206,9 +207,10 @@ def test_rip_with_deinterlace(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -225,9 +227,10 @@ def test_rip_without_decomb(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -245,9 +248,10 @@ def test_rip_with_subtitles(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, d.titles[1].subtitle_tracks)
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -266,9 +270,10 @@ def test_rip_with_default_subtitles(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, d.titles[1].subtitle_tracks)
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -286,9 +291,10 @@ def test_rip_animation(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         d.titles[1].audio_tracks, [])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -305,9 +311,10 @@ def test_rip_with_dvdread(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[1],
         [d.titles[1].audio_tracks[0]], [])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -323,10 +330,11 @@ def test_rip_chapter(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[0],
         [d.titles[0].audio_tracks[0]], [],
         start_chapter=d.titles[0].chapters[0])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])
@@ -344,11 +352,12 @@ def test_rip_chapters(db, with_program, drive, foo_disc1):
     episodes = db.get_episodes()
     drive.disc = foo_disc1
     d = Disc(with_program)
-    d.rip(
+    filename = d.rip(
         with_program, [episodes[0]], d.titles[0],
         [d.titles[0].audio_tracks[0]], [],
         start_chapter=d.titles[0].chapters[0],
         end_chapter=d.titles[0].chapters[4])
+    d.tag(filename, with_program, [episodes[0]])
     assert len(drive.run.call_args_list) == 4
     test_cmdline = Cmdline(drive.run.call_args_list[0].args[0])
     scan_cmdline = Cmdline(drive.run.call_args_list[1].args[0])

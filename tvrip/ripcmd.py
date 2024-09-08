@@ -1630,8 +1630,10 @@ class RipCmd(Cmd):
             self.console.print(
                 f'Ripping episodes {numbers}, {multipart.name(episodes)}')
         try:
-            self.disc.rip(self.config, episodes, title, audio_tracks,
-                          subtitle_tracks, chapter_start, chapter_end)
+            filename = self.disc.rip(
+                self.config, episodes, title, audio_tracks,
+                subtitle_tracks, chapter_start, chapter_end)
+            self.disc.tag(filename, self.config, episodes)
         except proc.CalledProcessError as exc:
             raise CmdError(f'process failed with code {exc.returncode}')
         else:
