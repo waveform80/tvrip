@@ -1077,15 +1077,23 @@ class RipCmd(Cmd):
             f'{self.config.program}')
 
     def update_episode(self, episode, title):
-        self.parse_episode(episode)
+        old_ep = self.parse_episode(episode)
         self.db.update_episode(episode, title)
+        try:
+            mapping = self.episode_map.pop(old_ep)
+        except KeyError:
+            pass
+        else:
+            new_ep = self.db.get_episode(episode)
+            self.episode_map[new_ep] = mapping
         self.console.print(
             f'Renamed episode {episode} of season {self.config.season} of '
             f'{self.config.program}')
 
     def delete_episode(self, episode, title=None):
-        self.parse_episode(episode)
+        old_ep = self.parse_episode(episode)
         self.db.delete_episode(episode)
+        self.episode_map.pop(old_ep, None)
         self.console.print(
             f'Deleted episode {episode} of season {self.config.season} of '
             f'{self.config.program}')
@@ -1573,10 +1581,18 @@ class RipCmd(Cmd):
             raise CmdError('No titles have been mapped to episodes')
         arg = arg.strip()
         if arg:
-            episodes = self.parse_episode_list(arg, must_exist=False)
+            episodes = self.parse_episode_list(arg)
         else:
             episodes = self.episode_map.keys()
-        for episode in episodes:
+        # This elaborate nonsense is because _rip_episode mutates the episode
+        # entries and, by extension, the keys of the episode_map
+        episode_numbers = [episode.episode for episode in episodes]
+        for num in episode_numbers:
+            episode = self.db.get_episode(num)
+            # This check is dual-purposed: if the entire map is being handled
+            # episodes already ripped may be in it. Alternately, a title may
+            # represent many episodes, so ripping one entry in the map may
+            # implicitly rip other entries which should then be skipped
             if not episode.ripped:
                 self._rip_episode(episode)
 
@@ -1620,11 +1636,14 @@ class RipCmd(Cmd):
             raise CmdError(f'process failed with code {exc.returncode}')
         else:
             for episode in episodes:
+                del self.episode_map[episode]
                 if chapter_start is None:
-                    self.db.rip_episode(episode.episode, title)
+                    episode = self.db.rip_episode(episode, title)
+                    self.episode_map[episode] = title
                 else:
-                    self.db.rip_episode(
-                        episode.episode, (chapter_start, chapter_end))
+                    episode = self.db.rip_episode(
+                        episode, (chapter_start, chapter_end))
+                    self.episode_map[episode] = (chapter_start, chapter_end)
 
     def do_unrip(self, arg):
         "Changes the status of the specified episode to unripped"
@@ -1637,5 +1656,12 @@ class RipCmd(Cmd):
         else:
             episodes = self.parse_episode_list(episodes, must_exist=False)
         for episode in episodes:
-            if episode is not None:
-                self.db.unrip_episode(episode.episode)
+            if episode is None:
+                continue
+            unripped = self.db.unrip_episode(episode)
+            try:
+                mapping = self.episode_map.pop(episode)
+            except KeyError:
+                pass
+            else:
+                self.episode_map[unripped] = mapping

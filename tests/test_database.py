@@ -254,8 +254,11 @@ def test_ripped(db, with_config, with_program, drive, foo_disc1):
         drive.disc = foo_disc1
         d = Disc(with_config)
         assert len(list(db.get_ripped(d))) == 0
-        db.rip_episode(1, d.titles[1])
+        ep = db.get_episode(1)
+        assert ep.disc_id is None
+        ep = db.rip_episode(ep, d.titles[1])
         assert len(list(db.get_ripped(d))) == 1
+        assert ep.disc_id is not None
 
 
 def test_ripped_chapters(db, with_config, with_program, drive, foo_disc1):
@@ -263,16 +266,24 @@ def test_ripped_chapters(db, with_config, with_program, drive, foo_disc1):
         drive.disc = foo_disc1
         d = Disc(with_config)
         assert len(list(db.get_ripped(d))) == 0
-        db.rip_episode(1, (d.titles[0].chapters[0], d.titles[0].chapters[4]))
+        ep = db.get_episode(1)
+        assert ep.start_chapter is None
+        assert ep.end_chapter is None
+        ep = db.rip_episode(ep, (d.titles[0].chapters[0], d.titles[0].chapters[4]))
         assert len(list(db.get_ripped(d))) == 1
+        assert ep.start_chapter is not None
+        assert ep.end_chapter is not None
 
 
 def test_ripped_unripped(db, with_config, with_program, drive, foo_disc1):
     with db.transaction():
         drive.disc = foo_disc1
         d = Disc(with_config)
-        db.rip_episode(1, d.titles[1])
+        ep = db.get_episode(1)
+        ep = db.rip_episode(ep, d.titles[1])
+        assert ep.disc_id is not None
         assert len(list(db.get_ripped(d))) == 1
-        db.unrip_episode(1)
+        ep = db.unrip_episode(ep)
         assert len(list(db.get_ripped(d))) == 0
+        assert ep.disc_id is None
 

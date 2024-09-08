@@ -1455,7 +1455,7 @@ def test_do_scan_already_ripped_title(db, with_program, drive, foo_disc1, ripcmd
         drive.disc = foo_disc1
         disc = Disc(with_program)
         for i in (1, 2, 3):
-            db.rip_episode(i, disc.titles[i])
+            db.rip_episode(db.get_episode(i), disc.titles[i])
 
         ripcmd.do_scan('')
         # After the scan the pre-ripped episodes are already mapped to their
@@ -1472,7 +1472,7 @@ def test_do_scan_already_ripped_chapters(db, with_program, drive, foo_disc1, rip
         drive.disc = foo_disc1
         disc = Disc(with_program)
         for i in (1, 2, 3):
-            db.rip_episode(i, (
+            db.rip_episode(db.get_episode(i), (
                 disc.titles[0].chapters[(i - 1) * 2],
                 disc.titles[0].chapters[(i - 1) * 2 + 1]))
 
@@ -1873,7 +1873,7 @@ def test_do_rip_skip_ripped(db, with_program, tmp_path, drive, foo_disc1, ripcmd
         drive.disc = foo_disc1
         disc = Disc(with_program)
         for episode, title in [(1, 2), (2, 3), (3, 5), (4, 6)]:
-            db.rip_episode(episode, disc.titles[title - 1])
+            db.rip_episode(db.get_episode(episode), disc.titles[title - 1])
 
         drive.run.reset_mock()
         ripcmd.do_scan('')
@@ -1979,7 +1979,7 @@ def test_do_unrip(db, with_program, drive, foo_disc1, ripcmd):
         drive.disc = foo_disc1
         disc = Disc(with_program)
         for i in (1, 2, 3):
-            db.rip_episode(i, disc.titles[i])
+            db.rip_episode(db.get_episode(i), disc.titles[i])
 
         with pytest.raises(CmdError):
             ripcmd.do_unrip('')

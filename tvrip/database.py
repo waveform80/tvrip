@@ -484,8 +484,8 @@ class Database:
             """), {'episode': episode, 'title': title})
 
     def rip_episode(
-        self, episode: int, target: t.Union[Title, tuple[Chapter, Chapter]]
-    ) -> None:
+        self, episode: Episode, target: t.Union[Title, tuple[Chapter, Chapter]]
+    ) -> Episode:
         if isinstance(target, Title):
             title = target
             start_chapter = end_chapter = None
@@ -493,6 +493,12 @@ class Database:
             start_chapter, end_chapter = target
             title = start_chapter.title
         disc = title.disc
+        episode = episode._replace(
+            disc_id=disc.ident,
+            disc_title=title.number,
+            start_chapter=start_chapter.number if start_chapter else None,
+            end_chapter=end_chapter.number if end_chapter else None,
+        )
         self._check_rowcount(self._conn.execute(text(
             """
             UPDATE episodes SET
@@ -506,15 +512,16 @@ class Database:
                 WHERE id = 'default'
             )
             AND episode = :episode
-            """), {
-                'episode': episode,
-                'disc_id': disc.ident,
-                'disc_title': title.number,
-                'start_chapter': start_chapter.number if start_chapter else None,
-                'end_chapter': end_chapter.number if end_chapter else None,
-            }))
+            """), episode._asdict()))
+        return episode
 
-    def unrip_episode(self, episode: int) -> None:
+    def unrip_episode(self, episode: Episode) -> Episode:
+        episode = episode._replace(
+            disc_id=None,
+            disc_title=None,
+            start_chapter=None,
+            end_chapter=None,
+        )
         self._check_rowcount(self._conn.execute(text(
             """
             UPDATE episodes SET
@@ -528,7 +535,8 @@ class Database:
                 WHERE id = 'default'
             )
             AND episode = :episode
-            """), {'episode': episode}))
+            """), episode._asdict()))
+        return episode
 
     def insert_episode(self, episode: int, title: str) -> None:
         # Shift all later episodes along 1
