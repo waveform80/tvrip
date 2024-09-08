@@ -464,8 +464,8 @@ class RipCmd(Cmd):
         table.add_row('source', str(self.config.source))
         table.add_row(
             'duration',
-            f'{self.config.duration[0].total_seconds() // 60}-'
-            f'{self.config.duration[1].total_seconds() // 60} (mins)')
+            f'{self.config.duration[0].total_seconds() / 60:.0f}-'
+            f'{self.config.duration[1].total_seconds() / 60:.0f} (mins)')
         table.add_row('duplicates', self.config.duplicates, end_section=True)
         table.add_row('target', str(self.config.target))
         table.add_row('temp', str(self.config.temp))

@@ -30,7 +30,7 @@ For example:
     │ vlc              │ /usr/bin/vlc                     │
     ├──────────────────┼──────────────────────────────────┤
     │ source           │ /dev/sr1                         │
-    │ duration         │ 42.0-48.0 (mins)                 │
+    │ duration         │ 42-48 (mins)                     │
     │ duplicates       │ all                              │
     ├──────────────────┼──────────────────────────────────┤
     │ target           │ /home/dave/Videos                │
