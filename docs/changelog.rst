@@ -11,6 +11,17 @@ Changelog
 .. currentmodule:: tvrip
 
 
+Release 3.4 (2024-09-??)
+========================
+
+* Add tagging of Matroska files
+* Fix skipping rips of already ripped episodes
+* Tweak ordering of columns in map output (now matches ordering of arguments to
+  the map command)
+* Fix crash on invalid UTF-8 output from HandBrakeCLI when disc has invalid
+  menu language tags
+
+
 Release 3.3 (2024-08-10)
 ========================
 
