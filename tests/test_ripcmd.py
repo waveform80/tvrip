@@ -1994,8 +1994,6 @@ def test_do_unrip(db, with_program, drive, foo_disc1, ripcmd):
         episodes = db.get_episodes()
         assert episodes[1].disc_id is None
         assert episodes[2].disc_id is None
-        # It's not an error to specify episodes that don't exist
-        ripcmd.do_unrip('1-10')
 
 
 def test_interactive(db, with_program, tmp_path, drive, foo_disc1, ripcmd, reader, writer):

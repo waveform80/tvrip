@@ -1654,7 +1654,7 @@ class RipCmd(Cmd):
         if episodes == '*':
             episodes = self.db.get_episodes()
         else:
-            episodes = self.parse_episode_list(episodes, must_exist=False)
+            episodes = self.parse_episode_list(episodes)
         for episode in episodes:
             if episode is None:
                 continue
